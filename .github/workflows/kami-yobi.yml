@@ -1,0 +1,52 @@
+# 区域マップ：紙の予備（S-12・S-13 の PDF）を、毎週Googleドライブに保存する
+# ・毎週 火曜の夜中（水曜の午前2時ごろ・日本時間）に動きます。GitHub が混んでいると少し遅れます
+# ・「Actions」→「紙の予備（S-12・S-13）」→「Run workflow」で、手で動かすこともできます
+# ・失敗したときは、GitHub からリポジトリの持ち主にメールが届きます
+name: 紙の予備（S-12・S-13）
+
+on:
+  # 配布パック：はじめは毎週の自動実行を止めてある（ロボットの招待コードを入れる前に毎週失敗しないように）。
+  # 導入の手引き 12 の準備が終わったら、下の2行の頭の「# 」を消して保存すると、毎週動きます。
+  # schedule:
+  #   - cron: '0 17 * * 2'   # 世界標準時の火曜17時 ＝ 日本時間の水曜2時
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'すべての区域を作り直す'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kami-yobi
+  cancel-in-progress: false
+
+jobs:
+  save:
+    # ubuntu-latest は 2026年10月から順に Ubuntu 26.04 に切りかわり、
+    # 見えないブラウザ（Playwright 1.56）が動かなくなるため、24.04 に固定する
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: 日本語の文字を入れる
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+
+      - name: 見えないブラウザを用意する
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.0
+          npx playwright install --with-deps chromium
+
+      - name: PDF を作ってドライブへ送る
+        env:
+          KUIKI_PAGE: ${{ vars.KUIKI_PAGE }}
+          KUIKI_TOKEN: ${{ secrets.KUIKI_ROBOT_TOKEN }}
+          FORCE: ${{ inputs.force || 'false' }}
+        run: node tools/kami-yobi.mjs
