@@ -6,7 +6,7 @@ window.KUIKI_CONFIG = {
   // ① GAS の「ウェブアプリのURL」を '' の中に貼り付けます（導入の手引き 手順3）。
   //    空のままだと試作モード（その端末の中だけに保存。説明や練習に使えます）で動きます。
   //    例：apiUrl: 'https://script.google.com/macros/s/xxxxxxxx/exec'
-  apiUrl: '',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbxRMBsIgfE2M4BAQuY7LrXnpfZ_kWcra0DZMwwL4ybI7aZ4BomUnjTSAbt_psYHd1EyIQ/exec',
 
   // ② はじめに表示する言語：'ja'（日本語）または 'es'（スペイン語）。各自が設定（歯車）で切りかえられます。
   lang: 'ja',
@@ -24,7 +24,7 @@ window.KUIKI_CONFIG = {
 
   // ⑤ 王国会館の場所 [緯度, 経度]。地図の目印と、おすすめの「会館から近い順」に使います。
   //    Google マップで会館を長押しすると出る「35.xxxxx, 139.xxxxx」を、下のように入れて // を消します（導入の手引き 手順6）。
-  // hall: [35.0000, 139.0000],
+  // hall: [35.388685, 139.402654],
 
   // ⑥ 年齢データ（e-Stat 国勢調査の小地域集計）を使う。区域係の「設定」に年齢データの画面が出ます
   ageData: true,
