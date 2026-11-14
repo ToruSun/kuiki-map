@@ -4,7 +4,7 @@
 # （結果は chiban-update ブランチに入るので、Actions が緑になったら main にまぜます。導入の手引き 手順7）
 # ・同じ市区町村で、いちばん新しい年が「今の地番」、それより古い年は「古い地番」（今はない番号を調べるため）になります
 # ・新しい年が出たら、その行を足すだけです（古い行は残しておきます）
-# ・下の 2026 年版の URL は、ほかの市町村の公開の形に合わせて書いたものです（配布の時点では確かめていません）。
+# ・下の 2026 年版の URL は、2026-11-14 に公開ページで確かめました（G空間情報センターでの公開は 2026-08-10。年月はその公開月）。
 #   Actions の記録（chiban/_log.txt）に「失敗」と出たら、公開ページで「14205_藤沢市_公共座標9系_筆R_<年>.geojson」の
 #   ダウンロードURLをコピーして、この行の URL と年月を書きかえてください
-14205  2026-04  https://gsic-opendata.s3.ap-northeast-1.amazonaws.com/aigid/aigid-moj/2026/14/aigid-moj-14205/14205_%E8%97%A4%E6%B2%A2%E5%B8%82_%E5%85%AC%E5%85%B1%E5%BA%A7%E6%A8%999%E7%B3%BB_%E7%AD%86R_2026.geojson
+14205  2026-08  https://gsic-opendata.s3.ap-northeast-1.amazonaws.com/aigid/aigid-moj/2026/14/aigid-moj-14205/14205_%E8%97%A4%E6%B2%A2%E5%B8%82_%E5%85%AC%E5%85%B1%E5%BA%A7%E6%A8%999%E7%B3%BB_%E7%AD%86R_2026.geojson
