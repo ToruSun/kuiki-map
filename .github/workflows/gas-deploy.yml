@@ -47,7 +47,8 @@ jobs:
             echo "ok=0" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # 今のウェブアプリの番号（デプロイ ID）を config.js の apiUrl から取る
-          DEP=$(grep -oE "apiUrl: *'https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec'" config.js | sed -E 's#.*/macros/s/([A-Za-z0-9_-]+)/exec.*#\1#')
+          # （// の行＝説明の例 xxxxxxxx は読まない。設定の行の1つめだけ）
+          DEP=$(grep -E "^[[:space:]]*apiUrl:[[:space:]]*'https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec'" config.js | head -n 1 | sed -E 's#.*/macros/s/([A-Za-z0-9_-]+)/exec.*#\1#')
           if [ -z "$DEP" ]; then echo "::error::config.js の apiUrl からウェブアプリの番号が読めません"; exit 1; fi
           echo "dep=$DEP" >> "$GITHUB_OUTPUT"
           echo "ok=1" >> "$GITHUB_OUTPUT"
