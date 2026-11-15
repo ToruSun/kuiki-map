@@ -188,7 +188,7 @@ function gsiRun_() {
     try {
       texts = gsiTexts_(info);
     } catch (e) {
-      st.note = info.name + ' を開けませんでした：' + (e && e.message ? e.message : String(e)).slice(0, 100);
+      st.note = info.name + ' を開けませんでした：' + (e && e.message ? e.message : String(e)).slice(0, 200);
       st.idx++; st.off = 0;
       continue;
     }
@@ -256,7 +256,11 @@ function gsiTexts_(info) {
 function gsiUnzip_(blob, depth) {
   const texts = [], names = [];
   let items;
-  try { items = Utilities.unzip(blob); } catch (e) { return { texts: texts, names: names }; }
+  try { items = Utilities.unzip(blob); } catch (e) {
+    // 人の多いメッシュの「全項目」の zip は、中のファイルが大きすぎて Apps Script では開けない（100MBの制限）。展開した xml なら読める（2026-11-15）
+    if (depth === 0) throw new Error('zip を開けません。パソコンで展開し、中の「FG-GML-…-BldA-…xml」だけをフォルダに入れてください（' + (e && e.message ? e.message : e) + '）');
+    return { texts: texts, names: names };
+  }
   const xmls = [];
   items.forEach(function (b) {
     const n = b.getName() || '';
