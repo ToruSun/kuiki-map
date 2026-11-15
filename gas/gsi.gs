@@ -161,6 +161,29 @@ function gsiRun_() {
   let rows = [];
   while (st.idx < st.files.length && Date.now() - t0 < GSI_RUN_MS) {
     const info = st.files[st.idx];
+    // 大きい xml（ドライブの1回で読める大きさをこえるもの）は、少しずつ読む（2026-11-15）
+    let big = 0;
+    try { big = gsiBigSize_(info); } catch (e) { big = 0; }
+    if (big < 0) { st.idx++; st.off = 0; st.boff = 0; continue; } // 建物でない大きいファイル（道路など）は読まない
+    if (big > 0) {
+      let fin = false;
+      try {
+        while (Date.now() - t0 < GSI_RUN_MS) {
+          const r = gsiChunk_(info.id, st.boff || 0, big);
+          if (r.text) {
+            rows = rows.concat(gsiParse_(r.text, ts, S, N, W, E, grid, st, nowIso, now));
+            if (rows.length > 4000) { writeProvRows_(rows); rows = []; }
+          }
+          st.boff = r.next;
+          if (r.next >= big) { fin = true; break; }
+        }
+      } catch (e) {
+        st.note = info.name + ' を読み切れませんでした：' + (e && e.message ? e.message : String(e)).slice(0, 100);
+        fin = true;
+      }
+      if (fin) { st.idx++; st.off = 0; st.boff = 0; }
+      continue;
+    }
     let texts;
     try {
       texts = gsiTexts_(info);
@@ -182,6 +205,44 @@ function gsiRun_() {
   if (st.idx >= st.files.length) st.done = true;
   st.at = new Date().toISOString();
   gsiSave_(st);
+}
+
+/* ---------- 大きい xml を少しずつ読む（2026-11-15） ----------
+   ドライブのファイルは、1回で読めるのが約50MBまで。人の多い地域の建築物（BldA）の xml はそれをこえるので、
+   ドライブの API から 8MB ずつ（Range）取り、建物の区切り（</BldA>）で切って読む。続きはバイトの位置（st.boff）から */
+const GSI_BIG = 30 * 1024 * 1024;   // これより大きい xml は少しずつ読む
+const GSI_CHUNK = 8 * 1024 * 1024;  // 1回に取る大きさ
+/** 少しずつ読む xml なら、その大きさ（バイト）。建物でない大きいファイルは -1。ふつうに読めるものは 0 */
+function gsiBigSize_(info) {
+  if (!/\.xml$/i.test(info.name)) return 0;
+  const size = DriveApp.getFileById(info.id).getSize();
+  if (size <= GSI_BIG) return 0;
+  if (/FG-GML-/i.test(info.name) && !/Bld/i.test(info.name)) return -1;
+  return size;
+}
+/** off バイト目から1かたまり取り、終わりの建物までの文字と、次に読むバイトの位置を返す */
+function gsiChunk_(id, off, size) {
+  const end = Math.min(off + GSI_CHUNK, size) - 1;
+  const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id) + '?alt=media', {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), Range: 'bytes=' + off + '-' + end },
+    muteHttpExceptions: true
+  });
+  const code = res.getResponseCode();
+  if (code !== 206 && !(code === 200 && off === 0 && end + 1 >= size)) throw new Error('ドライブから読めませんでした（' + code + '）');
+  const bytes = res.getContent();
+  const eof = off + bytes.length >= size;
+  // 日本語の文字の途中で切らないように、最後の「>」（1バイトの文字）までにする
+  let cut = bytes.length;
+  if (!eof) { while (cut > 0 && bytes[cut - 1] !== 62) cut--; if (!cut) cut = bytes.length; }
+  let text = Utilities.newBlob(cut === bytes.length ? bytes : bytes.slice(0, cut)).getDataAsString('UTF-8');
+  if (eof) return { text: text, next: size };
+  // 最後の </BldA> までを読む（その先は次のかたまりで）
+  const re = /<\/(?:\w+:)?BldA>/g;
+  let last = -1, m;
+  while ((m = re.exec(text)) !== null) last = m.index + m[0].length;
+  if (last < 0) return { text: '', next: off + cut }; // 建物の区切りがない（ふつうはない）：先へ進む
+  text = text.slice(0, last);
+  return { text: text, next: off + Utilities.newBlob(text).getBytes().length };
 }
 
 /** zip（または xml）の中身を、文字の配列にする。zipの中のzipも開く */
