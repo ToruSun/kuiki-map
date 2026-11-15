@@ -1,1 +1,4 @@
 __pycache__/
+# clasp の設定と鍵（Actions の中で作る。コミットしない）
+.clasp.json
+.clasprc.json

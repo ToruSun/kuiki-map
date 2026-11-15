@@ -1,0 +1,89 @@
+# 区域マップ：サーバー（Apps Script）を GitHub から自動で入れる（clasp）
+# ・gas/ を書きかえて main にコミットすると動きます（「Actions」→「サーバーを入れる」→「Run workflow」でも動きます）
+# ・① clasp push：gas/ の全部のファイルで、Apps Script のプロジェクトを置きかえます（エディタで直接書いた変更は消えます）
+#   ② clasp deploy -i：今のウェブアプリ（config.js の apiUrl の /macros/s/<ここ>/exec）を新しい版にします。URL は変わりません
+# ・はじめに1回だけ、本人が用意するもの（README の「サーバーの自動デプロイ」）
+#   - Variable  GAS_SCRIPT_ID ：Apps Script の「プロジェクトの設定」→「スクリプト ID」
+#   - Secret    CLASPRC_JSON  ：clasp login で作られる ~/.clasprc.json の中身（Google の鍵。チャットや公開の場所に貼らない）
+#   - https://script.google.com/home/usersettings で「Google Apps Script API」をオン
+# ・この2つが無いときは、何もせずに終わります（フォークや、まだ用意していないとき）
+name: サーバーを入れる
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - gas/**
+      - .github/workflows/gas-deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gas-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Pull request（フォークをふくむ）からは動かない。main への push と手での実行だけ
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: 用意ができているか確かめる
+        id: ready
+        env:
+          SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+          CLASPRC: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$SCRIPT_ID" ] || [ -z "$CLASPRC" ]; then
+            echo "::warning::GAS_SCRIPT_ID（Variable）か CLASPRC_JSON（Secret）がありません。サーバーは入れずに終わります。"
+            echo "ok=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # 今のウェブアプリの番号（デプロイ ID）を config.js の apiUrl から取る
+          DEP=$(grep -oE "apiUrl: *'https://script\.google\.com/macros/s/[A-Za-z0-9_-]+/exec'" config.js | sed -E 's#.*/macros/s/([A-Za-z0-9_-]+)/exec.*#\1#')
+          if [ -z "$DEP" ]; then echo "::error::config.js の apiUrl からウェブアプリの番号が読めません"; exit 1; fi
+          echo "dep=$DEP" >> "$GITHUB_OUTPUT"
+          echo "ok=1" >> "$GITHUB_OUTPUT"
+
+      - name: clasp の設定を作る
+        if: steps.ready.outputs.ok == '1'
+        env:
+          SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+          CLASPRC: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$CLASPRC" > "$HOME/.clasprc.json"
+          # Code.gs をいちばん上に（ほかのファイルは Code.gs の定数を使うため）
+          node -e '
+            const fs = require("fs");
+            const rest = fs.readdirSync("gas").filter(f => f.endsWith(".gs") && f !== "Code.gs").sort();
+            const order = ["gas/appsscript.json", "gas/Code.gs"].concat(rest.map(f => "gas/" + f));
+            fs.writeFileSync(".clasp.json", JSON.stringify({ scriptId: process.env.SCRIPT_ID, rootDir: "gas", filePushOrder: order }, null, 2));
+          '
+          # clasp login の版で、鍵の形がちがう（3.x は "tokens" を持つ）。合う版の clasp を使う
+          if node -e 'process.exit(JSON.parse(require("fs").readFileSync(process.env.HOME + "/.clasprc.json","utf8")).tokens ? 0 : 1)'; then
+            echo "CLASP=@google/clasp@3" >> "$GITHUB_ENV"
+          else
+            echo "CLASP=@google/clasp@2.4.2" >> "$GITHUB_ENV"
+          fi
+
+      - name: Apps Script にファイルを入れる（clasp push）
+        if: steps.ready.outputs.ok == '1'
+        run: npx -y "$CLASP" push --force
+
+      - name: ウェブアプリを新しい版にする（同じ URL のまま）
+        if: steps.ready.outputs.ok == '1'
+        env:
+          DEP: ${{ steps.ready.outputs.dep }}
+        run: npx -y "$CLASP" deploy -i "$DEP" -d "GitHub ${GITHUB_SHA::7}"
+
+      - name: 鍵のファイルを消す
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json

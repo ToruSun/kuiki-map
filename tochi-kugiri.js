@@ -165,7 +165,8 @@
     tkEnsure();
     if (!tkShow()) { if (lastSig) { tkGroup.clearLayers(); lastSig = ''; } return; }
     const top = TK.top;
-    if (top === undefined) { tkTop().then(() => renderTochiKugiri()).catch(() => {}); return; }
+    // まだ読んでいない（undefined）か、凡例が先に読みはじめて読み込み中（Promise）のときは、読み終えてから描き直す（2026-11-15）
+    if (top === undefined || (top && typeof top.then === 'function')) { tkTop().then(() => renderTochiKugiri()).catch(() => {}); return; }
     if (!top) return; // この会衆には表がない
     const b = map.getBounds().pad(0.15), box = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
     const photo = typeof baseName !== 'undefined' && baseName === 'photo';
