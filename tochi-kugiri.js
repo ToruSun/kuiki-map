@@ -1,5 +1,5 @@
 /* =========================================================
-   tochi-kugiri.js  区域マップ：土地の区切り（登記所備付地図の筆の線）を地図とS-12に出す（2026-11-13）
+   tochi-kugiri.js  区域マップ：土地の区切り（登記所備付地図の筆の線）を地図とS-12に出す
 
    ・データは chiban/（法務省の登記所備付地図を AIGID が GeoJSON にしたもの・CC BY）。kyohi.js が住所しらべに
      使っているのと同じ表を、こちらは「線」として地図に描く。地番の数字は出さない（所有者しらべにつながるため）
@@ -54,7 +54,7 @@
     cur12: true              // 今の印刷で入れるか（printS12 を押したときの値）
   };
   const idbOk = () => typeof IDB !== 'undefined' && window.indexedDB;
-  /* 市の地番参考図（2026-11-16）：法務省の線が無い所をおぎなう。公開ページには置かず、サーバー（sankouzu.gs）から
+  /* 市町村の地番参考図：法務省の線が無い所をおぎなう。公開ページには置かず、サーバー（sankouzu.gs）から
      ログインした人にだけ渡す。市町村の1つ（コード SAN）として扱い、字のファイルは 'SAN/<f>.json' で読む */
   const SAN = 'SAN';
   const sanOk = () => typeof api === 'function' && typeof API_URL !== 'undefined' && !!API_URL && !!(Store && Store.token);
@@ -82,7 +82,7 @@
     if (!idx || !idx.azas) return top;
     TK.cidx[SAN] = Object.assign({}, idx, { code: SAN });
     const out = top ? Object.assign({}, top, { munis: Object.assign({}, top.munis) }) : { munis: {} }; // 保存した top は書きかえない
-    out.munis[idx.name || '地番参考図'] = { code: SAN, asof: idx.asof, b: idx.b };
+    out.munis['地番参考図'] = { code: SAN, asof: idx.asof, b: idx.b };
     return out;
   }
 
@@ -244,11 +244,19 @@
      凡例（「?」）：入/切・目安の注意・出典
      ========================================================= */
   const TK_NOTE = '登記上の土地の区切りの目安です。実際の敷地や塀とは違うことがあります';
+  /* 出典（CC BY）：データの中の文ではなく、ここで決まった形に作る（地域や時点の言葉を入れない）。
+     地番参考図は、出す人（市町村）の名前が要るので、config.js の muni を入れる */
+  const TK_SRC_MOJ = '「登記所備付地図データ」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY 4.0）を加工して作成';
+  const tkSrcSan = () => {
+    const city = (window.KUIKI_CONFIG && window.KUIKI_CONFIG.muni) || '';
+    return '「固定資産（土地）地番参考図」' + (city ? '（' + city + '）' : '（市町村）') + 'を加工して作成（線だけ。地番は入れていない）';
+  };
   function tkSrcLine() {
-    const codes = Object.keys(TK.cidx || {}).map(c => TK.cidx[c]).filter(x => x && x.src);
+    const codes = Object.keys(TK.cidx || {}).filter(c => TK.cidx[c] && TK.cidx[c].azas);
     if (!codes.length) return '';
     const set = [];
-    codes.forEach(x => { if (set.indexOf(x.src) < 0) set.push(x.src); });
+    if (codes.some(c => c !== SAN)) set.push(TK_SRC_MOJ);
+    if (codes.indexOf(SAN) >= 0) set.push(tkSrcSan());
     return '土地の区切りは、' + set.join('・');
   }
   function tkLegendPaint() {
@@ -375,12 +383,13 @@
     const v = c.v, k = v.k, f = n => Math.round(n * 10) / 10, mm = n => f(n * k);
     const box = tkViewBox(v);
     const P = (lat, lng) => { const p = s12Px(lat, lng, v.z); return [p[0] - v.x, p[1] - v.y]; };
-    let d = '', n = 0;
-    TK.azas.forEach(list => {
+    let d = '', n = 0, moj = false, san = false;
+    TK.azas.forEach((list, key) => {
       if (!Array.isArray(list)) return;
       for (const fd of list) {
         if (n >= TK_CAP || !boxHit(fd.b, box)) continue;
         n++;
+        if (String(key).indexOf(SAN + '/') === 0) san = true; else moj = true;
         d += fd.ring.map((p, i) => { const [x, y] = P(p[0], p[1]); return (i ? 'L' : 'M') + f(x) + ',' + f(y); }).join('') + 'Z';
       }
     });
@@ -390,7 +399,8 @@
     let idx = eo >= 0 ? eo + 'fill-rule="evenodd"/>'.length : -1;
     if (idx < 0) { const im = svg.lastIndexOf('<image'); idx = im >= 0 ? svg.indexOf('/>', im) + 2 : svg.indexOf('>') + 1; }
     svg = svg.slice(0, idx) + path + svg.slice(idx);
-    return svg.replace('出典：国土地理院（', '出典：登記所備付地図データ（法務省／AIGID）・国土地理院（');
+    const add = (moj ? '登記所備付地図データ（法務省／AIGID）・' : '') + (san ? '地番参考図（' + (((window.KUIKI_CONFIG || {}).muni) || '市町村') + '）・' : '');
+    return svg.replace('出典：国土地理院（', '出典：' + add + '国土地理院（');
   }
   const _s12MapSvg = window.s12MapSvg;
   if (typeof _s12MapSvg === 'function') {

@@ -1,10 +1,10 @@
 # 地番の地図（chiban/）のもとにする GeoJSON の一覧（AIGID・CC BY）
-# 1行に「市区町村コード  公開年月  URL」。AIGID の公開ページ（https://www.geospatial.jp/ckan/dataset/aigid-moj-14205）の
+# 1行に「市区町村コード  公開年月  URL」。AIGID の公開ページ（https://www.geospatial.jp/ckan/dataset/aigid-moj-<市区町村コード>）の
 # 「GeoJSON」のダウンロードURLを貼ります。この一覧を書きかえてコミットすると、GitHub Actions「地番の地図」が自動で chiban/ を作ります
 # （結果は chiban-update ブランチに入るので、Actions が緑になったら main にまぜます。導入の手引き 手順7）
 # ・同じ市区町村で、いちばん新しい年が「今の地番」、それより古い年は「古い地番」（今はない番号を調べるため）になります
 # ・新しい年が出たら、その行を足すだけです（古い行は残しておきます）
-# ・下の 2026 年版の URL は、2026-11-14 に公開ページで確かめました（G空間情報センターでの公開は 2026-08-10。年月はその公開月）。
-#   Actions の記録（chiban/_log.txt）に「失敗」と出たら、公開ページで「14205_藤沢市_公共座標9系_筆R_<年>.geojson」の
-#   ダウンロードURLをコピーして、この行の URL と年月を書きかえてください
+# ・年月は、G空間情報センターでの公開月です。
+#   Actions の記録（chiban/_log.txt）に「失敗」と出たら、公開ページで「<コード>_<市区町村名>_公共座標<系>_筆R_<年>.geojson」の
+#   ダウンロードURLをコピーして、その行の URL と年月を書きかえてください
 14205  2026-08  https://gsic-opendata.s3.ap-northeast-1.amazonaws.com/aigid/aigid-moj/2026/14/aigid-moj-14205/14205_%E8%97%A4%E6%B2%A2%E5%B8%82_%E5%85%AC%E5%85%B1%E5%BA%A7%E6%A8%999%E7%B3%BB_%E7%AD%86R_2026.geojson

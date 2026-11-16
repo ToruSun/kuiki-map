@@ -7,8 +7,8 @@ moj-chiban.py  法務省の登記所備付地図データ（地図XML）から�
     python3 tools/moj-chiban.py <地図XMLのZIPかXMLが入ったフォルダ> <出力先フォルダ（例：chiban）> [データの時点 例：2026-02]
 
   入力：G空間情報センターの「法務省登記所備付地図データ」からダウンロードした ZIP（中に XML／ZIP が入っていてもよい）
-        または、AIGID が変換して公開している GeoJSON（例：47212_豊見城市_公共座標15系_筆R_2026.geojson。ログイン不要・CC BY）
-        https://www.geospatial.jp/ckan/dataset/aigid-moj-47212
+        または、AIGID が変換して公開している GeoJSON（例：<コード>_<市区町村名>_公共座標<系>_筆R_<年>.geojson。ログイン不要・CC BY）
+        https://www.geospatial.jp/ckan/dataset/aigid-moj-<市区町村コード>
   出力：<出力先>/<市区町村コード>/index.json と、大字ごとの <大字コード>.json
         地番ごとに「土地の中の1点（代表点）」と「土地の形」を、小さな形にして入れる
         ・公共座標の地図だけを使う（任意座標＝古い公図の地図は、位置が合わないので入れない）
@@ -232,8 +232,8 @@ def main():
         d = os.path.join(dst, code)
         os.makedirs(d, exist_ok=True)
         index = {'v': 1, 'code': code, 'muni': m['muni'], 'asof': asof,
-                 'src': (f'「登記所備付地図データ {m["muni"]}」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY、https://www.geospatial.jp/ckan/dataset/aigid-moj-{code}）を加工して作成'
-                         if gjs else f'「登記所備付地図データ {m["muni"]}」（法務省）（https://front.geospatial.jp/moj-chizu-xml-readme/）を加工して作成'),
+                 'src': ('「登記所備付地図データ」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY 4.0）を加工して作成'
+                         if gjs else '「登記所備付地図データ」（法務省）を加工して作成'),
                  'azas': {}}
         for acode, a in sorted(m['azas'].items()):
             a['p'].sort(key=lambda e: [int(n) for n in e[0].split('-')])

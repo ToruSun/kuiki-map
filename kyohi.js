@@ -49,7 +49,7 @@
   }
   if (typeof CHANGELOG !== 'undefined' && !CHANGELOG.some(c => c.v === '2026.13.11')) {
     CHANGELOG.unshift({ v: '2026.13.11', items: [
-      ['地', '区域係が住所から拒否の家をさがすとき、豊見城市は法務省の地番の地図で土地まで調べるようになりました（より正確になりました）']
+      ['地', '区域係が住所から拒否の家をさがすとき、地番の地図（法務省）がある市町村では土地まで調べるようになりました（より正確になりました）']
     ] });
   }
   if (typeof CHANGELOG !== 'undefined' && !CHANGELOG.some(c => c.v === '2026.13.10')) {
@@ -886,11 +886,11 @@
     const raw = String(e.raw || e.a || '');
     if (/\d\s*号/.test(raw) && !/番地/.test(raw)) return null; // 住居表示（〇番〇号）は地番ではない
     // 沖縄県以外（配布パック）：丁目のある住所は住居表示のことが多く、「3丁目5-10」の形では地番か住居番号か分からない。
-    // 「番地」と書いてあるときだけ地番の地図を使い、ほかは国土地理院の住所検索（住居表示に対応）にまかせる（2026-11-14）
+    // 「番地」と書いてあるときだけ地番の地図を使い、ほかは国土地理院の住所検索（住居表示に対応）にまかせる
     if (!CFG_AREA.okinawa && /丁目/.test(raw + (e.town || '')) && !/番地/.test(raw)) return null;
     const idx = await cbIndex(e.muni);
     if (!idx || !idx.azas) return null;
-    CB.src = idx.src + (idx.asof ? `（${idx.asof.replace(/^(\d+)-0?(\d+)$/, '$1年$2月')}公開のデータ）` : '');
+    CB.src = '「登記所備付地図データ」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY 4.0）を加工して作成'; // 出典は決まった形（データの中の、市町村名や時点の入った文は使わない）
     let town = String(e.town || '').normalize('NFKC').replace(/^(大字|字)/, ''), nums = e.nums.slice();
     if (/丁目/.test(raw) && idx.azas[town + nums[0] + '丁目']) { town = town + nums[0] + '丁目'; nums = nums.slice(1); }
     const a = idx.azas[town];
@@ -1513,7 +1513,7 @@
       <button type="button" class="btn primary block" data-close>閉じる</button>`);
   }
 
-  const cbSrc = () => '出典：' + (CB.src || '「登記所備付地図データ」（法務省）を加工して作成');
+  const cbSrc = () => '出典：' + (CB.src || '「登記所備付地図データ」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY 4.0）を加工して作成');
   /* 上書きの対象：エクセルは同じ住所の拒否、マイマップはピンのすぐそば（3m）の拒否（kmlPlan で p.replace に入れる） */
   function overTargets(p, idx) {
     if (p.replace) return p.replace.filter(k => D().dnc[k] !== undefined);

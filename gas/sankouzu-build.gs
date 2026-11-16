@@ -1,15 +1,18 @@
 /* =========================================================
-   区域マップ：藤沢市「固定資産（土地）地番参考図」から、土地の区切りの線のデータ（kuiki-sankouzu.json.gz）を
-   Apps Script だけで作る（Claude なしで、毎年の入れかえができるように・2026-11-16）
+   区域マップ：市町村の「固定資産（土地）地番参考図」など（SHP）から、土地の区切りの線のデータ（kuiki-sankouzu.json.gz）を
+   Apps Script だけで作る（Claude なしで、入れかえができるように）
 
    手作業（区域係）：
-     1. 市のホームページで規約に同意して zip をダウンロードし、パソコンで展開する
-     2. 中の「固定資産土地.shp」と「固定資産土地.dbf」の2つだけを、ドライブの「区域マップ_地番参考図」に入れる
-        （zip のままは読めない：67MB あり、Apps Script が開ける大きさをこえる）
-     3. メニュー「地番参考図から土地の区切りを作る」→ 時点（例 2027-01）を入れる → 5分ごとに自動で続く
+     0. 使う前に、市町村の利用規約を読み、必要なら市町村の了解を取る
+     1. 市町村のホームページから zip をダウンロードし、パソコンで展開する
+     2. 中の土地の .shp と、同じ名前の .dbf の2つだけを、ドライブの「区域マップ_地番参考図」に入れる
+        （zip のままは読めないことが多い：Apps Script が開ける大きさをこえる）
+     3. メニュー「地番参考図から土地の区切りを作る」→ 時点（年-月）を入れる → 5分ごとに自動で続く
    しくみ：
-     ・SHP はドライブの API から 8MB ずつ（Range）読み、筆（多角形）を1つずつ取り出す。DBF からは字（大字名）だけを読む
-     ・平面直角座標（9系など。.prj の系をそのまま使う）→ 緯度・経度。会衆の範囲（公開ページの config.js の area＋150m）の筆だけ
+     ・SHP はドライブの API から 8MB ずつ（Range）読み、筆（多角形）を1つずつ取り出す。DBF からは字の名前だけを読む
+       （字の列が無いときは、およそ1km の四角ごとに分ける）
+     ・平面直角座標（1〜19系。SHP の範囲と会衆の範囲から、合う系を自動で選ぶ）→ 緯度・経度。
+       会衆の範囲（公開ページの config.js の area＋150m）の筆だけ
      ・法務省の線（公開ページの chiban/）がある所の筆は入れない。地番は入れない（線の形だけ）
      ・できあがりを kuiki-sankouzu.json.gz として同じフォルダに置き、古いのはゴミ箱へ。サーバー（sankouzu.gs）が次の問い合わせで使う
    ========================================================= */
@@ -38,7 +41,7 @@ const SB_TM = (function () {
     4279 / 630 * Math.pow(n, 4) - 332 / 35 * Math.pow(n, 5) - 399572 / 14175 * Math.pow(n, 6),
     4174 / 315 * Math.pow(n, 5) - 144838 / 6237 * Math.pow(n, 6), 601676 / 22275 * Math.pow(n, 6)];
   const Abar = m0 * a / (1 + n) * A[0];
-  // 平面直角座標系の原点（1〜19系）。地番参考図は9系だが、ほかの市でも使えるように
+  // 平面直角座標系の原点（1〜19系）
   const ORIGIN = { 1: [33, 129.5], 2: [33, 131], 3: [36, 132 + 1 / 6], 4: [33, 133.5], 5: [36, 134 + 1 / 3], 6: [36, 136], 7: [36, 137 + 1 / 6],
     8: [36, 138.5], 9: [36, 139 + 5 / 6], 10: [40, 140 + 5 / 6], 11: [44, 140.25], 12: [44, 142.25], 13: [44, 144.25], 14: [26, 142], 15: [26, 127.5],
     16: [26, 124], 17: [26, 131], 18: [20, 136], 19: [26, 154] };
@@ -101,18 +104,20 @@ function sbNorm_(s) {
   return String(s || '').normalize('NFKC').trim().replace(/^(大字|字)/, '');
 }
 
-/* ---------- DBF：字（大字名）だけを読む。くり返しの多い字は、同じ並びのバイトを1回だけ文字にする ---------- */
+/* ---------- DBF：字の名前だけを読む。くり返しの多い字は、同じ並びのバイトを1回だけ文字にする ---------- */
+const SB_AZA_COLS = ['大字名', '大字', '町丁名', '町名', '字名', '大字町丁名', '所在', 'OAZA', 'AZA'];
 function sbDbfAza_(u8, decode) {
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   const n = dv.getUint32(4, true), hl = dv.getUint16(8, true), rl = dv.getUint16(10, true);
-  let pos = 32, off = 1, fOff = -1, fLen = 0;
+  let pos = 32, off = 1, fOff = -1, fLen = 0, rank = 99;
   while (u8[pos] !== 0x0D && pos < hl) {
     let e = pos; while (e < pos + 11 && u8[e] !== 0) e++;
-    const name = decode(u8.subarray(pos, e)), len = u8[pos + 16];
-    if (name === '大字名') { fOff = off; fLen = len; }
+    const name = String(decode(u8.subarray(pos, e))).normalize('NFKC').trim().toUpperCase(), len = u8[pos + 16];
+    const k = SB_AZA_COLS.indexOf(name);
+    if (k >= 0 && k < rank) { fOff = off; fLen = len; rank = k; }
     off += len; pos += 32;
   }
-  if (fOff < 0) throw new Error('DBF に「大字名」の列がありません');
+  if (fOff < 0) return null; // 字の列が無い：四角ごとに分ける
   const names = [], idx = new Array(n), seen = {};
   for (let i = 0; i < n; i++) {
     const b = hl + i * rl + fOff; let key = '';
@@ -210,6 +215,30 @@ function sbMojIndex_(getJson, box) {
     return false;
   };
 }
+/** SHP の範囲（ヘッダーの四角）と会衆の範囲がいちばん重なる系（1〜19）を選ぶ。どれも重ならなければ 0 */
+function sbZone_(hdr, area) {
+  const dv = new DataView(hdr.buffer, hdr.byteOffset, hdr.byteLength);
+  const xmin = dv.getFloat64(36, true), ymin = dv.getFloat64(44, true), xmax = dv.getFloat64(52, true), ymax = dv.getFloat64(60, true); // x：東、y：北
+  let best = 0, bestA = 0;
+  for (let z = 1; z <= 19; z++) {
+    const b = sbBoxes_(area, z).xy; // [北の最小, 東の最小, 北の最大, 東の最大]
+    const w = Math.min(b[3], xmax) - Math.max(b[1], xmin), h = Math.min(b[2], ymax) - Math.max(b[0], ymin);
+    if (w > 0 && h > 0 && w * h > bestA) { bestA = w * h; best = z; }
+  }
+  return best;
+}
+/** config.js の muni（市の名前）。出典に使う */
+function sbMuni_(configText) {
+  const m = String(configText).match(/^\s*muni:\s*'([^']*)'/m);
+  return m ? m[1] : '';
+}
+function sbSrc_(city) {
+  return '「固定資産（土地）地番参考図」' + (city ? '（' + city + '）' : '（市町村）') + 'を加工して作成（線だけ。地番は入れていない）';
+}
+/** 字の列が無いとき：およそ1km の四角の名前 */
+function sbGridName_(e) {
+  return '区画' + Math.floor(e[1] / 1e4) + '-' + Math.floor(e[2] / 1e4);
+}
 /** 会衆の範囲から、絞りこむ四角（経緯度と平面直角座標） */
 function sbBoxes_(area, zone) {
   let S = 90, N = -90, W = 180, E = -180;
@@ -220,7 +249,7 @@ function sbBoxes_(area, zone) {
   return { ll: ll, xy: xy }; // xy：[北の最小, 東の最小, 北の最大, 東の最大]
 }
 /** 最後に：字ごとにまとめて、一覧（index）とファイルを作る */
-function sbFinish_(groups, asof) {
+function sbFinish_(groups, asof, city) {
   const names = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
   const azas = {}, files = {}, allb = [];
   names.forEach((a, k) => {
@@ -230,10 +259,8 @@ function sbFinish_(groups, asof) {
     const r6 = v => Math.round(v * 1e6) / 1e6;
     azas[a] = { f: f, n: ps.length, b: [r6(s), r6(w), r6(n), r6(e)] }; files[f] = { p: ps }; allb.push(azas[a].b);
   });
-  const y = /^\d{4}/.test(asof) ? '令和' + (Number(asof.slice(0, 4)) - 2018) : asof;
   return {
-    index: { v: 1, asof: asof, name: '藤沢市地番参考図',
-      src: '「藤沢市 固定資産（土地）地番参考図」（' + y + '年1月1日時点。藤沢市の了解を得て、線だけを区域マップ用に変換。地番は入れていない）',
+    index: { v: 1, asof: asof, name: '地番参考図', src: sbSrc_(city),
       b: [Math.min.apply(null, allb.map(b => b[0])), Math.min.apply(null, allb.map(b => b[1])), Math.max.apply(null, allb.map(b => b[2])), Math.max.apply(null, allb.map(b => b[3]))],
       azas: azas },
     files: files
@@ -245,12 +272,13 @@ function sbFolder_() {
   const it = DriveApp.getFoldersByName('区域マップ_地番参考図');
   return it.hasNext() ? it.next() : DriveApp.createFolder('区域マップ_地番参考図');
 }
-function sbPick_(folder, ext) {
+function sbPick_(folder, ext, base) {
   let best = null; const it = folder.getFiles();
   while (it.hasNext()) {
     const f = it.next(); if (f.isTrashed()) continue;
     const nm = f.getName();
     if (!new RegExp('\\.' + ext + '$', 'i').test(nm)) continue;
+    if (base && nm.replace(/\.[^.]*$/, '') === base) return f; // .shp と同じ名前の .dbf
     const score = (/土地/.test(nm) ? 2 : 0) + (/境界|地番/.test(nm) ? -2 : 0);
     if (!best || score > best.score || (score === best.score && f.getLastUpdated() > best.f.getLastUpdated())) best = { f: f, score: score };
   }
@@ -273,36 +301,38 @@ function sanBuildMenu() {
     if (ui.alert('作っている途中です', sbSummary_(st) + '\n\n止めて、はじめから作り直しますか？', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
   }
   const folder = sbFolder_();
-  const shp = sbPick_(folder, 'shp'), dbf = sbPick_(folder, 'dbf');
+  const shp = sbPick_(folder, 'shp'), dbf = shp ? sbPick_(folder, 'dbf', shp.getName().replace(/\.[^.]*$/, '')) : null;
   if (!shp || !dbf) {
     ui.alert('ファイルが足りません',
       'ドライブのフォルダ「' + folder.getName() + '」に、次の2つを入れてください。\n\n' +
-      '・固定資産土地.shp\n・固定資産土地.dbf\n\n' +
-      '市のホームページの zip をパソコンで展開すると、中に入っています（ほかのファイルは要りません）。\n' +
+      '・土地の区切りの .shp（ファイル名に「土地」が入っているものを先に選びます）\n・同じ名前の .dbf\n\n' +
+      '市町村のホームページの zip をパソコンで展開すると、中に入っています（ほかのファイルは要りません）。\n' +
       'zip のままは読めません（大きすぎるため）。', ui.ButtonSet.OK);
     return;
   }
   const y = new Date(shp.getLastUpdated()).getFullYear();
   const ask = ui.prompt('データの時点',
     '使うファイル：\n・' + shp.getName() + '（' + Math.round(shp.getSize() / 1048576) + 'MB）\n・' + dbf.getName() + '\n\n' +
-    '地番参考図は毎年1月1日時点です。時点を「年-01」の形で入れてください（例 ' + y + '-01）。', ui.ButtonSet.OK_CANCEL);
+    'データの時点を「年-月」の形で入れてください（例 ' + y + '-01）。市町村のホームページに書いてあります。', ui.ButtonSet.OK_CANCEL);
   if (ask.getSelectedButton() !== ui.Button.OK) return;
   const asof = (ask.getResponseText().trim() || (y + '-01'));
   if (!/^\d{4}-\d{2}$/.test(asof)) { ui.alert('「2027-01」のような形で入れてください。'); return; }
   // 範囲と字を先に用意（DBF はここで読む。8MB くらいなので1回で読める）
   let work;
   try {
-    const area = sbArea_(sbFetchText_(sbPagesBase_() + 'config.js'));
-    const zone = 9; // 藤沢市の地番参考図は平面直角座標9系（.prj：JGD2011_Japan_Zone_9）
+    const cfg = sbFetchText_(sbPagesBase_() + 'config.js');
+    const area = sbArea_(cfg);
+    const zone = sbZone_(sbRange_(shp.getId(), 0, 99), area);
+    if (!zone) throw new Error('この SHP は、会衆の範囲（config.js の area）と重なりません。ちがう市町村のファイルではありませんか？');
     const dbfU8 = new Uint8Array(dbf.getBlob().getBytes());
     const az = sbDbfAza_(dbfU8, sbSjis_);
-    work = { asof: asof, zone: zone, area: area, names: az.names, idx: az.idx, groups: {} };
+    work = { asof: asof, zone: zone, area: area, city: sbMuni_(cfg), names: az ? az.names : null, idx: az ? az.idx : null, groups: {} };
   } catch (e) {
     ui.alert('始められませんでした', String(e && e.message ? e.message : e).slice(0, 300), ui.ButtonSet.OK);
     return;
   }
   sbSaveWork_(folder, work);
-  props_().setProperty(SB_STATE, JSON.stringify({ shp: shp.getId(), size: shp.getSize(), off: 100, asof: asof, done: false,
+  props_().setProperty(SB_STATE, JSON.stringify({ shp: shp.getId(), size: shp.getSize(), off: 100, asof: asof, city: work.city, done: false,
     stat: { got: 0, moj: 0, out: 0 }, note: '', at: new Date().toISOString() }));
   sbEnsureTrigger_();
   ui.alert('作り始めました', '1回に4分半ずつ進み、5分ごとに自動で続きます（全部で10〜20分くらい）。\n' +
@@ -346,14 +376,14 @@ function sanBuildRun() {
       const u8 = sbRange_(st.shp, st.off, end);
       const used = sbShpChunk_(u8, (recNo, rings) => {
         const e = sbParcel_(ctx, rings); if (!e) return;
-        const a = work.names[work.idx[recNo - 1]] || '（字なし）';
+        const a = work.names ? (work.names[work.idx[recNo - 1]] || '（字なし）') : sbGridName_(e);
         (work.groups[a] = work.groups[a] || []).push(e); st.stat.got++;
       });
       if (!used) throw new Error('SHP の読み取りが進みません（ファイルがこわれている？）');
       st.off += used;
     }
     if (st.off >= st.size) {
-      const out = sbFinish_(work.groups, work.asof);
+      const out = sbFinish_(work.groups, work.asof, work.city);
       const blob = Utilities.gzip(Utilities.newBlob(JSON.stringify(out), 'application/json'), SAN_FILE);
       const old = DriveApp.getFilesByName(SAN_FILE); while (old.hasNext()) old.next().setTrashed(true);
       folder.createFile(blob.setName(SAN_FILE));
@@ -379,7 +409,7 @@ function sbSummary_(st) {
   return '進み具合：' + Math.min(100, Math.round((st.off || 0) / Math.max(1, st.size || 1) * 100)) + '%' + (st.done ? '（終わりました）' : '') +
     '\n入れた筆：' + ((st.stat && st.stat.got) || 0) + '（法務省の線がある所：' + ((st.stat && st.stat.moj) || 0) + '・範囲の外：' + ((st.stat && st.stat.out) || 0) + '）' +
     (st.done && st.azas ? '\n字の数：' + st.azas : '') + (st.note ? '\n\nお知らせ：' + st.note : '') +
-    '\n\n出典：藤沢市 固定資産（土地）地番参考図';
+    '\n\n出典：' + sbSrc_(st.city);
 }
 /** メニュー：進み具合 */
 function sanBuildStatus() {
