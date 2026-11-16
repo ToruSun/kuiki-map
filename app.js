@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.148';
+var APP_JS_VER = '2026.13.149';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2832,6 +2832,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.149', items: [
+    ['地', '土地の区切りの線が無かった所（長後など）にも、藤沢市の地番参考図で線が出るようになりました。藤沢市の了解を得て、会衆の人だけに見えるようにしています。']
+  ] },
   { v: '2026.13.148', items: [
     ['地', '2本の指で拡大・縮小している途中から地図を回すと、指をはなすまで区域の線や土地の区切りがずれて見えたのを直しました。']
   ] },

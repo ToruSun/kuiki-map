@@ -178,6 +178,10 @@ function doPost(e) {
       if (typeof memoApi_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
       return json_(memoApi_(user, req));
     }
+    if (req.action === 'tks') { // 市の地番参考図の線（sankouzu.gs）：ログインした人だけ
+      if (typeof sanApi_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
+      return json_(sanApi_(user, req));
+    }
     if (req.action === 'lm_pull' || req.action === 'lm_save' || req.action === 'lm_del') { // 地図の目印（landmarks.gs）
       if (typeof lmApi_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
       return json_(lmApi_(user, req));

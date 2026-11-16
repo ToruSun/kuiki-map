@@ -54,11 +54,46 @@
     cur12: true              // 今の印刷で入れるか（printS12 を押したときの値）
   };
   const idbOk = () => typeof IDB !== 'undefined' && window.indexedDB;
-  const fetchJson = path => fetch('chiban/' + path).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
+  /* 市の地番参考図（2026-11-16）：法務省の線が無い所をおぎなう。公開ページには置かず、サーバー（sankouzu.gs）から
+     ログインした人にだけ渡す。市町村の1つ（コード SAN）として扱い、字のファイルは 'SAN/<f>.json' で読む */
+  const SAN = 'SAN';
+  const sanOk = () => typeof api === 'function' && typeof API_URL !== 'undefined' && !!API_URL && !!(Store && Store.token);
+  const fetchJson = path => {
+    if (path.indexOf(SAN + '/') === 0) {
+      const f = path.slice(SAN.length + 1).replace(/\.json$/, '');
+      if (!sanOk()) return Promise.reject(new Error('no login'));
+      return api('tks', f === 'index' ? {} : { f: f }).then(j => {
+        if (!j || !j.ok) throw new Error('tks ' + (j && j.error));
+        return f === 'index' ? j.idx : j.j;
+      });
+    }
+    return fetch('chiban/' + path).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); });
+  };
+  /* 市の地番参考図を、市町村の一覧（top）に足す。ログインしていないときは足さない */
+  async function tkSan(top) {
+    if (!sanOk()) return top;
+    let idx = null;
+    try {
+      idx = await fetchJson(SAN + '/index.json');
+      if (idx && idx.azas && idbOk()) { IDB.set('tk:cidx:' + SAN, idx).catch(() => {}); tkSweep(SAN, idx.asof).catch(() => {}); }
+    } catch (e) {
+      try { idx = idbOk() ? await IDB.get('tk:cidx:' + SAN) : null; } catch (x) { idx = null; } // 圏外：前に読んだ一覧
+    }
+    if (!idx || !idx.azas) return top;
+    TK.cidx[SAN] = Object.assign({}, idx, { code: SAN });
+    const out = top ? Object.assign({}, top, { munis: Object.assign({}, top.munis) }) : { munis: {} }; // 保存した top は書きかえない
+    out.munis[idx.name || '地番参考図'] = { code: SAN, asof: idx.asof, b: idx.b };
+    return out;
+  }
 
   async function tkTop() {
     if (TK.top !== undefined) return TK.top;
-    TK.top = (async () => {
+    TK.top = (async () => tkSan(await tkTopPublic()))();
+    TK.top = await TK.top;
+    return TK.top;
+  }
+  async function tkTopPublic() {
+    return (async () => {
       try {
         const j = await fetchJson('index.json');
         if (idbOk()) IDB.set('tk:top', j).catch(() => {});
@@ -70,8 +105,6 @@
         return null;
       }
     })();
-    TK.top = await TK.top;
-    return TK.top;
   }
   async function tkCidx(code, asof) {
     if (!TK.cidx[code]) {
