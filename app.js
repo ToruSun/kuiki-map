@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.147';
+var APP_JS_VER = '2026.13.148';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2832,6 +2832,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.148', items: [
+    ['地', '2本の指で拡大・縮小している途中から地図を回すと、指をはなすまで区域の線や土地の区切りがずれて見えたのを直しました。']
+  ] },
   { v: '2026.13.147', items: [
     ['地', '地図を回しているときに、2本の指で拡大・縮小すると、区域の線や土地の区切りがずれて見えたのを直しました。']
   ] },
@@ -3526,7 +3529,12 @@ function rotCover() {
   map.eachLayer(l => {
     if (!l._map) return;
     if (l instanceof L.GridLayer) l._update();
-    else if (l instanceof L.Renderer) l._update();
+    else if (l instanceof L.Renderer) {
+      // ピンチで拡大・縮小している途中に回し始めたとき：線の位置は「拡大を始める前」の計算のままなので、
+      // いまの拡大に合わせて計算しなおしてから描く（しないと、指をはなすまで線がずれて見えた。2026-11-16）
+      if (l._zoom !== map.getZoom() && !map._animatingZoom) for (const id in l._layers) l._layers[id]._project();
+      l._update();
+    }
   });
 }
 /* なめらかに向きを変える（北のボタン・北の近くで指をはなしたとき） */
