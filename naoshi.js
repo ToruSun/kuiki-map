@@ -1,5 +1,5 @@
 /* =========================================================
-   naoshi.js  まちがえた記録の直し方・二世帯住宅（2026-10-15）
+   naoshi.js  まちがえた記録の直し方・二世帯住宅
 
    1. まちがえた記録の直し方
    ・本人：自分の記録を、その日のうち（区域を返す前）に直せる
@@ -77,7 +77,7 @@
   function groupHolds(v) {
     if (typeof canGroupTerr !== 'function' || !canGroupTerr()) return false;
     const t = terrOfVisit(v);
-    if (t && t.group && (t.holder === me().id || (typeof isLead === 'function' && isLead(t)))) return true; // 今日の司会も（2026-10-24）
+    if (t && t.group && (t.holder === me().id || (typeof isLead === 'function' && isLead(t)))) return true; // 今日の司会も
     const k = K(v.houseId, v.unit);
     return activeCards().some(c => c.group && c.by === me().id && Array.isArray(c.keys) && c.keys.includes(k));
   }
@@ -196,7 +196,7 @@
   const _cardHtml = window.cardHtml;
   window.cardHtml = function (t, own) {
     const html = _cardHtml.apply(this, arguments);
-    const lead = !own && t && typeof isLead === 'function' && isLead(t); // 今日の司会（2026-10-24）
+    const lead = !own && t && typeof isLead === 'function' && isLead(t); // 今日の司会
     if (!(own || lead) || !t || !t.group || typeof canGroupTerr !== 'function' || !canGroupTerr()) return html;
     const i = html.lastIndexOf('</article>');
     if (i < 0) return html;
@@ -224,7 +224,7 @@
       if (v) openFixVisit(v, back);
     });
   }
-  // アパートの「続けて入力」画面（openAptSeq・app.js）からも使えるように外へ出す（不具合C：2026-11-04）
+  // アパートの「続けて入力」画面（openAptSeq・app.js）からも使えるように外へ出す（不具合C）
   window.fixLineHtml = fixLineHtml;
   window.bindFixLine = bindFixLine;
 
@@ -240,7 +240,7 @@
     const h = houseById(curTgt.hid); if (!h) return;
     const title = S.querySelector('#sheetTitle');
     // 二世帯住宅にする（くわしい表示・一戸建て）：めったに使わない操作なので、家の画面ではなく
-    // 「この家を編集」の画面の下（場所を直す・削除と同じ所）に置く（改善案A9・2026-10-25）
+    // 「この家を編集」の画面の下（場所を直す・削除と同じ所）に置く（改善案A9）
     if (title && title.textContent === 'この家を編集') {
       const sep = S.querySelector('.aw-sep'), asHouse = S.querySelector('[data-type="house"][aria-pressed="true"]');
       if (sep && asHouse && !curTgt.unit && h.type === 'house' && !isSimple() && !S.querySelector('#fDuplex') && (isAdmin() || (!hasSkip(h) && !hasLang(h)))) { // 訪問しないの家は区域係だけ（監査 HS-A8）

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="app-version" content="2026.13.150"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
+<meta name="app-version" content="2026.13.151"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp https://tile.openstreetmap.org; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cyberjapandata.gsi.go.jp https://msearch.gsi.go.jp; media-src 'self'; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><!-- 読み込み先の制限（改善案C1）：スクリプトは自分のサイトのファイルだけ。宛先は自分のサイト・GAS・国土地理院・Googleフォントだけ（地図の画像は OpenStreetMap も）。版の確かめが最初の1,024バイトを読むので、app-version より下に置く -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>区域マップ</title>
@@ -288,7 +288,7 @@ button.tile:focus-visible{outline:3px solid var(--brand-ink);outline-offset:2px}
 .actions select{min-height:48px;border-radius:10px;border:2px solid var(--ink);padding:0 8px;background:#fff;max-width:60vw}
 .notice .actions{margin-top:8px}
 .btn.block.wideadd{margin:0 0 14px;min-height:60px;border-style:dashed;border-color:var(--terr);color:var(--terr);background:#fff}
-/* 集まりで使う区域：「区域をもらう」と「司会だけする」を左右に（2026-10-24） */
+/* 集まりで使う区域：「区域をもらう」と「司会だけする」を左右に */
 .addpair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
 .btn.wideadd.twoline{min-height:64px;border-style:dashed;border-color:var(--terr);color:var(--terr);background:#fff;width:100%;margin:0}
 .btn.block.wideadd.twoline{margin:0 0 14px}
@@ -376,7 +376,7 @@ button.tile:focus-visible{outline:3px solid var(--brand-ink);outline-offset:2px}
 .retlbl{margin:12px 0 4px;font-weight:700;font-size:15px}
 details.retadm{margin-top:14px;border-top:1px solid var(--line,#ddd);padding-top:8px}
 details.retadm>summary{min-height:44px;display:flex;align-items:center;font-weight:700;cursor:pointer;color:var(--ink2)}
-/* 係が目安未満で完了にするときの確かめ方（H1・2026-10-29） */
+/* 係が目安未満で完了にするときの確かめ方（H1） */
 fieldset.lowpick{border:2px solid var(--line,#C8D2CD);border-radius:12px;padding:6px 10px 8px;margin:8px 0;min-width:0}
 fieldset.lowpick legend{font-weight:700;padding:0 4px;white-space:normal}
 fieldset.lowpick label{display:flex;gap:10px;align-items:flex-start;min-height:44px;padding:8px 2px;cursor:pointer}
@@ -1779,7 +1779,7 @@ body.renshu #btnUpd{display:none!important}
         </div>
         <div class="apane" data-apane="terr" hidden>
         <h2 class="sec" data-hqk="terrList">区域の一覧</h2>
-        <!-- 一覧の上はボタンだけにして、一覧まですぐ届くようにする（2026-10-21）。
+        <!-- 一覧の上はボタンだけにして、一覧まですぐ届くようにする。
              「区域の線・取り込み」は下から出る画面（torikomi.js）、「区域の決まり」は設定タブの「区域の決まり」を開く。
              並びは「区域の線・取り込み」（1行）→ S-13・S-12（KS-7）。「区域の決まり」は設定タブ（⚙）から -->
         <div class="tbar" id="adTerrTools">
@@ -1830,7 +1830,7 @@ body.renshu #btnUpd{display:none!important}
         <details class="setsec" id="setMaint"><summary>保守</summary>
         <div id="adDataSet"></div>
         <div id="adDummy"></div>
-        <div id="adRelClean"></div><!-- 残った再訪問の印の掃除（あるときだけ出る・2026-11-12） -->
+        <div id="adRelClean"></div><!-- 残った再訪問の印の掃除（あるときだけ出る） -->
         <div class="setrow"><span>このスマホでの動作の速さ<br><small class="hint">今のデータのまま、よく使う処理の時間を測ります（データは変わりません）。数秒かかります</small></span>
           <button type="button" class="btn small" id="adPerf">速さを測る</button>
           <button type="button" class="btn small" id="adLoadLog">読み込みの記録</button></div>
@@ -1873,12 +1873,12 @@ body.renshu #btnUpd{display:none!important}
 <div id="joinScreen" hidden></div>
 <div id="blocker" hidden><div class="blockbox" role="alert"><h2 id="blockTitle"></h2><p id="blockMsg"></p><div class="ldprog light" id="blockProg" hidden></div><p class="muted" id="blockDetail" hidden></p><button type="button" class="btn primary block" id="blockRetry" hidden>もう一度読み込む</button></div></div>
 
-<script src="app.js"></script><script src="chizu-okuru.js"></script><script src="heya-wake.js"></script><!-- 区域カードの「印刷・送る」（2026-11-08） -->
+<script src="app.js"></script><script src="chizu-okuru.js"></script><script src="heya-wake.js"></script><!-- 区域カードの「印刷・送る」 -->
 <script src="tsuzuki.js"></script>  
 <script src="schedule.js"></script>
 <script src="kantan.js"></script>
 <script src="kangaeru.js"></script>
-<script src="chizu.js"></script><script src="tochi-kugiri.js"></script><!-- 土地の区切り（登記所備付地図の筆の線）：地図とS-12に出す（2026-11-13） -->
+<script src="chizu.js"></script><script src="tochi-kugiri.js"></script><!-- 土地の区切り（登記所備付地図の筆の線）：地図とS-12に出す -->
 <script src="apt-import.js"></script>
 <script src="apt-wizard.js"></script>
 <script src="apt-heya.js"></script>
@@ -1888,13 +1888,13 @@ body.renshu #btnUpd{display:none!important}
 <script src="help.js"></script><!-- 区域係の設定の「？」の説明（文はこのファイルだけで直せます） -->
 <script src="douga.js"></script>
 <script src="kyoukai.js"></script><!-- 区域の線を直す（区域係だけ）：区域をえらんで、形を直す・となりに合わせる・分ける・1つにする・すき間と重なり --><!-- 使い方の動画（動画の一覧と文はこのファイルだけで直せます） -->
-<script src="torikomi.js"></script><!-- 区域係の「区域の線・取り込み」：線を引く・直す・消す、えらんだものだけを取り込む（2026-10-21） -->
-<script src="tokubetsu.js"></script><!-- 特別区域を決めた件数ずつのカードに分ける・ふつうの区域カードから外す切りかえ（2026-10-21） -->
-<script src="nozoku.js"></script><!-- 受け取る前に、地図で場所を見る（2026-10-21） -->
-<script src="houkoku.js"></script><script src="iken.js"></script><!-- こまったこと・提案（2026-11-05） --><!-- 奉仕報告を会衆の報告システム（S21）に送る：奉仕時間を使う人の月末の報告・係のつなぎ方（2026-10-27） -->
-<script src="meibo.js"></script><!-- 名簿（グループ表のPDF）から、人とグループをまとめて直す（区域係だけ・2026-10-24） -->
-<script src="guruchu.js"></script><!-- グループの中心：区域係が地図に置き、グループ奉仕の区域の近さに使う（2026-10-23） -->
-<script src="joukyou-graph.js"></script><!-- 状況の「区域カードと留守宅カード」のグラフ（schedule.js のあと・kimari.js の前に読む。2026-10-31） -->
-<script src="kimari.js"></script><!-- 区域係の設定タブ「区域の決まり」の整理。状況の見出しの［⚙ 決まり］から設定へ飛ぶ（2026-10-25／2026-11-09 見直し・いちばん最後に読む） -->
+<script src="torikomi.js"></script><!-- 区域係の「区域の線・取り込み」：線を引く・直す・消す、えらんだものだけを取り込む -->
+<script src="tokubetsu.js"></script><!-- 特別区域を決めた件数ずつのカードに分ける・ふつうの区域カードから外す切りかえ -->
+<script src="nozoku.js"></script><!-- 受け取る前に、地図で場所を見る -->
+<script src="houkoku.js"></script><script src="iken.js"></script><!-- こまったこと・提案 --><!-- 奉仕報告を会衆の報告システム（S21）に送る：奉仕時間を使う人の月末の報告・係のつなぎ方 -->
+<script src="meibo.js"></script><!-- 名簿（グループ表のPDF）から、人とグループをまとめて直す（区域係だけ） -->
+<script src="guruchu.js"></script><!-- グループの中心：区域係が地図に置き、グループ奉仕の区域の近さに使う -->
+<script src="joukyou-graph.js"></script><!-- 状況の「区域カードと留守宅カード」のグラフ（schedule.js のあと・kimari.js の前に読む） -->
+<script src="kimari.js"></script><!-- 区域係の設定タブ「区域の決まり」の整理。状況の見出しの［⚙ 決まり］から設定へ飛ぶ（いちばん最後に読む） -->
 </body>
 </html>

@@ -7,6 +7,8 @@
      1. 市町村のホームページから zip をダウンロードし、パソコンで展開する
      2. 中の土地の .shp と、同じ名前の .dbf の2つだけを、ドライブの「区域マップ_地番参考図」に入れる
         （zip のままは読めないことが多い：Apps Script が開ける大きさをこえる）
+        会衆がいくつかの市町村にまたがるときは、「区域マップ_地番参考図」の中に市町村の名前のフォルダ（例「〇〇市」）を作り、
+        市町村ごとにそこへ入れる（フォルダの名前が、出典に出る市町村の名前になる）
      3. メニュー「地番参考図から土地の区切りを作る」→ 時点（年-月）を入れる → 5分ごとに自動で続く
    しくみ：
      ・SHP はドライブの API から 8MB ずつ（Range）読み、筆（多角形）を1つずつ取り出す。DBF からは字の名前だけを読む
@@ -227,13 +229,14 @@ function sbZone_(hdr, area) {
   }
   return best;
 }
-/** config.js の muni（市の名前）。出典に使う */
+/** config.js の muni（市の名前）。フォルダに分けていないときの、出典の市町村 */
 function sbMuni_(configText) {
   const m = String(configText).match(/^\s*muni:\s*'([^']*)'/m);
   return m ? m[1] : '';
 }
-function sbSrc_(city) {
-  return '「固定資産（土地）地番参考図」' + (city ? '（' + city + '）' : '（市町村）') + 'を加工して作成（線だけ。地番は入れていない）';
+function sbSrc_(cities) {
+  const c = (Array.isArray(cities) ? cities : [cities]).filter(Boolean);
+  return '「固定資産（土地）地番参考図」（' + (c.length ? c.join('・') : '市町村') + '）を加工して作成（線だけ。地番は入れていない）';
 }
 /** 字の列が無いとき：およそ1km の四角の名前 */
 function sbGridName_(e) {
@@ -249,7 +252,7 @@ function sbBoxes_(area, zone) {
   return { ll: ll, xy: xy }; // xy：[北の最小, 東の最小, 北の最大, 東の最大]
 }
 /** 最後に：字ごとにまとめて、一覧（index）とファイルを作る */
-function sbFinish_(groups, asof, city) {
+function sbFinish_(groups, asof, cities) {
   const names = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
   const azas = {}, files = {}, allb = [];
   names.forEach((a, k) => {
@@ -260,7 +263,7 @@ function sbFinish_(groups, asof, city) {
     azas[a] = { f: f, n: ps.length, b: [r6(s), r6(w), r6(n), r6(e)] }; files[f] = { p: ps }; allb.push(azas[a].b);
   });
   return {
-    index: { v: 1, asof: asof, name: '地番参考図', src: sbSrc_(city),
+    index: { v: 1, asof: asof, name: '地番参考図', cities: cities, src: sbSrc_(cities),
       b: [Math.min.apply(null, allb.map(b => b[0])), Math.min.apply(null, allb.map(b => b[1])), Math.max.apply(null, allb.map(b => b[2])), Math.max.apply(null, allb.map(b => b[3]))],
       azas: azas },
     files: files
@@ -301,38 +304,49 @@ function sanBuildMenu() {
     if (ui.alert('作っている途中です', sbSummary_(st) + '\n\n止めて、はじめから作り直しますか？', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
   }
   const folder = sbFolder_();
-  const shp = sbPick_(folder, 'shp'), dbf = shp ? sbPick_(folder, 'dbf', shp.getName().replace(/\.[^.]*$/, '')) : null;
-  if (!shp || !dbf) {
+  // 使うファイル：フォルダの中（市町村は config.js の muni）と、市町村の名前の小さなフォルダの中
+  const found = [];
+  const pair = (f, city) => {
+    const shp = sbPick_(f, 'shp'), dbf = shp ? sbPick_(f, 'dbf', shp.getName().replace(/\.[^.]*$/, '')) : null;
+    if (shp && dbf) found.push({ shp: shp, dbf: dbf, city: city });
+  };
+  pair(folder, '');
+  const subs = folder.getFolders();
+  while (subs.hasNext()) { const sf = subs.next(); if (!sf.isTrashed()) pair(sf, sf.getName().trim()); }
+  if (!found.length) {
     ui.alert('ファイルが足りません',
       'ドライブのフォルダ「' + folder.getName() + '」に、次の2つを入れてください。\n\n' +
       '・土地の区切りの .shp（ファイル名に「土地」が入っているものを先に選びます）\n・同じ名前の .dbf\n\n' +
+      '会衆がいくつかの市町村にまたがるときは、この中に市町村の名前のフォルダ（例「〇〇市」）を作り、市町村ごとに入れます。\n\n' +
       '市町村のホームページの zip をパソコンで展開すると、中に入っています（ほかのファイルは要りません）。\n' +
       'zip のままは読めません（大きすぎるため）。', ui.ButtonSet.OK);
     return;
   }
-  const y = new Date(shp.getLastUpdated()).getFullYear();
+  const y = new Date(found[0].shp.getLastUpdated()).getFullYear();
   const ask = ui.prompt('データの時点',
-    '使うファイル：\n・' + shp.getName() + '（' + Math.round(shp.getSize() / 1048576) + 'MB）\n・' + dbf.getName() + '\n\n' +
+    '使うファイル：\n' + found.map(x => '・' + (x.city || '（会衆の市町村）') + '：' + x.shp.getName() + '（' + Math.round(x.shp.getSize() / 1048576) + 'MB）と ' + x.dbf.getName()).join('\n') + '\n\n' +
     'データの時点を「年-月」の形で入れてください（例 ' + y + '-01）。市町村のホームページに書いてあります。', ui.ButtonSet.OK_CANCEL);
   if (ask.getSelectedButton() !== ui.Button.OK) return;
   const asof = (ask.getResponseText().trim() || (y + '-01'));
-  if (!/^\d{4}-\d{2}$/.test(asof)) { ui.alert('「2027-01」のような形で入れてください。'); return; }
+  if (!/^\d{4}-\d{2}$/.test(asof)) { ui.alert('「' + y + '-01」のような形（年-月）で入れてください。'); return; }
   // 範囲と字を先に用意（DBF はここで読む。8MB くらいなので1回で読める）
   let work;
   try {
     const cfg = sbFetchText_(sbPagesBase_() + 'config.js');
-    const area = sbArea_(cfg);
-    const zone = sbZone_(sbRange_(shp.getId(), 0, 99), area);
-    if (!zone) throw new Error('この SHP は、会衆の範囲（config.js の area）と重なりません。ちがう市町村のファイルではありませんか？');
-    const dbfU8 = new Uint8Array(dbf.getBlob().getBytes());
-    const az = sbDbfAza_(dbfU8, sbSjis_);
-    work = { asof: asof, zone: zone, area: area, city: sbMuni_(cfg), names: az ? az.names : null, idx: az ? az.idx : null, groups: {} };
+    const area = sbArea_(cfg), def = sbMuni_(cfg);
+    const jobs = found.map(x => {
+      const zone = sbZone_(sbRange_(x.shp.getId(), 0, 99), area);
+      if (!zone) throw new Error((x.city || x.shp.getName()) + '：この SHP は、会衆の範囲（config.js の area）と重なりません。ちがう市町村のファイルではありませんか？');
+      const az = sbDbfAza_(new Uint8Array(x.dbf.getBlob().getBytes()), sbSjis_);
+      return { shp: x.shp.getId(), size: x.shp.getSize(), city: x.city || def, zone: zone, names: az ? az.names : null, idx: az ? az.idx : null };
+    });
+    work = { asof: asof, area: area, jobs: jobs, groups: {} };
   } catch (e) {
     ui.alert('始められませんでした', String(e && e.message ? e.message : e).slice(0, 300), ui.ButtonSet.OK);
     return;
   }
   sbSaveWork_(folder, work);
-  props_().setProperty(SB_STATE, JSON.stringify({ shp: shp.getId(), size: shp.getSize(), off: 100, asof: asof, city: work.city, done: false,
+  props_().setProperty(SB_STATE, JSON.stringify({ jobs: work.jobs.map(x => ({ shp: x.shp, size: x.size, city: x.city })), j: 0, off: 100, asof: asof, done: false,
     stat: { got: 0, moj: 0, out: 0 }, note: '', at: new Date().toISOString() }));
   sbEnsureTrigger_();
   ui.alert('作り始めました', '1回に4分半ずつ進み、5分ごとに自動で続きます（全部で10〜20分くらい）。\n' +
@@ -367,23 +381,27 @@ function sanBuildRun() {
     if (!work) { st.done = true; st.note = '途中のファイルがなくなりました。もう一度メニューから作ってください。'; props_().setProperty(SB_STATE, JSON.stringify(st)); sbDropTrigger_(); return; }
     const base = sbPagesBase_(), cache = {};
     const getJson = p => cache[p] || (cache[p] = JSON.parse(sbFetchText_(base + p)));
-    const boxes = sbBoxes_(work.area, work.zone);
-    const ctx = { zone: work.zone, xy: boxes.xy, area: work.area, inMoj: sbMojIndex_(getJson, boxes.ll), stat: st.stat };
+    const inMoj = sbMojIndex_(getJson, sbBoxes_(work.area, work.jobs[0].zone).ll);
+    const many = work.jobs.length > 1;
     let first = true; // 1回に、少なくとも1かたまりは進める
-    while (st.off < st.size && (first || Date.now() - t0 < SB_RUN_MS)) {
+    while (st.j < work.jobs.length && (first || Date.now() - t0 < SB_RUN_MS)) {
       first = false;
-      const end = Math.min(st.size, st.off + SB_CHUNK) - 1;
-      const u8 = sbRange_(st.shp, st.off, end);
+      const job = work.jobs[st.j];
+      const ctx = { zone: job.zone, xy: sbBoxes_(work.area, job.zone).xy, area: work.area, inMoj: inMoj, stat: st.stat };
+      const end = Math.min(job.size, st.off + SB_CHUNK) - 1;
+      const u8 = sbRange_(job.shp, st.off, end);
       const used = sbShpChunk_(u8, (recNo, rings) => {
         const e = sbParcel_(ctx, rings); if (!e) return;
-        const a = work.names ? (work.names[work.idx[recNo - 1]] || '（字なし）') : sbGridName_(e);
+        let a = job.names ? (job.names[job.idx[recNo - 1]] || '（字なし）') : sbGridName_(e);
+        if (many) a = job.city + ' ' + a; // 市町村がちがえば、同じ字の名前でも別にする
         (work.groups[a] = work.groups[a] || []).push(e); st.stat.got++;
       });
       if (!used) throw new Error('SHP の読み取りが進みません（ファイルがこわれている？）');
       st.off += used;
+      if (st.off >= job.size) { st.j++; st.off = 100; } // 次の市町村へ
     }
-    if (st.off >= st.size) {
-      const out = sbFinish_(work.groups, work.asof, work.city);
+    if (st.j >= work.jobs.length) {
+      const out = sbFinish_(work.groups, work.asof, work.jobs.map(x => x.city).filter((c, k, a) => c && a.indexOf(c) === k));
       const blob = Utilities.gzip(Utilities.newBlob(JSON.stringify(out), 'application/json'), SAN_FILE);
       const old = DriveApp.getFilesByName(SAN_FILE); while (old.hasNext()) old.next().setTrashed(true);
       folder.createFile(blob.setName(SAN_FILE));
@@ -406,10 +424,14 @@ function sanBuildRun() {
   } finally { lock.releaseLock(); }
 }
 function sbSummary_(st) {
-  return '進み具合：' + Math.min(100, Math.round((st.off || 0) / Math.max(1, st.size || 1) * 100)) + '%' + (st.done ? '（終わりました）' : '') +
+  const jobs = st.jobs || [], total = jobs.reduce((a, x) => a + (x.size || 0), 0);
+  const done = jobs.slice(0, st.j || 0).reduce((a, x) => a + (x.size || 0), 0) + (st.j < jobs.length ? (st.off || 0) : 0);
+  const cities = jobs.map(x => x.city).filter((c, k, a) => c && a.indexOf(c) === k);
+  return '進み具合：' + (st.done ? 100 : Math.min(99, Math.round(done / Math.max(1, total) * 100))) + '%' + (st.done ? '（終わりました）' : '') +
+    (jobs.length > 1 && !st.done ? '（' + Math.min(jobs.length, (st.j || 0) + 1) + '／' + jobs.length + '：' + ((jobs[st.j] || {}).city || '') + '）' : '') +
     '\n入れた筆：' + ((st.stat && st.stat.got) || 0) + '（法務省の線がある所：' + ((st.stat && st.stat.moj) || 0) + '・範囲の外：' + ((st.stat && st.stat.out) || 0) + '）' +
     (st.done && st.azas ? '\n字の数：' + st.azas : '') + (st.note ? '\n\nお知らせ：' + st.note : '') +
-    '\n\n出典：' + sbSrc_(st.city);
+    '\n\n出典：' + sbSrc_(cities);
 }
 /** メニュー：進み具合 */
 function sanBuildStatus() {

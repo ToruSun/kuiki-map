@@ -20,8 +20,8 @@
  * スプレッドシートのメニューと案内は、日本語とスペイン語を切りかえられます（メニュー「言語 / Idioma」）。
  */
 
-const DATA_COLS = ['territories', 'houses', 'visits', 'requests', 'awayCards', 'returns', 'schedules', 'dnc', 'follows', 'released', 's13', 'agedata', 'caution', 'holds', 'langs']; // langs＝外国語の家（2026-11-08）。holds＝おすすめの家の押さえ（今行く・予定に入れる。2026-10-26）
-const MAP_COLS = ['dnc', 'follows', 'released', 'caution', 'langs']; // caution＝注意（！）の印（2026-10-18）。langs＝外国語の家の言語（2026-11-08）
+const DATA_COLS = ['territories', 'houses', 'visits', 'requests', 'awayCards', 'returns', 'schedules', 'dnc', 'follows', 'released', 's13', 'agedata', 'caution', 'holds', 'langs']; // langs＝外国語の家。holds＝おすすめの家の押さえ（今行く・予定に入れる）
+const MAP_COLS = ['dnc', 'follows', 'released', 'caution', 'langs']; // caution＝注意（！）の印。langs＝外国語の家の言語
 const PARTIAL_COLS = ['houses', 'visits']; // 件数が多いので、保存のときにシート全体を読まない
 const USERS = 'users';
 const JOURNAL = 'journal';
@@ -62,7 +62,7 @@ const DEFAULT_SETTINGS = {
   awayNoRepeat: 1,    // 同じ家に、同じ時間帯を重ねない（1＝重ねない）
   awayScope: 0,       // 試した時間帯の数え方（0＝今回の巡回だけ、1＝前回の巡回も含める）
   nightOn: 0,         // 夜（19時〜）も、留守宅を訪ねる時間帯として提案するか
-  offDays: [],        // 訪問を控える日（'2026-11-03' の形。おすすめと留守宅カードの提案を止める）
+  offDays: [],        // 訪問を控える日（'YYYY-MM-DD' の形。おすすめと留守宅カードの提案を止める）
   contDays: 60,       // 途中で返された区域を、次の人が「続きから」回れる期間（日。0＝使わない）
   extOn: 1,           // 返却後の留守宅カード（1＝正式に返却された区域の、まだ会えていない家を、だれでも受け取れる）
   extRest: 7,         // 返却後のカードを寝かせる日数（正式返却から・前のカードが終わってから、この日数は出さない。7日未満にはできない）
@@ -70,15 +70,15 @@ const DEFAULT_SETTINGS = {
   extDays: 60,        // 返却後のカードを出す期間（正式に返却されてからの日数）
   extStopBefore: 14,  // 自動受け取りの区域では、自由に受け取れる日のこの日数前で止める
   awayDayOnly: 3,     // 家がこの軒数以下の留守宅カードは「その日限り」（受け取った日の終わりに自動で終わる。0＝使わない）
-  awayAgainSlot: 1,   // 留守宅を「訪ね直した」と数える条件（0＝別の日、1＝別の日で、別の時間帯。会えた・拒否は時間帯にかかわらず数える）（2026-10-26）
+  awayAgainSlot: 1,   // 留守宅を「訪ね直した」と数える条件（0＝別の日、1＝別の日で、別の時間帯。会えた・拒否は時間帯にかかわらず数える）
   recoLock: 0,        // オートロックの建物を、おすすめ（完了のあとの留守宅）に出すか（1＝出す）
   osaeMax: 2,         // おすすめの「予定に入れる」で、1人が同時に押さえられる予定の数
   osaeDays: 7,        // おすすめの「予定に入れる」で、何日先まで予定に入れられるか（その日の終わりまで家を押さえる）
   recoLeft: 1,        // 完了した区域で、巡回の中で一度も訪ねていない家（回り残し）も、おすすめに留守宅より先に出す（1＝出す）
-  ikenOn: 0,         // ホームの「こまったこと・提案を送る」（送った人は係の画面で分かる。iken.gs）を出す（1＝出す）（2026-11-05）
+  ikenOn: 0,         // ホームの「こまったこと・提案を送る」（送った人は係の画面で分かる。iken.gs）を出す（1＝出す）
   ikenWho: 1,        // 送れる人：0＝全員、1＝グループ監督・司会者・区域係だけ（フェーズ1）
-  s21On: 0,          // 奉仕報告を S21（会衆の報告システム）に送る（1＝使う。URL・連携キーは s21.gs・スクリプトのプロパティ）（2026-10-27）
-  langSkip: 0,        // 外国語の家で、区域カードでは訪問しない言語（LANGS の順のビット。0＝どの言語も訪問する）（2026-11-08）
+  s21On: 0,          // 奉仕報告を S21（会衆の報告システム）に送る（1＝使う。URL・連携キーは s21.gs・スクリプトのプロパティ）
+  langSkip: 0,        // 外国語の家で、区域カードでは訪問しない言語（LANGS の順のビット。0＝どの言語も訪問する）
   groupPts: {},       // グループの中心（係が地図に置く「このグループの人はだいたいこのあたり」。{ グループ名: [[緯度, 経度], …] }、1グループ2点まで。人の住所や名前は入れない）
 };
 const GROUP_PTS_MAX = 2;      // 1グループに置ける中心の数
@@ -95,11 +95,11 @@ const PENDING_DAYS = 7;
 const PENDING_MAX = 30;
 const AZA_FIELDS = ['aza', 'azaSig', 'azaAt', 'azaN', 'azaErr'];
 const RECO_SRC_RE = /^reco(:[a-z]{1,12})?$/;
-// 訪問記録の src に付けるカードの印（2026-10-31）：card＝留守宅カードで回った／area＝区域カードで回った（状況のグラフ用）。印はこの2つだけ（カードの番号は付けない）。
+// 訪問記録の src に付けるカードの印：card＝留守宅カードで回った／area＝区域カードで回った（状況のグラフ用）。印はこの2つだけ（カードの番号は付けない）。
 // おすすめから開いた記録は、おすすめの印を先頭に残し、半角のスペースを1つ置いて、そのあとにカードの印を付ける（例：reco:after card）。印のない記録・おすすめだけの記録は今までどおり
 const CARD_SRC_RE = /^(card|area)$/;
 const RECO_CARD_SRC_RE = /^reco(:[a-z]{1,12})? (card|area)$/;
-// id と鍵の形（監査①S2・2026-10-24）。id は画面の属性や検索にそのまま入るので、係以外の人が新しく作るものは、
+// id と鍵の形（監査①S2）。id は画面の属性や検索にそのまま入るので、係以外の人が新しく作るものは、
 // 英数字・_・.・- だけにする（アプリが作る id はすべてこの形。今あるデータと係の操作は変えない）
 const ID_RE = /^[\w.\-]{1,40}$/;
 // 家につながった印（拒否・注意・受け持ち・引き継ぎ）の鍵「家id|部屋」。部屋の名前に、画面で問題になる文字（< > " ' & |）と制御文字を使わない
@@ -166,7 +166,7 @@ function doPost(e) {
   try {
     if (req.action === 'home_code') {
       const code = newToken_().slice(0, 32);
-      // carry：Safari に保存している本人の記録（奉仕時間・予定など）。ホーム画面のアプリに持っていくため、15分だけ預かる（M13・2026-10-30）
+      // carry：Safari に保存している本人の記録（奉仕時間・予定など）。ホーム画面のアプリに持っていくため、15分だけ預かる（M13）
       // キャッシュの1件の上限（100KB）をこえて預けられないときは、記録を持っていかずにコードだけ作る（ホーム画面への追加は止めない）
       // 預かるのは、画面で暗号にした形（v1.…）だけ。鍵はリンクにだけ入り、サーバーには来ないので、サーバーは中身を読めない（組C 監査 H3）
       const carry = typeof req.carry === 'string' && req.carry.length <= 30000 && /^v1\.[\w-]+\.[\w-]+$/.test(req.carry) ? req.carry : '';
@@ -498,8 +498,8 @@ function deleteRowsFast_(sh, rows) {
    使う人
    ========================================================= */
 const USER_HEAD = ['id', '名前 / Nombre', '役割 / Rol', '招待コード / Código', '有効 / Activo', '設定', '登録日 / Alta', 'グループ / Grupo', '監督 / Superint.', '司会者 / Conductor', 'よみ / Lectura', '家と拒否の管理 / Gestión'];
-const YOMI_COL = 11; // よみ（ひらがな）。区域係が入れる。名前の一覧をあいうえお順にし、ひらがなでも探せるようにする（2026-11-05）
-const MGR_COL = 12; // 家と拒否の管理（mgr）。区域係以外に、家の削除・拒否の削除・家の編集を任せる（2026-10-31 指示書・よみの列の右）
+const YOMI_COL = 11; // よみ（ひらがな）。区域係が入れる。名前の一覧をあいうえお順にし、ひらがなでも探せるようにする
+const MGR_COL = 12; // 家と拒否の管理（mgr）。区域係以外に、家の削除・拒否の削除・家の編集を任せる（指示書・よみの列の右）
 
 function usersSheet_() {
   let sh = book_().getSheetByName(USERS);
@@ -868,7 +868,7 @@ function deviceLabel_(v) {
    GAS ではだれが送ったか（IPなど）が分からないので、受付の種類ごとに「会衆全体で1分あたり何回まで」と決める。
    ふつうの使い方では届かない数にしてある（承認待ちの画面は3秒ごとに確かめる：30台×20回＝600回/分）。
    数えるのは一時保存（CacheService）。ロックを使わないので、同時に来たときは少しずれるが、連打を止めるには十分。
-   join_scan（共通リンクの申し込み）は、説明会で十数人が一斉に QR を読んでも断らないよう30回（2026-10-24・点検③P7）。
+   join_scan（共通リンクの申し込み）は、説明会で十数人が一斉に QR を読んでも断らないよう30回（点検③P7）。
    申し込み中の端末の数は、別に PENDING_MAX（30台）で止めている */
 const RATE_PER_MIN = { join_scan: 30, join_hint: 30, join_status: 900, home_claim: 20 };
 function rateOk_(action) {
@@ -1055,8 +1055,8 @@ function getSettings_() {
 }
 
 /* このサーバーができること（画面が古いサーバーかどうかを見分ける。保存しない・変えられない）
-   capDncQ：訪問しない印（dnc の q。2026-11-05） */
-const SERVER_CAPS = { capDncQ: 1, capLang: 1 }; // capLang：外国語の家の言語（langs。2026-11-08）
+   capDncQ：訪問しない印（dnc の q） */
+const SERVER_CAPS = { capDncQ: 1, capLang: 1 }; // capLang：外国語の家の言語（langs）
 const SETTING_LIMITS = {
   keepMonths: [6, 36], cacheDays: [5, 60], skipDays: [0, 180], groupMax: [1, 10],
   awayRecentDays: [0, 30], awayCardMax: [0, 50], syncGroupSec: [5, 30], syncNormalSec: [10, 120],
@@ -1357,7 +1357,7 @@ function mask_(user, c, v, pv) {
 }
 
 /* =========================================================
-   外国語の家（2026-11-08）
+   外国語の家
    ・キーは「家id|部屋」、値は { l: 言語（LANGS のどれか）, at }
    ・言語は区域係だけが見る（手話は障害を示すことがあり、言語は国籍の推測につながるため）。
      係以外には { g: 1 }（外国語の家）と、係の設定で訪問しない言語なら x: 1 だけを配る
@@ -1459,7 +1459,7 @@ function cleanDnc_(v) {
   if (v.o) o.o = str_(v.o, 300); // マイマップのピンの元の文（名前／説明。部屋番号を確かめるため。区域係だけ）
   return Object.keys(o).length ? o : true;
 }
-/* 訪問しない（2026-11-05・HS-2）：区域係が付ける、理由を記録しない印。拒否と同じように訪問・数の対象から外す。
+/* 訪問しない（HS-2）：区域係が付ける、理由を記録しない印。拒否と同じように訪問・数の対象から外す。
    値は { q: 1, s: 'adm', at, lat, lng, t } だけ。理由になりうるメモ（m）・元の文（o）・住所（a）は持たない。
    家につながったキー（家id|部屋）だけ（場所だけの印には付けない：ruleDnc_） */
 function cleanDncQ_(v) {
@@ -1473,7 +1473,7 @@ function cleanDncQ_(v) {
   return o;
 }
 const isDncQ_ = function (v) { return !!(v && typeof v === 'object' && v.q && !v.p); };
-/** 区域係が家を消す前に（H8・2026-10-29）：その家の拒否を「場所だけの拒否」（pin:…）として先に残す。
+/** 区域係が家を消す前に（H8）：その家の拒否を「場所だけの拒否」（pin:…）として先に残す。
  *  ・住所のある拒否（取り込み・係が追加）も、住所のない拒否（伝道者が付けた true）も残す。もとのキーを dk に残す
  *  ・場所は、拒否にある位置、なければ家の位置。どちらもないときは、その家を消さない（拒否が消えないように）
  *  ・印の id は、もとのキーから決める（同じ送信をくり返しても、印が増えない）
@@ -1634,7 +1634,7 @@ function houseStopKey_(ctx, key) {
   const s = String(key || ''), i = s.indexOf('|');
   return i > 0 && !!ctx.houseStop[s.slice(0, i)];
 }
-/* 仮の家の「取り消す」（点検M-2・2026-10-29）
+/* 仮の家の「取り消す」（点検M-2）
    係以外は仮の印を新しく付けられない（D4）。ただし本人が、仮の家を消した・仮の印を外した（記録を付けた・家だと確かめた）
    すぐあとに「取り消す」を押したときは、もとの仮の家にもどせるように、だれが・どの家をの控えを15分だけ一時保存に残す。
    控えが消えていたら（一時保存は消えることがある）、今までどおり仮でない家になるだけ（記録は消えない） */
@@ -1664,7 +1664,7 @@ function provUndoCreate_(ctx, created) {
   if (g.imp) created.imp = true;
 }
 /* =========================================================
-   注意（！）の印（caution・2026-10-18）
+   注意（！）の印（caution）
    ・「犬がいる」「午前中は訪問を控える」など、拒否ではない注意の情報
    ・キーは拒否と同じ形：「家id|部屋」（家につながった注意）か「pin:…」（場所だけ。区域係だけが作れる）
    ・値 { n: 注意の文（80字まで）, s: 登録元（kml＝マイマップ・adm＝係・pub＝奉仕者）, at: 登録した日,
@@ -1911,7 +1911,7 @@ function applyChanges_(user, ch, opt) {
   if ((ch.territories || ch.agedata) && typeof azaCheck_ === 'function') azaCheck_(ctx);
   // おすすめの押さえ（古い画面からは来ない）。家より先に入れる（同じ送信で「今行く」と仮の家を消すが来たとき、消せるように）
   applySet_(ctx, 'holds', ch.holds, ruleHold_, function (c) { return ctx.admin || (c.data && c.data.by === me); }, reject);
-  // 家の削除の前に（H8・2026-10-29）
+  // 家の削除の前に（H8）
   //  ・係以外：記録・拒否・注意・受け持ち・引き継ぎのある家は消せない（記録のある家は区域係だけが消せる）。先に調べておく
   //  ・係：拒否を「場所だけの印」として先に残す。残せなかった家は消さない（拒否が消えないように）
   const hdel = ch.houses && Array.isArray(ch.houses.del) ? ch.houses.del.map(String) : [];
@@ -1932,7 +1932,7 @@ function applyChanges_(user, ch, opt) {
     if (!ctx.mgr && ctx.houseHasRec && ctx.houseHasRec[String(id)]) return false; // 記録・印のある家は、区域係だけが消せる（H8）
     if (ctx.mgrOnly && houseAdminMark_(ctx, id)) return false; // 訪問しない印のある家は、区域係だけが消せる（家を消して印を外す回り道をさせない・監査 M-2）
     if (c && c.data.prov && holdsTerr_(ctx, c.data.terrId)) return true;
-    if (c && c.data.prov && heldHouse_(ctx, id, c.data)) return true; // おすすめで押さえた仮の家（家かどうか確かめて、家でなければ消す。2026-10-26）
+    if (c && c.data.prov && heldHouse_(ctx, id, c.data)) return true; // おすすめで押さえた仮の家（家かどうか確かめて、家でなければ消す）
     return ctx.mgr || (c && c.data.createdBy === me);
   };
   const deletedHouses = applySet_(ctx, 'houses', ch.houses, ruleHouse_, function (c, id) {
@@ -1944,7 +1944,7 @@ function applyChanges_(user, ch, opt) {
   if (deletedHouses.length) cascadeHouses_(ctx, deletedHouses); // 拒否は上で場所だけの印にしてあるので、ここで家のキーごと消してよい
   provUndoNote_(ctx, deletedHouses);
   // 区域係が消そうとして、消さなかった家（拒否を場所だけの印にできなかった）は、同じ送信で届いた
-  // その家の記録・拒否・注意・受け持ち・引き継ぎの削除と、その家の拒否を移した印も断る（家だけ残って記録が消えないように。点検M-1・2026-10-29）
+  // その家の記録・拒否・注意・受け持ち・引き継ぎの削除と、その家の拒否を移した印も断る（家だけ残って記録が消えないように。点検M-1）
   // 係以外は、自分の記録など、もともと消してよいものしか消せないので、今までどおりそれぞれの決まりで決める
   // （電波のない所で「記録の取り消し」と「家を消す」が1つの送信になったときに、取り消しまで断らないように。点検②M2）
   if (hdel.length && mgr) {
@@ -2026,7 +2026,7 @@ function applyChanges_(user, ch, opt) {
     if (!ctx2.admin && !myFol[String(ctx2.curId)]) return null;
     return { at: str_(v && v.at, 40) || nowIso_(), reason: reason };
   }, function (c, id) { return !houseStopKey_(ctx, id); }, reject);
-  // 外国語の家（2026-11-08）：付ける・外すのは、家の編集ができる人ならだれでも（消さなかった家の印はのぞく）
+  // 外国語の家：付ける・外すのは、家の編集ができる人ならだれでも（消さなかった家の印はのぞく）
   applySet_(ctx, 'langs', ch.langs, ruleLang_, function (c, id) {
     if (houseStopKey_(ctx, id)) return false;
     if (ctx.admin) langUndoDrop_(id); else langUndoPut_(ctx, id, c.data); // 係以外が外したとき：もとの言語を控える（取り消しでもどす）
@@ -2040,7 +2040,7 @@ function applyChanges_(user, ch, opt) {
     return schedCan_(ctx, c.data.group, c.data.by);
   }, reject);
   applySet_(ctx, 's13', ch.s13, ruleS13_, function () { return ctx.admin; }, reject);
-  // 同じ送信で区域が断られた（古い版など）ときは、その区域の返却の記録も入れない（記録だけが「完了」になり S-13 の日付がずれた・L11・2026-10-30）。
+  // 同じ送信で区域が断られた（古い版など）ときは、その区域の返却の記録も入れない（記録だけが「完了」になり S-13 の日付がずれた・L11）。
   // ただし、区域がすでにその返却のとおりになっているとき（返事が届かずに送り直した・区域は前の送信で入っている）は、今までどおり入れる。
   // 入れないのは、区域が「まだその人が持っている」か「留守宅カードのまま」で、返却の記録とくいちがうときだけ
   if (ch.returns && Array.isArray(ch.returns.up) && ch.returns.up.length) {
@@ -2052,7 +2052,7 @@ function applyChanges_(user, ch, opt) {
       // 入れるのは、区域がもうその返却のとおりになっているとき（返事が届かずに送り直した）だけ：
       // 返した時の受け取りの日（lastLentAt）が記録と同じで、今その受け取りのまま持たれておらず、留守宅カードの完了の記録なら区域ももう完了していて、
       // 完了の記録なら区域の完了日が記録の日時と同じ（10分以内）。
-      // 以前は「まだ同じ人が持っている／留守宅カードのまま」のときだけ止めていたので、担当者が別の人に変わっていたときに記録だけ入った（総合監査 L11・2026-10-31）
+      // 以前は「まだ同じ人が持っている／留守宅カードのまま」のときだけ止めていたので、担当者が別の人に変わっていたときに記録だけ入った（総合監査 L11）
       const MIN10 = 10 * 60000, lentSame = !!cur && String(cur.lastLentAt || '') === String(r.lentAt || '');
       const stillLent = !!(cur && cur.holder && String(cur.lentAt || '') === String(r.lentAt || ''));
       const stillPool = !!(cur && r.completed === true && cur.awayPoolAt && String(cur.poolRetId || '') === String(r.id));
@@ -2064,7 +2064,7 @@ function applyChanges_(user, ch, opt) {
     });
   }
   // 区域が断られた送信では、その区域の返却の記録を消すことも通さない（S-13 の「消す」は、区域の作り直しと記録の削除を1回で送る。
-  // 区域だけ断られると、完了日に合う記録のない区域が残り、係の端末の自動の確かめが巻き戻していた・総合監査 B-S13-1・2026-10-31）。
+  // 区域だけ断られると、完了日に合う記録のない区域が残り、係の端末の自動の確かめが巻き戻していた・総合監査 B-S13-1）。
   // 留守宅カードの段階の記録（区域の poolRetId）も消させない（画面は止めているが、サーバーにも守りを置く・B-S13-3）
   if (ch.returns && Array.isArray(ch.returns.del) && ch.returns.del.length) {
     const terrRej2 = {}, poolIds = {};
@@ -2078,7 +2078,7 @@ function applyChanges_(user, ch, opt) {
       return false;
     });
   }
-  // 返却の記録を消せるのは区域係だけ（A-1・H3・2026-10-29）。本人の「取り消す」で記録だけが消え、記録のない途中返却になっていた
+  // 返却の記録を消せるのは区域係だけ（A-1・H3）。本人の「取り消す」で記録だけが消え、記録のない途中返却になっていた
   applySet_(ctx, 'returns', ch.returns, ruleReturn_, function (c) { return ctx.admin; }, reject);
 
   const fix = [];
@@ -2116,7 +2116,7 @@ function holdsTerr_(ctx, tid) {
 }
 
 /* =========================================================
-   今日の司会（2026-10-24）
+   今日の司会
    集まりで使う区域（group あり）の担当者（監督・司会者）が司会できない日に、ほかの監督・司会者が
    「今日だけ司会」をする。区域には lead を持たせる：
      lead: { uid: 司会する人, h: そのときの担当者, until: 今日の終わり（日本時間）, by, at }
@@ -2227,7 +2227,7 @@ function applySet_(ctx, name, ch, rule, canDelete, reject) {
     ctx.curId = id; ctx.curRow = cur || null; // 決まりの中で鍵（家id|部屋）と、今の行（だれが書いたか）を使うため
     const ok = rule(ctx, cur ? cur.data : null, data);
     if (ok === null || ok === undefined || ok === false) return reject(name, id, 'not_allowed');
-    // 内容が変わらないもの（送り直し・係以外が書きかえられない印を同じ内容で送ってきた等）は、行を書き直さない（A-2・H9b・2026-10-29）。
+    // 内容が変わらないもの（送り直し・係以外が書きかえられない印を同じ内容で送ってきた等）は、行を書き直さない（A-2・H9b）。
     // 書き直すと「更新した人・時刻」が送った人の今になり、係が入れた拒否を伝道者が 24時間は消せる穴になっていた。変更の記録（差分）にも残らない
     if (cur && (ok === cur.data || stable_(ok) === stable_(cur.data))) return;
     ups.push([id, ok]);
@@ -2342,7 +2342,7 @@ function cleanParts_(ctx, t) {
     const o = { id: str_(p.id, 40), poly: poly, uids: uids.slice(0, 8),
       until: new Date(Math.min(until, maxUntil)).toISOString(),
       by: str_(p.by, 40) || ctx.me, at: str_(p.at, 40) || nowIso_() };
-    // 集合住宅の部屋ごとの範囲（2026-11-08・画面 heya-wake.js）：rooms＝{ 建物のid: [部屋…] }、ro＝部屋だけの範囲
+    // 集合住宅の部屋ごとの範囲（画面 heya-wake.js）：rooms＝{ 建物のid: [部屋…] }、ro＝部屋だけの範囲
     const rooms = cleanPartRooms_(p.rooms, roomBudget, !p.ro);
     const hasRoom = !!rooms && Object.keys(rooms).some(function (k) { return rooms[k].length; });
     if (p.ro) { if (!hasRoom) return; o.ro = 1; } // 部屋だけの範囲で、部屋が残らなければ範囲ごと捨てる（囲みの範囲にならないように）
@@ -2409,7 +2409,7 @@ function autoFree_(s, t) {
   return isFinite(at) && Date.now() - at >= (Number(s.freeAfterDays) || 0) * DAY_MS;
 }
 
-/* 集まりの予定を入れる・直す・消せるか（2026-11-11）
+/* 集まりの予定を入れる・直す・消せるか
    ・区域係：どれでも
    ・監督：自分のグループの予定（今までどおり）
    ・監督・司会者（グループのある人）：全体の予定のうち、自分が入れたもの（by が本人）だけ */
@@ -2472,7 +2472,7 @@ function spCover_(ctx) {
     for (let i = 0; i < list.length; i++) {
       const o = list[i];
       if (o.ids ? !o.ids[String(h.id)] : (o.poly && !reassignFind_(o.poly, Number(h.lat), Number(h.lng)))) continue;
-      // 種別（コンビニなど・集合住宅・オートロック）は「どれかに当たる」家（2026-10-22。画面の spMatch と同じ）
+      // 種別（コンビニなど・集合住宅・オートロック）は「どれかに当たる」家（画面の spMatch と同じ）
       const k = kindOfU(h, String(u || '')), isA = h.type === 'apt' && h.ban !== 'no';
       if (!(o.kinds.indexOf(k) >= 0 || (o.apt && isA && k === 'home') || (o.lock && isA && h.lock))) continue;
       // エレベーターは集合住宅の建物だけにかける
@@ -2484,7 +2484,7 @@ function spCover_(ctx) {
   return ctx.spCover;
 }
 
-/* 見つけたセル（同じ列・TextFinder の findAll の結果）の中身を、近い行をまとめて読む（点検③P8・2026-10-24）。
+/* 見つけたセル（同じ列・TextFinder の findAll の結果）の中身を、近い行をまとめて読む（点検③P8）。
    1つずつ getValue すると、件数が多いとき（記録が数千件）に時間がかかるため。gap 行までのすき間は、まとめて1回で読む */
 function readFound_(sh, col, cells, gap) {
   gap = gap || 30;
@@ -2512,12 +2512,12 @@ function terrDonePct_(ctx, t, since) {
     if (!tid) return null;
     // 特別区域は家の terrId で探せない（家はふつうの区域に属する）。名指しの家（ids）がなければ数えない＝画面の割合を使う（以前は家0軒で 100% になっていた・L12）
     // 特別区域は、サーバーでは数えない（null＝画面の割合を使う）。家の種別・エレベーター・最近会えた家など、画面の数え方（spMatch）とそろえられないため。
-    // 以前は家0軒で 100% を返していた（結果は同じく止めない）。組C 監査 H2・2026-10-30
+    // 以前は家0軒で 100% を返していた（結果は同じく止めない）。組C 監査 H2
     if (isSpecialTerr_(t)) return null;
     const hsh = dataSheet_('houses'), hn = hsh.getLastRow();
     if (hn < 2) return null;
     const keys = {}, dnc = ctx.col('dnc'), cov = spCover_(ctx), hids = [], lm = ctx.col('langs');
-    const langNo = function (k) { const x = lm.get(k); return !!(x && langSkipOf_(x.data, ctx.settings)); }; // 訪問しない言語の家（2026-11-08）
+    const langNo = function (k) { const x = lm.get(k); return !!(x && langSkipOf_(x.data, ctx.settings)); }; // 訪問しない言語の家
     readFound_(hsh, 2, hsh.getRange(2, 2, hn - 1, 1).createTextFinder('"terrId":"' + tid + '"').findAll().slice(0, 1500)).forEach(function (val) {
       const h = parseJson_(val, null);
       if (!h || String(h.terrId) !== tid) return;
@@ -2566,7 +2566,7 @@ function terrDonePct_(ctx, t, since) {
   }
 }
 
-/* 留守宅カードの段階の区域で、「訪ね直した」家の割合をサーバーで数える（留守宅カードの完了の確かめ・総合監査 H9c・2026-10-31）。
+/* 留守宅カードの段階の区域で、「訪ね直した」家の割合をサーバーで数える（留守宅カードの完了の確かめ・総合監査 H9c）。
    画面の poolInfo（訪ね直した家÷1回目に会えなかった家）は、時間帯・別の日などの設定で数え方が変わり、そのままは写せない。
    そこで「画面が完了と数えるなら必ず満たすこと」だけを確かめる（正しい完了を断らない）：
    ・対象（n）：1回目（since〜first）に訪ねた家で、最初に訪ねた日（日本時間）に会えていない家（画面の n はこの中にふくまれる）
@@ -2581,7 +2581,7 @@ function poolRevisitPct_(ctx, t, since, first) {
     const hsh = dataSheet_('houses'), hn = hsh.getLastRow();
     if (hn < 2) return null;
     const keys = {}, dnc = ctx.col('dnc'), cov = spCover_(ctx), hids = [], lm = ctx.col('langs');
-    const langNo = function (k) { const x = lm.get(k); return !!(x && langSkipOf_(x.data, ctx.settings)); }; // 訪問しない言語の家（2026-11-08）
+    const langNo = function (k) { const x = lm.get(k); return !!(x && langSkipOf_(x.data, ctx.settings)); }; // 訪問しない言語の家
     readFound_(hsh, 2, hsh.getRange(2, 2, hn - 1, 1).createTextFinder('"terrId":"' + tid + '"').findAll().slice(0, 1500)).forEach(function (val) {
       const h = parseJson_(val, null);
       if (!h || String(h.terrId) !== tid) return;
@@ -2683,7 +2683,7 @@ function ruleTerritory_(ctx, old, t) {
   }
   // 版が合わないが、直前に書いたのが同じ係のとき（続けて保存した自分の変更）：貸し出し・返却の状態（担当者・受け取った日・返した日・完了日・留守宅カード）が
   // 今の内容とちがう送信は受け付けない。続けて保存した変更なら、端末は前の保存の結果（その状態）をもう持っているので同じになる。
-  // ちがうのは、前の保存より前に作られた古い変更（「送れない変更」を次に開いたときに送り直した等）で、通すと間の貸し出しが古い内容で消えた（総合監査 B-RE-1・2026-10-31）
+  // ちがうのは、前の保存より前に作られた古い変更（「送れない変更」を次に開いたときに送り直した等）で、通すと間の貸し出しが古い内容で消えた（総合監査 B-RE-1）
   if (ctx.admin && old && trev !== undefined && trev !== null && (Number(trev) || 0) !== oldRev && old.revBy === ctx.me) {
     const LEND_KEYS = ['holder', 'lentAt', 'returnedAt', 'completedAt', 'awayPoolAt'];
     if (LEND_KEYS.some(function (k) { return String(t0[k] == null ? '' : t0[k]) !== String(o0[k] == null ? '' : o0[k]); })) return null;
@@ -2726,7 +2726,7 @@ function ruleTerritory0_(ctx, old, t) {
     if (t.holder && (!old || old.holder !== t.holder)) delete o.recLess;
     // 紙の区域カード（S-13 で渡した区域）を、係が留守宅カードにして返したとき（古い画面の係・監査P3・M2）：返却の記録の印を ruleReturn_ で外すため控える
     if (old && paperHand_(old) && !old.awayPoolAt && o.awayPoolAt) (ctx.phPool || (ctx.phPool = {}))[String(old.id)] = String(old.lentAt || '');
-    // 係の端末の時計が先に進んでいるとき（10分より先の日時）：返した日・完了日・留守宅カードにした日は、サーバーの時刻にする（総合監査 M6・2026-10-31）。
+    // 係の端末の時計が先に進んでいるとき（10分より先の日時）：返した日・完了日・留守宅カードにした日は、サーバーの時刻にする（総合監査 M6）。
     // 過去の日付（紙の記録の転記など）はそのまま。同じ送信の返却の記録の日時も、同じ値にそろえる（ruleReturn_ の ctx.admTime）
     ['completedAt', 'returnedAt', 'awayPoolAt', 'firstDoneAt'].forEach(function (k) {
       const v = o[k];
@@ -2776,13 +2776,13 @@ function ruleTerritory0_(ctx, old, t) {
     let toPool = !!(t.awayPoolAt && !old.awayPoolAt);
     if (toPool) {
       // 1回目が目安（donePct−10）に届いていない区域は、本人は留守宅カードにして返せない（画面の返却ボタンも、届いたときだけ留守宅カードにする）。
-      // 確かめないと、1回目をほとんど回らずに留守宅カードにし、そのまま訪ね直さずに完了にできた（総合監査 H9c・2026-10-31）。紙の区域カードは画面が止める
+      // 確かめないと、1回目をほとんど回らずに留守宅カードにし、そのまま訪ね直さずに完了にできた（総合監査 H9c）。紙の区域カードは画面が止める
       // 係が「1回目を終えたことにする」で、目安未満のまま受け付けた区域（firstLow）は、今までどおり確かめない（M1 の流れ）
       if (!paperHand_(old) && !old.firstLow) {
         poolPct = terrDonePct_(ctx, old, old.roundFrom || old.lentAt);
         // 届いていなければ、断らずに「途中の返却」として受け付ける（返却ボタンの決まり：目安以下は途中返却）。
         // 断ると、画面の「返す」が留守宅カードしか出さない場面（1回目を終えたあとに家が足された・画面とサーバーの数え方のちがい）で、
-        // 本人が区域を返せなくなっていた（独立監査 A-1・2026-11-04）。返却の記録の pool の印も外す（ruleReturn_ の ctx.notPool）
+        // 本人が区域を返せなくなっていた（独立監査 A-1）。返却の記録の pool の印も外す（ruleReturn_ の ctx.notPool）
         if (poolPct !== null && poolPct < Math.max(0, (Number(ctx.settings.donePct) || 90) - 10)) { toPool = false; (ctx.notPool || (ctx.notPool = {}))[String(old.id)] = true; }
       }
     }
@@ -2816,9 +2816,9 @@ function ruleTerritory0_(ctx, old, t) {
     if (!o.lastRoundFrom) delete o.lastRoundFrom;
     // この送信で本人が返した区域（返却の記録を確かめるときに使う・監査①S3）
     // rf＝回りはじめた日：「続きから」受け取っていた（前の人が回りはじめた日から回った）ときだけ。返却の記録の from になり、
-    // 係の端末の自動の確かめ（記録の少ない返却）が、上の terrDonePct_ と同じ起点から数えられるようにする（第3回監査 K-1・2026-10-29）
+    // 係の端末の自動の確かめ（記録の少ない返却）が、上の terrDonePct_ と同じ起点から数えられるようにする（第3回監査 K-1）
     const rf = old.roundFrom && old.lentAt && String(old.roundFrom) < String(old.lentAt) ? String(old.roundFrom) : null;
-    // 返却の記録の印と割合は、区域の状態とサーバーで数えた値から決める（L17・2026-10-29）。
+    // 返却の記録の印と割合は、区域の状態とサーバーで数えた値から決める（L17）。
     // 割合：回り終えた＝上で確かめた値／途中にもどした＝数えた値（notDone）／途中で返した＝ここで数える。紙の区域カードは数えない
     let rpct = null;
     if (!paperHand_(old)) {
@@ -2876,7 +2876,7 @@ function ruleTerritory0_(ctx, old, t) {
     let mine = false;
     ctx.col('awayCards').forEach(function (x) { if (x.data.by === me && x.data.terrId === old.id) mine = true; });
     if (!mine) return null;
-    // 「回り終えた」はサーバーで数えた割合でも確かめる（A-3・H9c・2026-10-29。本人の返却と同じ守り方）。
+    // 「回り終えた」はサーバーで数えた割合でも確かめる（A-3・H9c。本人の返却と同じ守り方）。
     // 数える起点は、この巡回の始まり（留守宅カードにして返した記録の from（続きから）→ なければ最後に受け取った日）。
     // 留守宅カードの割合（訪ね直した家の割合）とは数え方がちがうので、決めた割合（awayRetPct）から 10ポイントまでは受け付ける。
     // 確かめるのは、1回目をアプリの記録で回り終えていた区域だけ（返した記録の1回目の割合（p1・pct）が donePct−10 以上）。
@@ -2887,7 +2887,7 @@ function ruleTerritory0_(ctx, old, t) {
     const since = (pd && pd.from) || old.lastLentAt || old.awayPoolAt;
     const claimed = Math.max(0, (Math.min(100, Number(t.completedPct) || 0)));
     // 1回目の割合は、サーバーで数えた値（sp。本人が留守宅カードにして返した送信で付く）を先に使う。
-    // 画面の値（pct）だけで決めると、小さい値を送れば確かめを外せた（総合監査 H9c・2026-10-31）。p1 は係の印（lowMark）のときだけ
+    // 画面の値（pct）だけで決めると、小さい値を送れば確かめを外せた（総合監査 H9c）。p1 は係の印（lowMark）のときだけ
     const sp1 = pd && pd.sp != null && pd.sp !== '' ? Number(pd.sp) : NaN;
     const p1 = pd ? (pd.p1 != null ? Number(pd.p1) : isFinite(sp1) ? sp1 : Number(pd.pct)) : NaN;
     const need1 = Math.max(0, (Number(ctx.settings.donePct) || 90) - 10);
@@ -2960,7 +2960,7 @@ function candFix_(ctx, res) {
   if (res.type === 'apt' && (c.b === 'no' || c.b === 'letter')) res.ban = c.b;
 }
 
-const HOUSE_KINDS = ['office', 'shop', 'biz', 'factory', 'school', 'gov', 'police', 'fire', 'hall', 'hospital', 'conv', 'food', 'care', 'other']; // other：その他（2026-10-22）
+const HOUSE_KINDS = ['office', 'shop', 'biz', 'factory', 'school', 'gov', 'police', 'fire', 'hall', 'hospital', 'conv', 'food', 'care', 'other']; // other：その他
 function houseExtra_(h, units, o) {
   const kind = HOUSE_KINDS.indexOf(String(h.kind || '')) >= 0 ? String(h.kind) : null;
   if (kind) o.kind = kind;
@@ -2969,7 +2969,7 @@ function houseExtra_(h, units, o) {
   if (h.cid) { const cid = str_(h.cid, 40).replace(/[^\w.\-]/g, ''); if (cid) o.cid = cid; } // 選んだ候補の番号（使った候補は、次から候補に出ない）
   if (h.imp) o.imp = true; // アパートの取り込みで新しく置いた家（やり直しのとき、家ごと消すための目印。係だけがつけられる）
   if (h.prov) o.prov = true;
-  // 建物のメモ（備考）と、階段・エレベーター（2026-10-19）。くわしい表示の人ならだれでも書きかえられる
+  // 建物のメモ（備考）と、階段・エレベーター。くわしい表示の人ならだれでも書きかえられる
   if (h.type === 'apt') {
     const bn = bldNote_(h.bn); if (bn) o.bn = bn;
     if (h.ac === 'ev' || h.ac === 'st' || h.ac === 'no') o.ac = h.ac; // なし（空）は「まだ確かめていない」
@@ -2994,7 +2994,7 @@ function houseExtra_(h, units, o) {
   if (h.type === 'apt' && MU_UNITS[String(h.mu || '')] && MU_UNITS[String(h.mu)].some(function (a) { return a.join('|') === units.join('|'); })) o.mu = String(h.mu);
   return o;
 }
-/* 係以外が家の場所を直すとき（2026-11-04）：動かしてよいかを確かめ、よければ新しい { lat, lng, terrId } を返す
+/* 係以外が家の場所を直すとき：動かしてよいかを確かめ、よければ新しい { lat, lng, terrId } を返す
    ・新しい場所は数で、今の場所から HOUSE_MOVE_MAX_M まで（まちがえて遠くに動かさないように。画面の MOVE_MAX_M と同じ数）
    ・区域は、今のままか、動かした先がその線の中にあるふつうの区域だけ（画面は、動かした先の区域の線の中ならその区域、線の外なら今の区域のままにする）
    ・今の場所がない家は、係以外は動かせない */
@@ -3054,7 +3054,7 @@ function ruleHouse_(ctx, old, h) {
     }
     return created;
   }
-  // 家の場所と区域（2026-11-04・家の場所を直す）
+  // 家の場所と区域（家の場所を直す）
   //  lb：この端末が送る前に知っていた [緯度, 経度, 区域id]（新しい画面だけが送る）。
   //  端末が変えていない場所・区域は、サーバーの今のままにする（古い送信で、ほかの人が動かした家がもどらないように）
   const lb = houseLb_(h);
@@ -3102,7 +3102,7 @@ function ruleHouse_(ctx, old, h) {
   return res;
 }
 
-/* 部屋の一覧を当てはめる（監査②V4・V5・2026-10-24）
+/* 部屋の一覧を当てはめる（監査②V4・V5）
    ・画面が「もとの一覧」（ub：その人の端末が知っていた一覧）を送ってきたとき：その人が足した部屋・消した部屋だけを、
      今の一覧に当てはめる。ほかの人がほぼ同時に足した部屋は消さず、消した部屋は戻さない
      （ub を送らない古い端末は、今までどおり送られた一覧のとおり）
@@ -3228,7 +3228,7 @@ function ruleVisit_(ctx, old, v) {
 }
 
 /* =========================================================
-   まちがえた記録の直し方（2026-10-15）
+   まちがえた記録の直し方
    ・本人：自分の記録を、その日のうち（日本時間）。ただし、その区域が記録のあとに返されていたら区域係
    ・司会者・グループ監督：自分が持つグループの区域（グループの留守宅カード）の、その日の記録
    ・区域係：いつでも
@@ -3359,14 +3359,14 @@ function ruleAwayCard_(ctx, old, c) {
     const tx = tid ? ctx.col('territories').get(tid) : null;
     if (!tx || !tx.data) return null;
     const td = tx.data;
-    // ほかの人が持っている区域の留守宅カードは作れない（A-4・H9d・2026-10-29。画面の awayEligibleBase と同じ：持っている本人か、空いている区域だけ）。
+    // ほかの人が持っている区域の留守宅カードは作れない（A-4・H9d。画面の awayEligibleBase と同じ：持っている本人か、空いている区域だけ）。
     // 返却後のカード（ext）は、受け取られたら終わったものとして扱う決まりがもうあるので、今までどおり
     if (td.holder && td.holder !== ctx.me && !c.ext) return null;
     // 返却後のカード（ext）は、完了した区域（担当者がいない・留守宅カードの段階でない・完了日がある）だけ。
-    // ext を付けるだけで、ほかの人が持っている区域や続きから受け取れる区域のカードを作れていた（総合監査 H9d・2026-10-31。
+    // ext を付けるだけで、ほかの人が持っている区域や続きから受け取れる区域のカードを作れていた（総合監査 H9d。
     // 今の画面は ext のカードを作らない。画面の extState と同じ条件）
     if (c.ext && (td.holder || td.awayPoolAt || !td.completedAt || td.extStop)) return null;
-    // 途中で返され、続きから受け取れる区域は、留守宅カードにしない（続きから受け取った人と同じ家を訪ねないように・M11・2026-10-30）
+    // 途中で返され、続きから受け取れる区域は、留守宅カードにしない（続きから受け取った人と同じ家を訪ねないように・M11）
     if (!td.holder && contAvail_(ctx.settings, td)) return null;
     const exp = Date.parse(String(c.expiresAt || ''));
     if (!isFinite(exp) || exp <= Date.now()) return null;
@@ -3400,7 +3400,7 @@ function ruleAwayCard_(ctx, old, c) {
       if (d.ext) { const tt = ctx.col('territories').get(d.terrId); if (tt && tt.data && tt.data.holder && Date.parse(tt.data.lentAt) > Date.parse(d.at)) return; }
       d.keys.forEach(function (k) { busy[k] = true; });
     });
-    // おすすめで押さえている家も、重ねない（2026-10-26。古い画面が完了した区域のカードを作るときのため）
+    // おすすめで押さえている家も、重ねない（古い画面が完了した区域のカードを作るときのため）
     const nowMs = Date.now();
     ctx.col('holds').forEach(function (x) { if (holdLive_(ctx, x.data, nowMs)) (x.data.keys || []).forEach(function (k) { busy[k] = true; }); });
     if (keys.some(function (k) { return busy[k]; })) return null;
@@ -3424,13 +3424,13 @@ function ruleAwayCard_(ctx, old, c) {
     if (c.ext) o.ext = 1; // 返却後の留守宅カード
     if (c.day) o.day = 1; // その日限りのカード
     if (asGroup) { o.group = u.group; o.helpers = cleanHelpers_(ctx, { helpers: c.helpers, group: u.group }, ctx.me); Object.assign(o, cleanCardGroup_(ctx, c, null)); }
-    if (asGroup && c.use === 'all') o.use = 'all'; // 全体の集まりで回る留守宅カード（2026-10-24）。枚数はグループで回るカードと合わせて数える。古い端末からは来ないので、今までどおりグループ
+    if (asGroup && c.use === 'all') o.use = 'all'; // 全体の集まりで回る留守宅カード。枚数はグループで回るカードと合わせて数える。古い端末からは来ないので、今までどおりグループ
     return o;
   }
   if (old.by !== ctx.me) return null;
   if (!same_(old, c, ['terrId', 'slot', 'by', 'at', 'expiresAt', 'keys', 'rl', 'ext', 'day'])) return null;
   // 返した日時：送り直し（同じ値）はそのまま。新しく返したときは、端末の時計が大きくずれていればサーバーの時刻（総合監査 M6）
-  // 一度返したカードの日時は、送り直しで動かさない（端末が先の日時を持ったまま送り直すと、そのたびに「今」に変わっていた・独立監査 B-2・2026-11-04）
+  // 一度返したカードの日時は、送り直しで動かさない（端末が先の日時を持ったまま送り直すと、そのたびに「今」に変わっていた・独立監査 B-2）
   const o = Object.assign({}, old, { endedAt: !c.endedAt ? null : old.endedAt ? old.endedAt : clampTime_(c.endedAt) });
   if (old.group) {
     o.helpers = o.endedAt ? [] : cleanHelpers_(ctx, { helpers: c.helpers, group: old.group }, ctx.me);
@@ -3440,7 +3440,7 @@ function ruleAwayCard_(ctx, old, c) {
 }
 
 /* =========================================================
-   おすすめの押さえ（holds・2026-10-26）
+   おすすめの押さえ（holds）
    完了した区域（S-13 に完了として記録したあと、次に区域カードとして受け取られるまで）に残った留守宅を、
    おすすめタブから「今行く」（今日の終わりまで）・「予定に入れる」（予定の日の終わりまで）で押さえる。
    押さえた家は、ほかの人のおすすめに出ない。使っても使わなくても期限で外れる。
@@ -3588,7 +3588,7 @@ function ruleFollow_(ctx, old, f) {
   if (!old) {
     ctx.folNew = (ctx.folNew || 0) + 1;
     if (ctx.folNew > 200) return null; // 1回の送信で新しく受け持てるのは 200件まで（監査6 M1）
-    if (!followOk_(ctx, String(ctx.curId || ''))) return null; // 新しい受け持ちは、受け持ってよい家だけ（L16・2026-10-29）
+    if (!followOk_(ctx, String(ctx.curId || ''))) return null; // 新しい受け持ちは、受け持ってよい家だけ（L16）
   }
   return { by: ctx.me, since: str_(f.since, 40) || nowIso_(), touchedAt: str_(f.touchedAt, 40) || nowIso_() };
 }
@@ -3675,7 +3675,7 @@ function ruleReturn_(ctx, old, r) {
     // 紙の区域カードを留守宅カードにして返した記録（古い画面の係）：紙で回った家はアプリにないので、
     // 「アプリの記録で確かめる」の印（low）は付けない（あとで自動で途中の返却にしない。紙の区域カードは記録で確かめない決まり・監査P3・M2）
     // あわせて「紙の区域カードで回った」印（ph）を付ける：係の端末の自動の確かめ（印のない正式返却の拾い上げ）の対象にせず、
-    // カードが完了したあと recLess が付いて、おすすめに回り残しを出さない（第2回監査 R2・2026-10-29）
+    // カードが完了したあと recLess が付いて、おすすめに回り残しを出さない（第2回監査 R2）
     const pp = r && r.pool && r.low && ctx.phPool && Object.prototype.hasOwnProperty.call(ctx.phPool, String(r.terrId)) ? ctx.phPool[String(r.terrId)] : null;
     if (pp !== null && String(r.lentAt || '') === pp) { const o = Object.assign({}, r); delete o.low; o.ph = 1; return o; }
     // 上で ph を付けた記録（紙の区域カードの留守宅カード）を、古い画面の係が送り直したとき（返事が届かず同じ送信を re:1 で送り直す・
@@ -3740,14 +3740,14 @@ function ruleReturn_(ctx, old, r) {
   // 記録だけがあとから届いたとき（A-7）：途中で返した区域には lastRoundFrom（この巡回の始まり）が残っているので、それが受け取った日より前なら from に
   else if (!cur && !completed && t.lastRoundFrom && lentAt && String(t.lastRoundFrom) < String(lentAt)) o.from = String(t.lastRoundFrom);
   // 本人の返却の確かめは、今までどおり区域の保存（ruleTerritory0_）がその場で記録の割合で行う。
-  // 係が「1回目を終えたことにする」のあとに本人が返したときに、あとから記録で確かめる印は付けない（監査P5・2026-10-29。指示書8章の範囲にもどす）
+  // 係が「1回目を終えたことにする」のあとに本人が返したときに、あとから記録で確かめる印は付けない（監査P5。指示書8章の範囲にもどす）
   return o;
 }
 
 /** 区域カードを持っていない人の記録か（担当者の画面で青いチェックにするための印） */
 function outOfCard_(ctx, tid, key) {
   if (holdsTerr_(ctx, tid)) return false;
-  // 特別区域（コンビニ・集合住宅など）を持っている人が、その特別区域の家を記録したときも、カードの中の記録（L12・2026-10-30）
+  // 特別区域（コンビニ・集合住宅など）を持っている人が、その特別区域の家を記録したときも、カードの中の記録（L12）
   const hid = String(key || '').split('|')[0], hd = houseData_(ctx, hid);
   let inSp = false;
   if (hd) ctx.col('territories').forEach(function (x, id) {
@@ -3797,7 +3797,7 @@ function cleanupOld() {
     });
     if (rc) rewriteCol_('awayCards', cards);
 
-    // おすすめの押さえ：終わってから30日たったものを消す（2026-10-26）
+    // おすすめの押さえ：終わってから30日たったものを消す
     const holds = readCol_('holds');
     let rh = 0;
     holds.forEach(function (x, id) {
@@ -3813,7 +3813,7 @@ function cleanupOld() {
     });
     if (rr) rewriteCol_('requests', reqs);
 
-    // 消したものは変更の記録に入れる（端末は差分で追いつける）。全部を読み直させるのは、とても多いときだけ（M15・2026-10-30。
+    // 消したものは変更の記録に入れる（端末は差分で追いつける）。全部を読み直させるのは、とても多いときだけ（M15。
     // 以前は留守宅カード・申し込み・押さえを1件でも消すとリセットし、毎月1日の朝に全員が全部読み直していた）
     if (gone.length > 5000) resetJournal_();
     else if (gone.length) { for (let i = 0; i < gone.length; i += 1500) journal_(gone.slice(i, i + 1500)); }

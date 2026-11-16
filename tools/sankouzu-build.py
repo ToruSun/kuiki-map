@@ -4,8 +4,9 @@
 # ・平面直角座標の系（1〜19）は、SHP の範囲と会衆の範囲から自動で選ぶ。字の列が無いときは、およそ1km の四角ごとに分ける
 # ・法務省の線（chiban/）が無い所だけ、会衆の範囲（config.js の area＋150m）の筆の「線の形」だけを入れる。地番は入れない
 # ・できたファイルは、持ち主のドライブ「区域マップ_地番参考図」に置く（公開ページ・GitHub には置かない）。サーバー（gas/sankouzu.gs）が読む
-# ・使い方：python3 tools/sankouzu-build.py <地番参考図の zip> <出力 .json.gz> [<データの時点 例 2027-01>]
-#   時点を省くと unknown。外の道具は使わない（SHP・DBF・平面直角座標の計算は、この中に書いてある）
+# ・使い方：python3 tools/sankouzu-build.py <出力 .json.gz> <データの時点 年-月> <zip>[=<市町村名>] [<zip>=<市町村名> ...]
+#   会衆がいくつかの市町村にまたがるときは、市町村ごとの zip を「=市町村名」つきで並べる（1つだけなら config.js の muni）
+#   外の道具は使わない（SHP・DBF・平面直角座標の計算は、この中に書いてある）
 import io, json, math, os, re, struct, sys, unicodedata, zipfile, gzip, collections
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -121,23 +122,43 @@ def near(lat, lng, r, m):
         if math.hypot(px - t * ax, py - t * ay) < m: return True
     return False
 
-def main():
-    zpath, out = sys.argv[1], sys.argv[2]
-    asof = sys.argv[3] if len(sys.argv) > 3 else None
-    # 会衆の範囲
-    s = cfg = open(os.path.join(ROOT, 'config.js'), encoding='utf-8').read(); i = s.index('area: [') + 6; d = 0
+def area_cfg():
+    s = open(os.path.join(ROOT, 'config.js'), encoding='utf-8').read(); i = s.index('area: [') + 6; d = 0
     for j in range(i, len(s)):
         if s[j] == '[': d += 1
         elif s[j] == ']':
             d -= 1
             if d == 0: break
-    AREA = json.loads(s[i:j + 1])
-    S = min(p[0] for p in AREA) - 0.004; N = max(p[0] for p in AREA) + 0.004
-    W = min(p[1] for p in AREA) - 0.005; E = max(p[1] for p in AREA) + 0.005
-    # zip から「固定資産土地」の .shp・.dbf を取り出す（名前は Shift_JIS のことがある）
-    z = zipfile.ZipFile(zpath); tmp = os.path.join(os.path.dirname(os.path.abspath(out)), '_sankouzu_tmp'); os.makedirs(tmp, exist_ok=True)
+    mm = re.search(r"^\s*muni:\s*'([^']*)'", s, re.M)
+    return json.loads(s[i:j + 1]), (mm.group(1) if mm else '')
+
+def moj_index():
+    """法務省の筆（chiban/ の全部の市町村）：この中にある筆は入れない"""
+    moj, G = [], 0.0005
+    grid = collections.defaultdict(list)
+    top = os.path.join(ROOT, 'chiban/index.json')
+    codes = [m['code'] for m in json.load(open(top, encoding='utf-8'))['munis'].values()] if os.path.exists(top) else []
+    for code in codes:
+        ix = json.load(open(os.path.join(ROOT, 'chiban', code, 'index.json'), encoding='utf-8'))['azas']
+        for name, a in ix.items():
+            for e in json.load(open(os.path.join(ROOT, 'chiban', code, a['f'] + '.json'), encoding='utf-8'))['p']:
+                cy, cx = e[1], e[2]; ring = [((cy + e[k]) / 1e6, (cx + e[k + 1]) / 1e6) for k in range(3, len(e) - 1, 2)]
+                if len(ring) < 3: continue
+                la = [q[0] for q in ring]; ln = [q[1] for q in ring]; b = (min(la), min(ln), max(la), max(ln))
+                moj.append((b, ring))
+                for gy in range(int(b[0] / G), int(b[2] / G) + 1):
+                    for gx in range(int(b[1] / G), int(b[3] / G) + 1): grid[(gy, gx)].append(len(moj) - 1)
+    def in_moj(lat, lng):
+        for k in grid.get((int(lat / G), int(lng / G)), []):
+            b, r = moj[k]
+            if b[0] <= lat <= b[2] and b[1] <= lng <= b[3] and inside(lat, lng, r): return True
+        return False
+    return in_moj
+
+def one_zip(zpath, tmp, AREA, box, in_moj, groups, stat, prefix):
+    S, W, N, E = box
     # zip の中の土地の .shp と、同じ名前の .dbf（名前は Shift_JIS のことがある）。「土地」の入った名前を先に選ぶ
-    ents = {}
+    z = zipfile.ZipFile(zpath); ents = {}
     for info in z.infolist():
         raw = info.filename.encode('cp437') if not (info.flag_bits & 0x800) else info.filename.encode('utf-8')
         try: name = raw.decode('cp932')
@@ -145,12 +166,12 @@ def main():
         stem, ext = os.path.splitext(os.path.basename(name))
         if ext.lower() in ('.shp', '.dbf'): ents.setdefault(stem, {})[ext.lower()[1:]] = info
     pairs = [k for k, v in ents.items() if 'shp' in v and 'dbf' in v]
-    if not pairs: sys.exit('zip に、同じ名前の .shp と .dbf がありません')
+    if not pairs: sys.exit(zpath + '：zip に、同じ名前の .shp と .dbf がありません')
     stem = max(pairs, key=lambda k: (('土地' in k) * 2 - (('境界' in k) or ('地番' in k)) * 2, ents[k]['shp'].file_size))
     got = {}
     for ext in ('shp', 'dbf'):
         p = os.path.join(tmp, 'land.' + ext); open(p, 'wb').write(z.read(ents[stem][ext])); got[ext] = p
-    print('使うファイル：', stem + '.shp / .dbf')
+    print(zpath, '：使うファイル', stem + '.shp / .dbf')
     # 平面直角座標の系：SHP の範囲と会衆の範囲がいちばん重なる系
     with open(got['shp'], 'rb') as f: xmin, ymin, xmax, ymax = struct.unpack('<4d', f.read(100)[36:68])
     best, bestA = 0, 0
@@ -160,33 +181,12 @@ def main():
         w = min(max(q[1] for q in c), xmax) - max(min(q[1] for q in c), xmin)
         h = min(max(q[0] for q in c), ymax) - max(min(q[0] for q in c), ymin)
         if w > 0 and h > 0 and w * h > bestA: best, bestA = zz, w * h
-    if not best: sys.exit('この SHP は、会衆の範囲（config.js の area）と重なりません')
-    set_zone(best); print('平面直角座標：%d系' % best)
-    # 法務省の筆（chiban/ の全部の市町村）：この中にある筆は入れない
-    moj, G = [], 0.0005
-    grid = collections.defaultdict(list)
-    top = os.path.join(ROOT, 'chiban/index.json')
-    codes = [m['code'] for m in json.load(open(top, encoding='utf-8'))['munis'].values()] if os.path.exists(top) else []
-    for code in codes:
-      ix = json.load(open(os.path.join(ROOT, 'chiban', code, 'index.json'), encoding='utf-8'))['azas']
-      for name, a in ix.items():
-        for e in json.load(open(os.path.join(ROOT, 'chiban', code, a['f'] + '.json'), encoding='utf-8'))['p']:
-            cy, cx = e[1], e[2]; ring = [((cy + e[k]) / 1e6, (cx + e[k + 1]) / 1e6) for k in range(3, len(e) - 1, 2)]
-            if len(ring) < 3: continue
-            la = [q[0] for q in ring]; ln = [q[1] for q in ring]; b = (min(la), min(ln), max(la), max(ln))
-            moj.append((b, ring))
-            for gy in range(int(b[0] / G), int(b[2] / G) + 1):
-                for gx in range(int(b[1] / G), int(b[3] / G) + 1): grid[(gy, gx)].append(len(moj) - 1)
-    def in_moj(lat, lng):
-        for k in grid.get((int(lat / G), int(lng / G)), []):
-            b, r = moj[k]
-            if b[0] <= lat <= b[2] and b[1] <= lng <= b[3] and inside(lat, lng, r): return True
-        return False
+    if not best: sys.exit(zpath + '：この SHP は、会衆の範囲（config.js の area）と重なりません')
+    set_zone(best); print('  平面直角座標：%d系' % best)
     n_, fields, rows = dbf(got['dbf']); _, _, geoms = shapes(got['shp'])
     cols = {unicodedata.normalize('NFKC', f[0]).strip().upper(): f[0] for f in fields}
     acol = next((cols[c] for c in ('大字名', '大字', '町丁名', '町名', '字名', '大字町丁名', '所在', 'OAZA', 'AZA') if c in cols), None)
-    if not acol: print('字の列がないので、およそ1km の四角ごとに分けます')
-    groups = collections.defaultdict(list); stat = collections.Counter()
+    if not acol: print('  字の列がないので、およそ1km の四角ごとに分けます')
     for r, g in zip(rows, geoms):
         if not g: continue
         ring = g[0]
@@ -205,23 +205,38 @@ def main():
             e += [v[0], v[1]]; prev = v
         if len(e) >= 9:
             g = (norm(r.get(acol, '')) or '（字なし）') if acol else '区画%d-%d' % (cy // 10000, cx // 10000)
-            groups[g].append(e); stat['入れた'] += 1
+            groups[prefix + g].append(e); stat['入れた'] += 1
+    for p in got.values(): os.remove(p)
+
+def main():
+    if len(sys.argv) < 4: sys.exit('使い方：python3 tools/sankouzu-build.py <出力 .json.gz> <年-月> <zip>[=<市町村名>] ...')
+    out, asof, args = sys.argv[1], sys.argv[2], sys.argv[3:]
+    if not re.match(r'^\d{4}-\d{2}$', asof): sys.exit('時点は「年-月」の形（例 2027-01）で入れてください')
+    AREA, defcity = area_cfg()
+    box = (min(p[0] for p in AREA) - 0.004, min(p[1] for p in AREA) - 0.005, max(p[0] for p in AREA) + 0.004, max(p[1] for p in AREA) + 0.005)
+    in_moj = moj_index()
+    tmp = os.path.join(os.path.dirname(os.path.abspath(out)), '_sankouzu_tmp'); os.makedirs(tmp, exist_ok=True)
+    groups = collections.defaultdict(list); stat = collections.Counter(); cities = []
+    many = len(args) > 1
+    for a in args:
+        zpath, _, city = a.partition('=')
+        city = city.strip() or defcity
+        if many and not a.partition('=')[2].strip(): sys.exit('いくつかの zip を使うときは、それぞれに「=市町村名」を付けてください：' + a)
+        if city and city not in cities: cities.append(city)
+        one_zip(zpath, tmp, AREA, box, in_moj, groups, stat, (city + ' ') if many else '')
+    os.rmdir(tmp)
     azas, files = {}, {}
     for k, a in enumerate(sorted(groups, key=lambda a: -len(groups[a]))):
         f = 's%02d' % k; ps = groups[a]
         lats = [(p[1] + p[i]) / 1e6 for p in ps for i in range(3, len(p), 2)]; lngs = [(p[2] + p[i]) / 1e6 for p in ps for i in range(4, len(p), 2)]
         azas[a] = {'f': f, 'n': len(ps), 'b': [round(min(lats), 6), round(min(lngs), 6), round(max(lats), 6), round(max(lngs), 6)]}
         files[f] = {'p': ps}
-    if not asof: asof = 'unknown'
-    mm = re.search(r"^\s*muni:\s*'([^']*)'", cfg, re.M); city = mm.group(1) if mm else ''
     allb = [v['b'] for v in azas.values()]
-    index = {'v': 1, 'asof': asof, 'name': '地番参考図',
-             'src': '「固定資産（土地）地番参考図」（%s）を加工して作成（線だけ。地番は入れていない）' % (city or '市町村'),
+    index = {'v': 1, 'asof': asof, 'name': '地番参考図', 'cities': cities,
+             'src': '「固定資産（土地）地番参考図」（%s）を加工して作成（線だけ。地番は入れていない）' % ('・'.join(cities) or '市町村'),
              'b': [min(b[0] for b in allb), min(b[1] for b in allb), max(b[2] for b in allb), max(b[3] for b in allb)], 'azas': azas}
     with gzip.open(out, 'wt', encoding='utf-8', compresslevel=9) as o:
         json.dump({'index': index, 'files': files}, o, ensure_ascii=False, separators=(',', ':'))
-    for p in got.values(): os.remove(p)
-    os.rmdir(tmp)
     print('字', len(azas), dict(stat), os.path.getsize(out), 'バイト')
     for a in list(azas)[:20]: print(' ', a, azas[a]['n'])
 main()

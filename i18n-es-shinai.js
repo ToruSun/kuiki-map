@@ -1,7 +1,7 @@
 /* =========================================================
    区域マップ：スペイン語の辞書の足し分（i18n-es-shinai.js）／ Diccionario adicional (casas omitidas)
    ・i18n-es.js の「あと」に読み込みます（index.html の辞書の行）。
-   ・区域係が付ける「訪問しない」の印（理由を記録しない印・2026-11-05）
+   ・区域係が付ける「訪問しない」の印（理由を記録しない印）
    ・スペイン語では、拒否（訪問を断られた家）が「No visitar」なので、訪問しないは「Omitida」と分けます
    ========================================================= */
 window.KUIKI_I18N = window.KUIKI_I18N || {};
@@ -108,7 +108,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "この家は「訪問しない」の家です。拒否にするときは「訪問しない」の一覧から変えてください": "Esta casa está marcada como «Omitida». Para cambiarla a «No visitar», hágalo desde la lista de omitidas",
 "訪問しない家（区域係が付ける・理由なし）": "Casas omitidas (las marca el encargado; sin motivo)",
 "地図に灰色の「ー」が出る家・部屋は、区域係が「訪問しない」にした家です。訪ねなくてよく、区域の数にも入りません。": "Las casas y departamentos con una «ー» gris en el mapa son los que el encargado de territorios marcó como «Omitida». No hay que visitarlos y no se cuentan en el territorio.",
-/* 区域カードの「印刷・送る」（chizu-okuru.js・2026-11-08） */
+/* 区域カードの「印刷・送る」（chizu-okuru.js） */
 "区域{0}の地図": "Mapa del territorio {0}",
 "区域の線・家・拒否の印が入った地図を、A4の紙1枚にします。": "Se hace un mapa en una hoja A4 con el límite del territorio, las casas y las marcas de «No visitar».",
 "下半分に、集合住宅の部屋の一覧が入ります。": "En la mitad de abajo va la lista de departamentos de los edificios.",

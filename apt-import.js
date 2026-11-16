@@ -204,7 +204,7 @@
     return {
       // 住所のある拒否（と訪問しない）は残すので数えない。前はこの説明が follows まで行の終わりのコメントに入れてしまい、確認の「再訪問 ○件」が出ていなかった（再監査 R-2）
       visits: d.visits.length, dnc: Object.keys(d.dnc || {}).filter(k => { const v = d.dnc[k]; return k.indexOf('|') > 0 && !(v && typeof v === 'object' && (v.a || v.s)); }).length,
-      // 再訪問：受け持ちと、受け持ちを外したときの印（引き継ぎ待ち・外した＝released）を合わせて、家の数で数える（2026-11-12）
+      // 再訪問：受け持ちと、受け持ちを外したときの印（引き継ぎ待ち・外した＝released）を合わせて、家の数で数える
       follows: new Set(Object.keys(d.follows || {}).concat(Object.keys(d.released || {}))).size,
       cards: (d.awayCards || []).length, apt: apt.length, houses: d.houses.length, prov: d.houses.filter(h => h.prov).length,
       imp: apt.filter(isNewImp).length, legacy: apt.filter(isLegacyNew).length
@@ -213,7 +213,7 @@
   function resetData(opt) {
     const d = D();
     opt = opt || {};
-    d.visits = []; d.follows = {}; d.released = {}; d.awayCards = []; // 再訪問の印（released）も消す。前は残っていて、記録のない家が「引き継ぎを待っている家」に出ていた（2026-11-12）
+    d.visits = []; d.follows = {}; d.released = {}; d.awayCards = []; // 再訪問の印（released）も消す。前は残っていて、記録のない家が「引き継ぎを待っている家」に出ていた
     // 拒否：訪問で記録したものは消す。取り込み・係が追加した住所のある拒否は、場所だけの拒否にして残す（kyohi.js）
     Object.keys(d.dnc || {}).forEach(k => { if (k.indexOf('|') < 0 || isSkipV(d.dnc[k])) return; if (typeof dncDrop === 'function') dncDrop(k); else delete d.dnc[k]; }); // 訪問しない（係が付けた印）は、訪問の記録ではないので残す
     // 取り込みで新しく置いた家は、家ごと消す（元からあった家は残して、ふつうの家にもどす）
@@ -241,7 +241,7 @@
       apt: apt.length, imp: apt.filter(isNewImp).length, legacy: apt.filter(isLegacyNew).length, roomV,
       // 訪問しないは家の印に移して残すので、拒否の数に入れない（監査 HS-A9）
       roomD: Object.keys(d.dnc || {}).filter(k => inApt(k) && !isSkipV(d.dnc[k])).length,
-      roomF: new Set(Object.keys(d.follows || {}).concat(Object.keys(d.released || {})).filter(inApt)).size // 受け持ちと再訪問の印（2026-11-12）
+      roomF: new Set(Object.keys(d.follows || {}).concat(Object.keys(d.released || {})).filter(inApt)).size // 受け持ちと再訪問の印
     };
   }
   function resetApts(opt) {
@@ -254,7 +254,7 @@
     d.houses.forEach(h => { if (h.type === 'apt' && !gone.has(h.id)) skipToHouse(h); }); // 訪問しないの部屋のある建物は、ふつうの家にもどしても訪問しない（監査 HS-A8）
     Object.keys(d.dnc || {}).forEach(k => { if (inApt(k)) { if (typeof dncDrop === 'function') dncDrop(k); else delete d.dnc[k]; } });
     Object.keys(d.follows || {}).forEach(k => { if (inApt(k)) delete d.follows[k]; });
-    Object.keys(d.released || {}).forEach(k => { if (inApt(k)) delete d.released[k]; }); // 部屋の再訪問の印も（2026-11-12）
+    Object.keys(d.released || {}).forEach(k => { if (inApt(k)) delete d.released[k]; }); // 部屋の再訪問の印も
     Object.keys(d.langs || {}).forEach(k => { if (inApt(k)) delete d.langs[k]; }); // 外国語の部屋の印も（監査 M6）
     d.houses = d.houses.filter(h => !gone.has(h.id));
     d.houses.forEach(h => {
@@ -312,8 +312,8 @@
     try { const rows = parseCsv(await readText(file)); list = rows.length > 1 ? buildings(rows) : null; } catch (e) { list = null; }
     if (!list || !list.length) { infoSheet('一覧を読み込めませんでした', '「建物名」「住所」の見出しがあるCSVを選んでください。<br>あれば「建物ID」「階数」「1F有」「建物タイプ」「備考」も読みます（区域・司会者・日付などの列は読みません）。'); return; }
     list.forEach(b => {
-      const p = b.addr ? xlParseJa(b.addr) : null; // 「沖縄県」があってもなくても読める
-      if (p) b.entry = { q: CFG_AREA.pref + p.muni + p.town + p.nums.join('-'), nums: p.nums, muni: p.muni, town: p.town };
+      const p = b.addr ? xlParseJa(b.addr) : null; // 県の名前があってもなくても読める
+      if (p) b.entry = { q: addrQ(p), nums: p.nums, muni: p.muni, town: p.town };
     });
     setSheet(headHtml(null, '住所から場所を調べています', esc(file.name || '')) + `<p class="hint">しばらくお待ちください（この画面を閉じないでください）。</p>
       <div class="bar"><i id="aiBar" style="width:0%"></i></div><p class="muted" id="aiCnt">地番の地図で調べています…</p>`);
@@ -758,8 +758,8 @@
   async function locate(list, fileName) {
     list.forEach(b => {
       b.units = unitsOf(b);
-      const p = b.addr ? xlParseJa(b.addr) : null; // 「沖縄県」があってもなくても読める
-      if (p) { b.entry = { q: CFG_AREA.pref + p.muni + p.town + p.nums.join('-'), nums: p.nums, muni: p.muni, town: p.town }; }
+      const p = b.addr ? xlParseJa(b.addr) : null; // 県の名前があってもなくても読める
+      if (p) { b.entry = { q: addrQ(p), nums: p.nums, muni: p.muni, town: p.town }; }
     });
     setSheet(headHtml(null, '住所から場所を調べています', esc(fileName)) + `<p class="hint">しばらくお待ちください（この画面を閉じないでください）。</p>
       <div class="bar"><i id="aiBar" style="width:0%"></i></div><p class="muted" id="aiCnt">地番の地図で調べています…</p>`);

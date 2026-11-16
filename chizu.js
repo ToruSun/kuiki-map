@@ -136,7 +136,7 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   const TILE_STD = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png';
   const TILE_CACHE = 'kuiki-tiles-v1';                      // sw.js と同じ入れ物
-  // OpenStreetMap（2026-11-16）：建物や店の名前がくわしい。配信の決まりで、まとめての保存（先読み）はしない＝電波のあるときだけ。
+  // OpenStreetMap：建物や店の名前がくわしい。配信の決まりで、まとめての保存（先読み）はしない＝電波のあるときだけ。
   // 圏外では、保存してある国土地理院の地図（見やすい地図）に自動で切りかえる。紙の予備・S-12 は国土地理院のまま
   const TILE_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';

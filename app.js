@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.150';
+var APP_JS_VER = '2026.13.151';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -91,7 +91,7 @@ const ST_CHAR = { new: '未', met: '会', away: '留', refused: '拒', dnc: '拒
 /* 結果の選択：会えた／留守（「また訪ねたいか」を記録しない設定のときは、拒否もここに置く） */
 /* 訪問しないの家・部屋・世帯のお知らせ（記録の画面。理由は出さない）。what：家・部屋・世帯 */
 const skipNoteHtml = (what, admin) => `<div class="notice skipnote"><b>この${what}は訪問しない${what}です（区域係が設定）。</b>${what === '家' ? '' : 'ほかは訪ねられます。'}${admin ? '<span class="actions"><button class="btn small" id="unDnc">訪問しない印を外す</button></span>' : ''}</div>`;
-/* 外国語の家で、係の設定により区域カードでは訪問しない言語のとき（2026-11-08）。言語の名前は区域係にだけ出す */
+/* 外国語の家で、係の設定により区域カードでは訪問しない言語のとき。言語の名前は区域係にだけ出す */
 const langNoteHtml = (what, k) => { const v = langV(k), nm = isAdmin() && v && v.l ? langName(v.l) : ''; return `<div class="notice skipnote"><b>外国語の${what}です${nm ? `（${esc(nm)}）` : ''}。</b>区域係の設定で、この言語の${what}は区域カードでは訪問しません。</div>`; };
 const refuseBtnHtml = () => `<button class="choice refbtn" data-int="拒否"><i class="pin st-dnc">拒</i>拒否<small>もう来ないでほしいと言われた</small></button>`;
 function resultChoicesHtml(awaySub) {
@@ -131,30 +131,42 @@ SLOTS.forEach((s, i) => { SLOT_BIT[s] = 1 << i; });
 const hasSlot = (mask, s) => !!(mask & SLOT_BIT[s]);
 const slotCount = m => { let n = 0; while (m) { n += m & 1; m >>= 1; } return n; };
 const slotList = m => SLOTS.filter(s => hasSlot(m, s));
-/* 区域がまだ無いときの表示位置と拡大の度合い（config.js の homeView・homeZoom。無ければ沖縄本島の中ほど） */
-const HOME_VIEW = (function () { const v = window.KUIKI_CONFIG && window.KUIKI_CONFIG.homeView; return Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]) ? [Number(v[0]), Number(v[1])] : [26.33, 127.80]; })();
-const HOME_ZOOM = (function () { const z = window.KUIKI_CONFIG && Number(window.KUIKI_CONFIG.homeZoom); return z >= 5 && z <= 19 ? z : 10; })();
+/* 区域がまだ無いときの表示位置と拡大の度合い（config.js の homeView・homeZoom。無ければ日本の全体） */
+const HOME_SET = (function () { const v = window.KUIKI_CONFIG && window.KUIKI_CONFIG.homeView; return Array.isArray(v) && v.length === 2 && isFinite(v[0]) && isFinite(v[1]); })();
+const HOME_VIEW = HOME_SET ? window.KUIKI_CONFIG.homeView.map(Number) : [36.5, 137.5];
+const HOME_ZOOM = (function () { const z = window.KUIKI_CONFIG && Number(window.KUIKI_CONFIG.homeZoom); return z >= 5 && z <= 19 ? z : HOME_SET ? 14 : 5; })();
 const AGE_ON = !!(window.KUIKI_CONFIG && window.KUIKI_CONFIG.ageData); // 年齢データ（市のCSV）を使うか。配布パックでは使わない
-/* 会衆の地域（config.js の pref・munis・muni・addrEx。配布パック・2026-11-14）
-   ・pref：県（例 '神奈川県'）。住所の頭の県を取り、国土地理院の住所検索に付ける
-   ・munis：{ 市町村コード: 名前 }（例 { '14205': '藤沢市' }）。住所の読み取りと、年齢データの市町村の一覧に使う
-   ・muni：住所に市町村が書いていないときの市町村。addrEx：入力欄の例
-   ・どれも無いときは、今までどおり沖縄県・豊見城市（豊見城の本番の動きは変わらない） */
+/* 会衆の地域（config.js の munis・muni・addrEx ほか）。会衆が、いくつかの市町村や県にまたがってもよい
+   ・munis：{ 市町村コード: 名前 }（例 { '01234': '〇〇市', '01235': '△△町' }）。住所の読み取り・地番の地図・年齢データに使う
+     県は市町村コードの頭2けたから決まる（市町村ごとに、住所検索に付ける県を変える）
+   ・pref：県（古い書き方。munis に県のちがう市町村が無いときだけ使う）
+   ・muni：住所に市町村が書いていないときの市町村（無ければ munis の1つめ）。addrEx：入力欄の例 */
+const PREF_NAMES = ['', '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県', '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+  '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県', '岐阜県', '静岡県', '愛知県', '三重県', '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
+  '鳥取県', '島根県', '岡山県', '広島県', '山口県', '徳島県', '香川県', '愛媛県', '高知県', '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県', '沖縄県'];
+const prefOfCode = code => PREF_NAMES[Number(String(code || '').slice(0, 2))] || '';
 const CFG_AREA = (function () {
   const c = window.KUIKI_CONFIG || {};
-  const pref = typeof c.pref === 'string' && /^(北海道|東京都|京都府|大阪府|.{2,3}県)$/.test(c.pref.trim()) ? c.pref.trim() : '沖縄県';
   const munis = {};
   if (c.munis && typeof c.munis === 'object') {
     Object.keys(c.munis).forEach(k => { const v = c.munis[k]; if (/^\d{5}$/.test(k) && typeof v === 'string' && v.trim()) munis[k] = v.trim().slice(0, 20); });
   }
   const names = Object.keys(munis).map(k => munis[k]);
-  const okinawa = pref === '沖縄県';
-  const muni = typeof c.muni === 'string' && c.muni.trim() ? c.muni.trim() : (names[0] || (okinawa ? '豊見城市' : ''));
-  const addrEx = typeof c.addrEx === 'string' && c.addrEx.trim() ? c.addrEx.trim().slice(0, 40) : (okinawa ? '豊見城市字高安123' : muni + '○○1丁目2-3');
-  return { pref, munis, names, muni, addrEx, okinawa };
+  const prefs = Array.from(new Set(Object.keys(munis).map(prefOfCode).filter(Boolean)));
+  const cp = typeof c.pref === 'string' && PREF_NAMES.indexOf(c.pref.trim()) > 0 ? c.pref.trim() : '';
+  if (!prefs.length && cp) prefs.push(cp);
+  const muni = typeof c.muni === 'string' && c.muni.trim() ? c.muni.trim() : (names[0] || '');
+  const mk = Object.keys(munis).find(x => munis[x] === muni);
+  const pref = (mk && prefOfCode(mk)) || prefs[0] || ''; // 会衆のおもな県（ふだん使う市町村の県）
+  const addrEx = typeof c.addrEx === 'string' && c.addrEx.trim() ? c.addrEx.trim().slice(0, 40) : (muni || '〇〇市') + '〇〇1丁目2-3';
+  /* 市町村の名前 → 県（住所検索に付ける）。分からないときは会衆の1つめの県 */
+  const prefOf = name => { const k = Object.keys(munis).find(x => munis[x] === name); return (k && prefOfCode(k)) || pref; };
+  return { pref, prefs, munis, names, muni, addrEx, prefOf };
 })();
-/* 住所の頭の県を取る（会衆の県と沖縄県） */
-const stripPref = s => { s = String(s || ''); for (const p of [CFG_AREA.pref, '沖縄県']) if (s.startsWith(p)) return s.slice(p.length); return s; };
+/* 住所 → 国土地理院の住所検索に送る文字（県＋市町村＋字＋番地） */
+const addrQ = p => CFG_AREA.prefOf(p.muni) + p.muni + p.town + p.nums.join('-');
+/* 住所の頭の県を取る（どの県でも） */
+const stripPref = s => { s = String(s || ''); const p = PREF_NAMES.find(x => x && s.startsWith(x)); return p ? s.slice(p.length) : s; };
 const TILE_PALE = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
 const TILE_PHOTO = 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg';
 const GSI_ATTR = '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>';
@@ -214,8 +226,8 @@ function makeDemo() {
     { id: 'u4', name: '伝道者D', role: 'pub', group: '北' },
     { id: 'u5', name: '伝道者E', role: 'pub', group: '南', overseer: true }
   ];
-  // 沖縄県以外（配布パック）では、試作の区域を config の homeView のまわりに置く（練習で開いた地図が沖縄にならないように）
-  const dLa = CFG_AREA.okinawa ? 0 : HOME_VIEW[0] - 26.1600, dLn = CFG_AREA.okinawa ? 0 : HOME_VIEW[1] - 127.6785;
+  // 試作の区域は config の homeView のまわりに置く（下の数字は形だけ。場所は homeView に合わせて動かす）
+  const dLa = HOME_VIEW[0] - 26.1600, dLn = HOME_VIEW[1] - 127.6785;
   const rect = (a, b, c, d) => [[a + dLa, c + dLn], [a + dLa, d + dLn], [b + dLa, d + dLn], [b + dLa, c + dLn]];
   const territories = [
     { id: 't1', no: '1', name: '試作区域 北西', polygon: rect(26.1600, 26.1640, 127.6720, 127.6765), holder: 'u1', lentAt: iso(now - 20 * DAY), completedAt: iso(now - 150 * DAY) },
@@ -349,8 +361,8 @@ const BIG_SAVE_GAP_MS = 10 * 60000; // 家・記録（大きい部分）を端�
 const FAILED_KEY = 'kuiki_failed'; // 何度送っても受け付けられなかった変更（捨てずに取っておく）
 const ORPHAN_KEY = 'kuiki_orphan', ORPHAN_DAYS = 7; // 合いことばが使えなくなったときの、まだ送っていない変更（同じ人として登録し直したら送る・点検②H-10）
 const metaSigOf = j => JSON.stringify([j.users || null, j.settings || null, j.currentUser || null]);
-const ARR_COLS = ['territories', 'houses', 'visits', 'requests', 'awayCards', 'returns', 'schedules', 'users', 's13', 'agedata', 'holds']; // holds＝おすすめの家の押さえ（今行く・予定に入れる。kangaeru.js・2026-10-26）
-const MAP_COLS = ['dnc', 'follows', 'released', 'caution', 'langs']; // caution＝注意（！）の印（chui.js）。langs＝外国語の家（2026-11-08）
+const ARR_COLS = ['territories', 'houses', 'visits', 'requests', 'awayCards', 'returns', 'schedules', 'users', 's13', 'agedata', 'holds']; // holds＝おすすめの家の押さえ（今行く・予定に入れる。kangaeru.js）
+const MAP_COLS = ['dnc', 'follows', 'released', 'caution', 'langs']; // caution＝注意（！）の印（chui.js）。langs＝外国語の家
 const RES_NAME = { m: 'met', a: 'away', r: 'refused' };
 const clone = o => JSON.parse(JSON.stringify(o));
 /* 保存場所の名札：テスト用のページ（config.js に ns: 'test' があるか、URLに「test」が入っている）は、
@@ -520,7 +532,7 @@ function refill(cur, v) {
    サーバーは、足した部屋・消した部屋だけを今の一覧に当てはめるので、ほかの人がほぼ同時に足した部屋が消えない */
 /* 家を送るとき、送る前に知っていた内容（控え）から「もとの部屋の一覧（ub）」と「もとの場所と区域（lb）」を付ける
    ・lb：[緯度, 経度, 区域id]。サーバーは、この端末が場所を変えていない（lb と同じ）ときは、サーバーの今の場所のままにする。
-     古い送信（ほかの人が動かす前の内容）で、動かした家がもとの場所にもどらないように（2026-11-04・家の場所を直す） */
+     古い送信（ほかの人が動かす前の内容）で、動かした家がもとの場所にもどらないように（家の場所を直す） */
 function houseBase(prevJ, y) {
   const ub = unitsBase(prevJ, y); if (ub) y.ub = ub; // 部屋を変えたときは、もとの一覧も送る（点検②V4）
   if (!prevJ) return;
@@ -2382,7 +2394,7 @@ function parseKey(k) { const i = k.indexOf('|'); return [k.slice(0, i), k.slice(
    値：true（訪問で記録した拒否）か { a: 住所, s: 登録元（xl・kml・adm）, at, lat, lng, p: 1（場所だけ）, appx: 1（場所はだいたい）, auto: 1（自動でつないだ）, t: 区域id, no: 区域番号 }
    くわしくは kyohi.js */
 const isPinKey = k => String(k).indexOf('|') < 0;
-/* 訪問しない（2026-11-05・HS）：区域係が付ける、理由を記録しない印。拒否（dnc）の値に q:1（家につながったキーだけ）。
+/* 訪問しない（HS）：区域係が付ける、理由を記録しない印。拒否（dnc）の値に q:1（家につながったキーだけ）。
    拒否と同じように訪問・数の対象から外す（D().dnc[k] があれば外れる）。見せ方と「拒否の数・一覧」だけ分ける。
    capSkip：新しいサーバー（設定に capDncQ:1）のときだけ付けられる（古いサーバーは q を捨てて、ふつうの拒否にしてしまうため） */
 const isSkipV = v => !!(v && typeof v === 'object' && v.q && !v.p);
@@ -2391,19 +2403,19 @@ const capSkip = () => !!(D().settings && Number(D().settings.capDncQ) === 1);
 /* 家の種類を変えるとき（一戸建て→アパート・二世帯、もどす）、訪問しない印を家と部屋のあいだで移す（監査 HS-A8）。
    commit の中で、部屋（units）を変えたあとに呼ぶ */
 function skipToUnits(h) { // 家の印 → 部屋ぜんぶ
-  langToUnits(h); // 外国語の印も一緒に（2026-11-08）
+  langToUnits(h); // 外国語の印も一緒に
   const k0 = K(h.id, ''), v = D().dnc[k0];
   if (!isSkipV(v) || !h.units.length) return;
   delete D().dnc[k0];
   h.units.forEach(u => { const k = K(h.id, u); D().dnc[k] = Object.assign({}, v, { at: new Date().toISOString() }); delete D().follows[k]; delete D().released[k]; });
 }
 function skipToHouse(h) { // 部屋のどれかが訪問しない → 家の印（部屋を消す前に呼ぶ）
-  langToHouse(h); // 外国語の印も一緒に（2026-11-08）
+  langToHouse(h); // 外国語の印も一緒に
   const v = h.units.map(u => D().dnc[K(h.id, u)]).find(isSkipV);
   if (v) D().dnc[K(h.id, '')] = Object.assign({}, v, { at: new Date().toISOString() });
 }
 const hasSkip = h => !!h && (dncSkip(K(h.id, '')) || (h.units || []).some(u => dncSkip(K(h.id, u)))); // この家（部屋のどれか）に訪問しない印
-/* 外国語の家（2026-11-08・GK）：家の編集の種別「外国語」と、その言語。D().langs に「家id|部屋」→ 値
+/* 外国語の家（GK）：家の編集の種別「外国語」と、その言語。D().langs に「家id|部屋」→ 値
    ・区域係の端末：{ l: 言語, at }。係以外の端末：{ g: 1 }（外国語の家）と、訪問しない言語なら x: 1（言語はサーバーが渡さない）
    ・係の設定 langSkip（LANGS の順のビット）で「区域カードで訪問しない」にした言語の家・部屋は、訪問しない印と同じように
      数・留守宅・おすすめから外す（dncAt が { q:1, lg:1 } を返す）。地図の見せ方は灰色の「ー」と、外国語の印
@@ -2488,7 +2500,7 @@ const seeV = (v, k, house) => v.by === me().id || canSeeDetail(k, house);
 const closedAt = k => { const r = D().released[k]; return r && r.reason === 'closed' ? r.at : null; };
 /* 引き継ぎを待っている家（「外した」家はふくめない）
    「会えた」記録のない家の印は、引き継ぎとして扱わない（一覧・おすすめ・留守宅カードの除外のどれにも使わない）。
-   リセットや記録の取り消しで、印だけが残ることがあったため（2026-11-12。残った印は係の「保守」で消せる：relOrphans） */
+   リセットや記録の取り消しで、印だけが残ることがあったため（残った印は係の「保守」で消せる：relOrphans） */
 const relOf = k => { const r = D().released[k]; return r && r.reason !== 'closed' && sum(k).met ? r : null; };
 function lastInterest(k) {
   const m = sum(k).met;
@@ -2509,7 +2521,7 @@ const partsOf = t => ((t && Array.isArray(t.parts) ? t.parts : []).filter(p => p
 const myPart = t => partsOf(t).filter(p => (p.uids || []).includes(me().id)).sort((a, b) => (a.at < b.at ? 1 : -1))[0] || null;
 const partMates = p => (p.uids || []).filter(u => u !== me().id);
 const partName = p => (p.uids || []).map(u => uname(u) + 'さん').join('・');
-/* 集合住宅の部屋ごとの分け方（2026-11-08・heya-wake.js）
+/* 集合住宅の部屋ごとの分け方（heya-wake.js）
    parts の1件に rooms: { 建物のid: [部屋, ...] } を持たせると、その建物は「えらんだ部屋だけ」がその範囲になる。
    ro: 1 は「部屋だけの範囲」（囲みなし。poly は建物のまわりの小さな四角で、地図の札と道案内のためだけに使う）。
    ほかの範囲で部屋をえらばれた部屋は、囲みの中にあっても、その範囲には入れない（部屋をえらんだほうが勝つ） */
@@ -2661,7 +2673,7 @@ function unmetAsOf(k, at) {
 }
 function spMatch(h, u, t) {
   const sp = spOf(t), ks = Array.isArray(sp.kinds) ? sp.kinds : [], ev = sp.ev === 'y' || sp.ev === 'n' ? sp.ev : '';
-  // 種別（集合住宅・オートロック・コンビニなど）は「どれかに当たる」家を集める（2026-10-22。以前は条件と種別の両方に合う家）
+  // 種別（集合住宅・オートロック・コンビニなど）は「どれかに当たる」家を集める（以前は条件と種別の両方に合う家）
   const apt = !!sp.apt || (!!ev && !sp.lock && !ks.length); // エレベーターだけの古い形は、集合住宅とみなす
   if (ks.length || apt || sp.lock) {
     const isA = h.type === 'apt' && h.ban !== 'no', k = targetKind(h, u);
@@ -2832,6 +2844,10 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.151', items: [
+    ['地', '会衆がいくつかの市町村や県にまたがっていても、住所をそれぞれの県で調べるようになりました。'],
+    ['地', '地番参考図を、市町村ごとに入れられるようになりました。']
+  ] },
   { v: '2026.13.150', items: [
     ['地', '土地の区切りの出典の書き方を、どの地域でも同じ形にしました。']
   ] },
@@ -3438,7 +3454,7 @@ const degNorm = d => ((d % 360) + 540) % 360 - 180; // -180〜180度に
   };
   // 拡大・縮小（ピンチ）の途中：Leaflet は「描く面＝画面の大きさ×(0.5＋余白)」として位置を出すが、
   // 回しているときは上のとおり対角線ぶんの正方形にしているので、そのままだと区域の線・土地の区切り・家の点が
-  // ずれて見えた（指をはなすと元にもどる）。実際の面の大きさから位置を出す（2026-11-16）
+  // ずれて見えた（指をはなすと元にもどる）。実際の面の大きさから位置を出す
   const rTr = L.Renderer.prototype._updateTransform;
   L.Renderer.prototype._updateTransform = function (center, zoom) {
     if (!this._kmHalfVec || !this._map) return rTr.call(this, center, zoom);
@@ -3537,7 +3553,7 @@ function rotCover() {
     if (l instanceof L.GridLayer) l._update();
     else if (l instanceof L.Renderer) {
       // ピンチで拡大・縮小している途中に回し始めたとき：線の位置は「拡大を始める前」の計算のままなので、
-      // いまの拡大に合わせて計算しなおしてから描く（しないと、指をはなすまで線がずれて見えた。2026-11-16）
+      // いまの拡大に合わせて計算しなおしてから描く（しないと、指をはなすまで線がずれて見えた）
       if (l._zoom !== map.getZoom() && !map._animatingZoom) for (const id in l._layers) l._layers[id]._project();
       l._update();
     }
@@ -3626,7 +3642,7 @@ function applyRotSetting() {
   if (!rotAllowed() && mapDeg) { cancelAnimationFrame(rotAnim); setMapDeg(0); renderHouses(); if (window.repaintTerrLabels) repaintTerrLabels(); }
 }
 
-/* 会衆の範囲（config.js の area：[[緯度, 経度], …]）。区域の線を引くときの目安に、うすい点線で出す（配布パック・2026-11-14）。
+/* 会衆の範囲（config.js の area：[[緯度, 経度], …]）。区域の線を引くときの目安に、うすい点線で出す（配布パック）。
    押せない・塗らない線なので、ほかの操作のじゃまをしない。区域がまだ1つも無いときは、はじめにこの範囲が見えるようにする */
 const CONG_AREA = (function () {
   const a = window.KUIKI_CONFIG && window.KUIKI_CONFIG.area;
@@ -3759,8 +3775,8 @@ const KINDS = {
   conv: ['コンビニ', SVG('<path d="M4 9h16v11H4z"/><path d="M3 9l1.5-4h15L21 9"/><path d="M8 13h3v4H8z"/><path d="M14 13h2"/>')],
   care: ['介護施設', SVG('<circle cx="12" cy="5" r="2"/><path d="M12 7.5v6l3 6"/><path d="M12 13.5l-3 6"/><path d="M9 10.5h6"/><path d="M17.5 12v8"/>')],
   food: ['飲食店', SVG('<path d="M7 3v8"/><path d="M5 3v4a2 2 0 0 0 4 0V3"/><path d="M7 11v10"/><path d="M16 3c-1.7 1.2-2.5 3.2-2.5 6 0 1.4.8 2.3 2.5 2.5V21"/>')],
-  lang: ['外国語', SVG('<path d="M4 4h16v12H10l-4 4v-4H4z"/><path d="M7.5 13l2-6 2 6M8.2 11h2.6"/><path d="M13.5 8.5h4M15.5 7.5v1M14 13c2-1 3-2.6 3.3-4.5M14.6 10.6c.8 1.2 1.8 2 3 2.4"/>')], // 外国語の家（2026-11-08）。種別の値としては保存しない（D().langs）
-  other: ['その他', SVG('<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 6V4h8v2"/><circle cx="8.5" cy="13" r="1"/><circle cx="12" cy="13" r="1"/><circle cx="15.5" cy="13" r="1"/>')], // どれに当たるか迷う、住居以外の建物（2026-10-22）
+  lang: ['外国語', SVG('<path d="M4 4h16v12H10l-4 4v-4H4z"/><path d="M7.5 13l2-6 2 6M8.2 11h2.6"/><path d="M13.5 8.5h4M15.5 7.5v1M14 13c2-1 3-2.6 3.3-4.5M14.6 10.6c.8 1.2 1.8 2 3 2.4"/>')], // 外国語の家。種別の値としては保存しない（D().langs）
+  other: ['その他', SVG('<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 6V4h8v2"/><circle cx="8.5" cy="13" r="1"/><circle cx="12" cy="13" r="1"/><circle cx="15.5" cy="13" r="1"/>')], // どれに当たるか迷う、住居以外の建物
 };
 const LOCK_SVG = SVG('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3"/>');
 const kindOf = h => (h && KINDS[h.kind] ? h.kind : 'home');
@@ -3790,7 +3806,7 @@ const banNotice = h => (h && h.type === 'apt' && h.ban === 'no' ? '<div class="n
   + (window.dncRoomNote ? window.dncRoomNote(h) : ''); // 備考から取り込んだ、部屋ごとの拒否（kyohi.js）
 /* 建物のメモ（備考）と、エレベーター・縦階段（2026.13.25）。部屋を入力する画面の上に出す */
 const AC_NAME = { ev: 'エレベーターあり', no: 'エレベーターなし（階段だけ）', st: 'エレベーターなし（縦階段：階段ごとに上り下り）' };
-/* カードのエレベーター（集合住宅の特別区域だけ）。高齢の方がカードをえらびやすいように、文字で出す（2026-10-22）
+/* カードのエレベーター（集合住宅の特別区域だけ）。高齢の方がカードをえらびやすいように、文字で出す
    全部の建物にエレベーターがあれば「エレベーターあり」。まじっていれば「エレベーターあり 2／5棟」 */
 function evSummary(t) {
   if (!isSpecial(t)) return '';
@@ -3803,7 +3819,7 @@ function evSummary(t) {
   if (q === bs.length) return 'エレベーター 未確認';
   return y ? `エレベーターあり ${y}／${bs.length}棟` : 'エレベーターなし・未確認';
 }
-/* 雨の日（2026-10-22）：サーバーが30分ごとに調べた天気（Open-Meteo）。端末からは天気のサービスに通信しない。
+/* 雨の日：サーバーが30分ごとに調べた天気（Open-Meteo）。端末からは天気のサービスに通信しない。
    雨なら「区域をもらう」のおすすめ順と「おすすめ」タブで、集合住宅のカード（エレベーターありが先）を先に出す。奉仕者の操作はいらない */
 let WX = (() => { try { return JSON.parse(lsGet('kuiki_wx') || 'null'); } catch (e) { return null; } })(); // 前に届いた天気（古いものは下の判定で使わない）
 const wxFresh = () => !!(WX && WX.at && !WX.off && !WX.err && Date.now() - Date.parse(WX.at) < 2 * 3600000 && Store.data && Number(D().settings.wxOn) !== 0);
@@ -3811,7 +3827,7 @@ const isRainy = () => !!(WX && WX.r === 1 && Date.now() - Date.parse(WX.at) < 2 
 /* 集合住宅のカードの順位：0 エレベーターあり・1 ほかの集合住宅・2 それ以外
    ・特別区域の集合住宅・オートロックのカード
    ・ふつうの区域でも、訪ねる部屋の半分以上が集合住宅の部屋なら「集合住宅の区域」（団地など）。
-     そのうち半分以上がエレベーターのある建物の部屋なら 0（2026-10-22） */
+     そのうち半分以上がエレベーターのある建物の部屋なら 0 */
 const APTR = new Map();
 let aptrAt = 0, aptrN = -1;
 function aptCardRank(t) {
@@ -3976,7 +3992,7 @@ function helpersOf(t) {
   return (t.helpers || []).filter(h => Date.parse(h.until) > now);
 }
 const isHelper = (t, uid) => helpersOf(t).some(h => h.uid === (uid || me().id));
-/* 今日の司会（2026-10-24）：集まりで使う区域の担当者が司会できない日に、ほかの監督・司会者が「今日だけ司会」をする。
+/* 今日の司会：集まりで使う区域の担当者が司会できない日に、ほかの監督・司会者が「今日だけ司会」をする。
      lead: { uid（司会する人）, h（そのときの担当者）, until（その日の23:59）, by, at }
    担当者・S-13・持てる枚数は変わらない。1枚につき1人。担当者が変わると（h が合わなくなり）効かなくなる。
    今日の司会は「今日回る人」「回る範囲を分ける」「今日の記録を直す」ができる（返却・担当交代はできない） */
@@ -4146,7 +4162,7 @@ function setZoomHint(need) {
   if (need && !beginner()) need = false;
   if (!need) { clearTimeout(zoomHintTimer); el.hidden = true; zoomHintShown = false; return; }
   if (zoomHintShown) return;
-  // 区域の番号も出ていないほど縮めているときは、番号のことも書く（番号の札は schedule.js・2026-11-04）
+  // 区域の番号も出ていないほど縮めているときは、番号のことも書く（番号の札は schedule.js）
   const txt = window.terrNumHidden && window.terrNumHidden() ? '地図を拡大すると区域の番号と家の印が出ます' : '地図を拡大すると家の印が出ます';
   el.innerHTML = `${txt}<span aria-hidden="true">×</span>`;
   zoomHintShown = true; el.hidden = false;
@@ -4205,11 +4221,11 @@ function renderLegend() {
   if ($('#lgReturn')) $('#lgReturn').onclick = () => { toggleLegend(false); openReturnSheet(r.t.id); };
   if ($('#barSync')) { updateSyncAge(); $('#barSync').onclick = () => { $('#barAge').textContent = '更新しています…'; (Store.queue.length ? flush() : refresh(true)).catch(() => {}).then(updateSyncAge); }; }
 }
-/* 親番号と枝番（2026-10-18）：枝番の区域（例：5-1）は t.pno＝親の番号（5）・t.pnm＝マイマップでの親の名前（A05）・t.pp＝親の線 を持つ。
+/* 親番号と枝番：枝番の区域（例：5-1）は t.pno＝親の番号（5）・t.pnm＝マイマップでの親の名前（A05）・t.pp＝親の線 を持つ。
    t.rest＝1 は「親の線の中で、どの枝番にも入らない部分」の区域（枝番より後に家を割り当てる）
    地図では親の線を太い線で囲む。
    区域の番号の札（枝番は「14-3」）は、全員 schedule.js の paintDueMap で、縮尺に合わせて・重ならないように出す。
-   親の「区域 14」の札は出さない（枝番の札に親の番号が入っているため。重なって読めなくなっていた・2026-11-04） */
+   親の「区域 14」の札は出さない（枝番の札に親の番号が入っているため。重なって読めなくなっていた） */
 function renderParents(cur) {
   const ps = new Map();
   for (const t of polyTerrs()) if (t.pno && okPoly(t.pp) && !ps.has(t.pno)) ps.set(t.pno, t);
@@ -4221,7 +4237,7 @@ function renderParents(cur) {
 }
 /* 区域の線の中をタップしたとき */
 function onTerrTap(t, e, keep) {
-  // 家の場所を直しているときは、区域の中をタップしても、家をその場所に動かす（区域の線が先にタップを受け取り、家が動かなかった・2026-11-04）
+  // 家の場所を直しているときは、区域の中をタップしても、家をその場所に動かす（区域の線が先にタップを受け取り、家が動かなかった）
   if (moveTap(e)) return;
   // 地図で場所をえらんでいるとき（集まりの場所・目印・グループの中心など）は、区域の中をタップしても、その場所をえらぶ
   if (pickPlace) { const f = pickPlace; pickPlace = null; f(e.latlng); return; }
@@ -4231,7 +4247,7 @@ function onTerrTap(t, e, keep) {
   if (keep && t.id === cur) return; // 家の印のそばを押しそこねたときに、えらんでいる区域（回る表示）が外れないように
   selectTerr(t.id === cur ? null : t.id, { toast: t.id !== cur, tap: true });
 }
-/* 家の点の層（canvas）が区域の線より上にあり、区域の中のタップが線に届かない（2026-11-08 に分かった）。
+/* 家の点の層（canvas）が区域の線より上にあり、区域の中のタップが線に届かない（に分かった）。
    家の印に当たらなかったタップ（map の click）は、ここで、その場所の区域のタップとして扱う。上に描いた区域（枝番）を先に見る */
 let terrTaps = [], longPressAt = 0;
 function terrTapAt(e) {
@@ -4253,7 +4269,7 @@ function renderTerrs() {
   const cur = selTerrId();
   const tapOk = mode === 'normal'; // 線引き・家の追加のときは、地図のタップを区域の選択に使わない
   const lock = lockOn(), okT = lock ? openTerrIds() : null;
-  // 灰色でも、まだだれも持っていない「区域をもらう」一覧の区域は、線をタップして、くわしい情報を見て受け取る・係に頼むができる（2026-11-08。中の家は今までどおり記録できない）
+  // 灰色でも、まだだれも持っていない「区域をもらう」一覧の区域は、線をタップして、くわしい情報を見て受け取る・係に頼むができる（中の家は今までどおり記録できない）
   const pickT = lock && tapOk ? new Set(freeTerrs().filter(t => !t.holder).map(t => t.id)) : null;
   const list = polyTerrs().slice().sort((a, b) => (b.rest ? 1 : 0) - (a.rest ? 1 : 0)); // 親の残りの部分は下に描く（枝番を押せるように）
   for (const t of list) {
@@ -4267,7 +4283,7 @@ function renderTerrs() {
       interactive: tap, bubblingMouseEvents: false
     }).addTo(terrLayer);
     if (tap) { poly.on('click', e => onTerrTap(t, e)); terrTaps.push(t); }
-    // 区域の番号の札は schedule.js の paintDueMap で出す（縮尺に合わせて・重ならないように・2026-11-04）
+    // 区域の番号の札は schedule.js の paintDueMap で出す（縮尺に合わせて・重ならないように）
     // 今日わたした範囲（担当者には全部、わたされた人には自分の範囲だけ）
     const mp = myPart(t), hold = canLead(t); // 今日の司会にも、わたした範囲を全部見せる
     partsOf(t).forEach(p => {
@@ -4307,7 +4323,7 @@ function selectTerr(id, opts) {
   syncTerrJump();
   renderTerrs(); renderHouses();
   if (t && o.fit) setTimeout(() => fitTerr(id), 80);
-  // 地図で区域をタップしたとき：まだだれも持っていない区域なら、くわしい情報と「受け取る・係に頼む」の画面を出す（schedule.js の openTerrPick・2026-11-08）
+  // 地図で区域をタップしたとき：まだだれも持っていない区域なら、くわしい情報と「受け取る・係に頼む」の画面を出す（schedule.js の openTerrPick）
   if (t && o.tap && !isAdmin() && !myTerr(t) && !t.holder && window.openTerrPick && window.openTerrPick(t.id)) return;
   if (t && !isAdmin() && !myTerr(t) && !t.holder && isFree(t)) {
     // 自由に受け取ってよい区域：その場で受け取れるようにする
@@ -4369,7 +4385,7 @@ function renderHouses() {
   houseLayer.clearLayers();
   if (window.renderDncPins) window.renderDncPins(); // 場所だけの拒否の印（kyohi.js）
   if (window.renderChuiPins) window.renderChuiPins(); // 場所だけの注意の印（chui.js）
-  if (window.renderTochiKugiri) window.renderTochiKugiri(); // 土地の区切り（tochi-kugiri.js・2026-11-13）
+  if (window.renderTochiKugiri) window.renderTochiKugiri(); // 土地の区切り（tochi-kugiri.js）
   const fkeys = followMap ? new Set(myFollowKeys()) : null;
   const ff = fkeys ? (k => (fkeys.has(k) ? 'hl' : 'dim')) : focusFn();
   renderCardBar();
@@ -5091,7 +5107,7 @@ function openTarget(hid, unit, fromBuilding, review) {
   };
   paint();
 }
-/* 記録につけるカードの印（状況のグラフ用・2026-10-31）。自分が持つ（グループのカードは今日回る人も）留守宅カードに入っている家 → 'card'、それ以外 → 'area'（区域カードなど）。印はこの2つだけ（カードの番号は付けない）。
+/* 記録につけるカードの印（状況のグラフ用）。自分が持つ（グループのカードは今日回る人も）留守宅カードに入っている家 → 'card'、それ以外 → 'area'（区域カードなど）。印はこの2つだけ（カードの番号は付けない）。
    同じ区域の区域カードも持っているときは、そのカードの画面（focusCard）を開いているときだけ留守宅カード。おすすめから開いた記録（viaReco）は、画面の文脈がないので、自分のカードの家なら留守宅カード。
    サーバーは src にこの形だけを通す（Code.gs の CARD_SRC_RE・RECO_CARD_SRC_RE） */
 function cardMark(hid, unit, viaReco) {
@@ -5232,7 +5248,7 @@ function confirmProv(hid) {
   delete h.prov;
   Store.pushHouse(h, false);
 }
-/* その家の、訪問の記録・拒否・注意・再訪問の受け持ち・引き継ぎの印の数（どの部屋でも。集合住宅は建物ぜんたい '' も。H8・2026-10-29）
+/* その家の、訪問の記録・拒否・注意・再訪問の受け持ち・引き継ぎの印の数（どの部屋でも。集合住宅は建物ぜんたい '' も。H8）
    引き継ぎの印は、サーバーと同じく「印があれば」数える（relOf は使わない） */
 function houseRecCounts(h) {
   const c = { v: 0, dnc: 0, cau: 0, fol: 0, rel: 0 };
@@ -6756,7 +6772,7 @@ function unitGroups(h) {
     g.get(key).push(u);
   });
   let list = [...g.entries()];
-  // 「2-101・2-201」のように、棟が1つだけで、部屋番号に階が入っているときは、階で分ける（2026-11-08）
+  // 「2-101・2-201」のように、棟が1つだけで、部屋番号に階が入っているときは、階で分ける
   if (list.length === 1 && h.units.length > 1) {
     const f = new Map(), re = /^.+?[-－ー](\d{1,2})\d{2}$/;
     if (h.units.every(u => re.test(uName(h, u)))) {
@@ -6970,7 +6986,7 @@ function openAddForm(ll, tid, editId) {
     lab.onfocus = show;
     lab.oninput = () => { f.label = lab.value; show(); };
   };
-  const typeLock = !!eh && !isAdmin() && (hasSkip(eh) || hasLang(eh)); // 外国語の家も（係以外は言語を持たないので、部屋に移せない・2026-11-08） // 訪問しないの家の種類は、区域係だけが変えられる（監査 HS-A8）
+  const typeLock = !!eh && !isAdmin() && (hasSkip(eh) || hasLang(eh)); // 外国語の家も（係以外は言語を持たないので、部屋に移せない） // 訪問しないの家の種類は、区域係だけが変えられる（監査 HS-A8）
   const paint = () => {
     const apt = f.type === 'apt';
     setSheet(headHtml(t, eh ? 'この家を編集' : 'ここに追加します', t ? `区域${esc(t.no)}　${esc(t.name)}` : '区域は、線を完成したときに決まります') + `
@@ -7028,7 +7044,7 @@ function openAddForm(ll, tid, editId) {
       const label = f.label.trim();
       const us = f.type === 'apt' ? genUnits(f.n) : [];
       if (f.type === 'apt' && !us.length) { toast('部屋の名前を入れてください'); return; }
-      const asLang = f.type !== 'apt' && f.kind === 'lang' && capLang(); // 外国語の家（2026-11-08）
+      const asLang = f.type !== 'apt' && f.kind === 'lang' && capLang(); // 外国語の家
       if (asLang && !f.lang && !(eh && eh.type !== 'apt' && isLangKey(K(eh.id, '')))) { toast('何語かをえらんでください'); return; }
       const kindSave = f.kind === 'lang' ? 'home' : f.kind;
       const langSave = (h0) => { // 一戸建ての外国語の印（えらび直したときだけ書く。係以外は言語を知らないので、えらばなければ今のまま）
@@ -7835,37 +7851,16 @@ LIB.xlsx = 'vendor/xlsx-0.18.5/xlsx.full.min.js';
 const XL_PAD_M = 250;   // 区域の線を、家からどれだけ外側に引くか（m）
 const XL_DUP_M = 6;     // すでにある家とこれより近ければ、同じ家とみなして入れない（m）
 const XL_GSI = 'https://msearch.gsi.go.jp/address-search/AddressSearch?q=';
-/* シート名（ローマ字）→ 市町村 */
-const XL_MUNI = {
-  chatan: '北谷町', ginowan: '宜野湾市', ginoza: '宜野座村', haebaru: '南風原町', nakagusuku: '中城村', naha: '那覇市',
-  nanjo: '南城市', nishihara: '西原町', kadena: '嘉手納町', kin: '金武町', kitanaka: '北中城村', kitanakagusuku: '北中城村',
-  okinawa: '沖縄市', onna: '恩納村', tomigusuku: '豊見城市', urasoe: '浦添市', uruma: 'うるま市', yomitan: '読谷村',
-  yonabaru: '与那原町', itoman: '糸満市', yaese: '八重瀬町', nago: '名護市', motobu: '本部町', nakijin: '今帰仁村',
-  higashi: '東村', ogimi: '大宜味村', kunigami: '国頭村', ie: '伊江村', miyakojima: '宮古島市', ishigaki: '石垣市',
-  kumejima: '久米島町'
-};
-const XL_MUNI_LIST = Array.from(new Set(CFG_AREA.names.concat(Object.values(XL_MUNI)))).sort((a, b) => b.length - a.length); // config の市町村（配布パック）＋沖縄の市町村
-/* ローマ字の地名 → 漢字（住所の欄が日本語で書かれていない行のため）。市町村ごと */
-const XL_TOWN = {
-  '北谷町': { chatan: '北谷', kitamae: '北前', mihama: '美浜', miyagi: '宮城', sunabe: '砂辺', kuwae: '桑江', yoshihara: '吉原', toubaru: '桃原', tobaru: '桃原', ihei: '伊平', kamiseido: '上勢頭', hamagawa: '浜川' },
-  '宜野湾市': { kakazu: '嘉数', ganeko: '我如古', ginowan: '宜野湾', ojana: '大謝名', mashiki: '真志喜', kiyuna: '喜友名', aichi: '愛知', oyama: '大山', isa: '伊佐', futenma: '普天間', uchidomari: '宇地泊', shimashi: '志真志', nodake: '野嵩', kamiyama: '神山', nagata: '長田', maehara: '真栄原' },
-  '宜野座村': { ginoza: '宜野座', kanna: '漢那', matsuda: '松田', sokei: '惣慶', fukuyama: '福山' },
-  '南風原町': { tsukazan: '津嘉山', kanegusuku: '兼城', miyahira: '宮平', kyan: '喜屋武', teruya: '照屋' },
-  '中城村': { ishado: '伊舎堂', wauke: '和宇慶', wakue: '和宇慶', minamiuebaru: '南上原', arakaki: '新垣', uehara: '上原', toma: '当間', tsuha: '津覇', kuba: '久場' },
-  '那覇市': { kokuba: '国場', higawa: '樋川', asato: '安里', tomari: '泊', maejima: '前島', wakasa: '若狭', kume: '久米', nishi: '西', uenoya: '上之屋', izumizaki: '泉崎', matsukawa: '松川', mihara: '三原', makishi: '牧志', matsuo: '松尾', kumoji: '久茂地', shuri: '首里', omoromachi: 'おもろまち', yogi: '与儀', tsuboya: '壺屋', oroku: '小禄', akamine: '赤嶺', ameku: '天久', kainan: '開南', furujima: '古島', aja: '安謝' },
-  '南城市': { ozato: '大里', takahira: '大里高平', hyakuna: '玉城百名', tamaki: '玉城', sashiki: '佐敷', chinen: '知念', inamine: '大里稲嶺' },
-  '西原町': { morikawa: '森川', chibara: '千原', onaga: '翁長', kohatsu: '小波津', gaja: '我謝', kaneku: '兼久', uchima: '内間', yonagusuku: '与那城', tanabaru: '棚原' },
-  '嘉手納町': { mizugama: '水釜', kadena: '嘉手納', yara: '屋良', noguni: '野国', nozato: '野里' },
-  '金武町': { kin: '金武', igei: '伊芸', yaka: '屋嘉' },
-  '北中城村': { toguchi: '渡口', yagibaru: '屋宜原', waniya: '和仁屋', kishaba: '喜舎場', shimabuku: '島袋', atta: '熱田', aniya: '安谷屋', ogido: '荻道' },
-  '沖縄市': { ageda: '安慶田', uechi: '上地', akemichi: '明道', awase: '泡瀬', nakasone: '仲宗根町', chuo: '中央', misato: '美里', shiromaecho: '城前町', chiromaecho: '城前町', chibana: '知花', ikehara: '池原', noborikawa: '登川', moromizato: '諸見里', goya: '胡屋', kamara: '嘉間良', sumiyoshi: '住吉', minamitobaru: '南桃原', sonda: '園田', yogi: '与儀', hiyagon: '比屋根', takahara: '高原', higashi: '東', kaiho: '海邦', koza: '古謝', tobaru: '桃原', kubota: '久保田', yamazato: '山里', yamauchi: '山内', teruya: '照屋', miyazato: '宮里', matsumoto: '松本', izumi: '泉' },
-  '恩納村': { kaneku: '前兼久', maeganeku: '前兼久', fuchaku: '冨着', onna: '恩納', nakadomari: '仲泊', yamada: '山田', tancha: '谷茶', seragaki: '瀬良垣', afuso: '安富祖' },
-  '豊見城市': { madanbashi: '真玉橋', zayasu: '座安', nesabu: '根差部', tomigusuku: '豊見城', kakazu: '嘉数', iraha: '伊良波', takamine: '高嶺' },
-  '浦添市': { makiminato: '牧港', minatogawa: '港川', gusukuma: '城間', serikyaku: '勢理客', yafuso: '屋富祖', takushi: '沢岻', miyagi: '宮城', iso: '伊祖', uchima: '内間', nakama: '仲間', maeda: '前田', kyozuka: '経塚' },
-  'うるま市': { ishikawa: '石川', takaesu: '高江洲', gushikawa: '具志川', agena: '安慶名', akamichi: '赤道', taba: '田場', kawasaki: '川崎', akano: '赤野', nakamine: '仲嶺', uezu: '上江洲', ota: '大田', konbu: '昆布', shioya: '塩屋', miyazato: '宮里', yakena: '与那城屋慶名', henza: '与那城平安座' },
-  '読谷村': { sobe: '楚辺', namihira: '波平', senaha: '瀬名波', toya: '渡慶次', zakimi: '座喜味', kina: '喜名', furugen: '古堅', takashiho: '高志保', toguchi: '渡具知' },
-  '与那原町': { yonabaru: '与那原', ueyonabaru: '上与那原', agarihama: '東浜', itarashiki: '板良敷' }
-};
+/* ローマ字の住所の表（config.js の addrRomaji。外国語の区域の一覧で、住所がローマ字で書かれているときに使う。無ければ使わない）
+   ・sheets：{ シート名のローマ字: 市町村 }　・towns：{ 市町村: { 字のローマ字: 字 } }　・oldMunis：{ 合併する前の市町村: 今の書き方 } */
+const XL_RO = (function () {
+  const r = (window.KUIKI_CONFIG && window.KUIKI_CONFIG.addrRomaji) || {};
+  const obj = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  return { sheets: obj(r.sheets), towns: obj(r.towns), oldMunis: obj(r.oldMunis) };
+})();
+const XL_MUNI = XL_RO.sheets;
+const XL_TOWN = XL_RO.towns;
+const XL_MUNI_LIST = Array.from(new Set(CFG_AREA.names.concat(Object.values(XL_MUNI), Object.keys(XL_TOWN)))).sort((a, b) => b.length - a.length); // 会衆の市町村（config）
 const xlKey = s => String(s || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); // 「Dirección1」→「direccion1」
 /* 文字をそろえる（全角→半角・数字のあいだの「ー」などは「-」に） */
 function xlNorm(v) {
@@ -7881,17 +7876,11 @@ function xlKanjiNum(s) { // 「十二」→ 12（住所検索の返事の「二�
   });
 }
 /* 日本語の住所を「市町村・字・番地・残り（建物や部屋）」に分ける */
-/* 合併する前の市町村名 → 今の住所の書き方（古い一覧の住所でも読めるように） */
-const XL_OLD_MUNI = [
-  [/^豊見城村/, '豊見城市'],
-  [/^具志川市(字)?/, 'うるま市'], [/^石川市(字)?/, 'うるま市石川'], [/^与那城町(字)?/, 'うるま市与那城'], [/^勝連町(字)?/, 'うるま市勝連'],
-  [/^佐敷町(字)?/, '南城市佐敷'], [/^知念村(字)?/, '南城市知念'], [/^玉城村(字)?/, '南城市玉城'], [/^大里村(字)?/, '南城市大里'],
-  [/^東風平町/, '八重瀬町'], [/^具志頭村/, '八重瀬町'],
-  [/^平良市(字)?/, '宮古島市平良'], [/^城辺町(字)?/, '宮古島市城辺'], [/^下地町(字)?/, '宮古島市下地'], [/^上野村(字)?/, '宮古島市上野'], [/^伊良部町(字)?/, '宮古島市伊良部'],
-  [/^具志川村/, '久米島町'], [/^仲里村/, '久米島町']
-];
+/* 合併する前の市町村名 → 今の住所の書き方（古い一覧の住所でも読めるように。config.js の addrRomaji.oldMunis） */
+const XL_OLD_MUNI = Object.keys(XL_RO.oldMunis).filter(k => k && typeof XL_RO.oldMunis[k] === 'string')
+  .sort((a, b) => b.length - a.length).map(k => [new RegExp('^' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(字)?'), XL_RO.oldMunis[k]]);
 function xlParseJa(raw) {
-  let s = stripPref(xlNorm(raw)).replace(/^(島尻郡|中頭郡|国頭郡|宮古郡|八重山郡)/, '');
+  let s = stripPref(xlNorm(raw));
   { const g = /^[\u4e00-\u9fff]{1,4}郡/.exec(s); if (g && XL_MUNI_LIST.some(m => s.startsWith(g[0] + m))) s = s.slice(g[0].length); } // 「高座郡寒川町」など（市町村の一覧にあるときだけ）
   for (const [re, to] of XL_OLD_MUNI) { if (re.test(s)) { s = s.replace(re, to); break; } }
   const muni = XL_MUNI_LIST.find(m => s.startsWith(m));
@@ -7972,7 +7961,7 @@ function xlReadSheet(name, rows) {
     const tail = xlSplitTail(p.rest);
     if (!unit) unit = tail.unit;
     if (!label) label = tail.label;
-    const q = CFG_AREA.pref + p.muni + p.town + p.nums.join('-');
+    const q = addrQ(p);
     out.entries.push({ q, nums: p.nums, muni: p.muni, town: p.town, unit, label, dnc: /no ?visitar/.test(code) });
   });
   return out;
@@ -8215,7 +8204,7 @@ function xlCheckSheet(check, nT, nH, nSkip) {
 }
 
 /* ---------- 家の場所を直す（地図をタップした所に動かす） ----------
-   ・家の編集ができる人（区域係・くわしい表示の人）ならだれでも使える（2026-11-04。以前は区域係だけ）
+   ・家の編集ができる人（区域係・くわしい表示の人）ならだれでも使える（以前は区域係だけ）
    ・区域係でない人は、まちがえて遠くに動かさないよう、今の場所から MOVE_MAX_M まで（サーバーでも同じ数で確かめる） */
 const MOVE_MAX_M = 500;
 const canMoveHouse = () => isAdmin() || !isSimple();
@@ -8966,7 +8955,7 @@ function openReturnSheet(tid) {
   // 紙の区域カード（S-13 で渡した区域）は、紙で回った家がアプリにないので、記録での確かめはしない（えらぶ欄も出さない。返すと ph で完了）
   const low = !paperHandOf(t) && lowOnSet() && (r.phase === 'first' ? r.pct1 < th : (!lowFirstPicked(t) && (lowP1(t, r) ?? 100) < th)) ? lowCheckHtml(th, r.phase === 'first' ? r.pct1 : lowP1(t, r)) : '';
   // 紙の区域カード（S-13 で渡した区域）は、紙で回った家がアプリにないので、留守宅カードにしない・1回目を終えたことにしない
-  // （本人の画面と同じく「回り終えた」か「途中」で返す。監査P3・M2 2026-10-29）
+  // （本人の画面と同じく「回り終えた」か「途中」で返す。監査P3・M2）
   const paperT = !!paperHandOf(t);
   const admBox = !adm ? '' : `<details class="retadm"><summary>区域係の操作（目安に関係なく決める）</summary>
       ${low}
@@ -9085,7 +9074,7 @@ const lowOnSet = () => Number(D().settings.lowOn) !== 0;
 const lowWaitDays = () => Math.max(3, Math.min(30, Number(D().settings.lowWait) || 7));
 /* 1回目の割合：1回目を終えたときの値（firstLow があればそれ）／1回目の段階なら今の割合 */
 const lowP1 = (t, r) => (t.firstLow && t.firstDonePct != null ? t.firstDonePct : (r && r.phase === 'away' ? (t.firstDonePct != null ? t.firstDonePct : r.pct1) : (r ? r.pct1 : null)));
-/* 係が目安未満で完了にするとき、確かめ方を必ずえらぶ（H1・2026-10-29。はじめは、どちらもえらんでいない） */
+/* 係が目安未満で完了にするとき、確かめ方を必ずえらぶ（H1。はじめは、どちらもえらんでいない） */
 /* 1回目を終えたときに、係が確かめ方をえらんだか（'ok'＝紙や口頭・'wait'＝アプリの記録）。以前の 1 は、えらぶ欄がなかったころの値なので「えらんでいない」として扱う */
 const lowFirstPicked = t => !!t && (t.firstLow === 'ok' || t.firstLow === 'wait');
 const lowPicked = () => { const x = $('input[name="lowpick"]:checked', $('#sheet')); return x ? x.value : ''; };
@@ -9209,10 +9198,10 @@ function finalizePools() {
 
 /* 返却した区域の、巡回で訪ねた家の割合を、いま届いている記録で数え直す。since＝受け取った日、until＝返却（完了）した日。
    roundInfo の1回目と同じ数え方で、until より後の記録は数えない。最近会えた家は、受け取った日の時点で数える（3万件対策：その区域の家だけ見る）
-   until は「1回目を終えた日（firstAt）」ではなく「返却した日」（10/16 の決まり3。サーバーが返却のときに確かめる期間と同じ。2026-10-29 監査 R1）：
+   until は「1回目を終えた日（firstAt）」ではなく「返却した日」（10/16 の決まり3。サーバーが返却のときに確かめる期間と同じ。監査 R1）：
    1回目のあとに留守宅を回った記録・留守宅カードで訪ね直した記録も数え、完了した区域を途中の返却にもどさないため */
 /* adopt：印のない正式返却を拾うとき（lowAdoptList）だけ。巡回の中で訪ねた集合住宅の、記録が一度もない部屋は数えない。
-   部屋には足した日がなく、完了のあとに足された部屋と見分けられないため（足された部屋で正しい完了を途中の返却に戻さない・総合監査 D-2・2026-11-04）。
+   部屋には足した日がなく、完了のあとに足された部屋と見分けられないため（足された部屋で正しい完了を途中の返却に戻さない・総合監査 D-2）。
    建物ごと巡回の中で一度も訪ねていなければ、全部の部屋を数える（集合住宅の記録0%の完了を見逃さない・独立監査 A-2）。
    戸建ては作った日で見分けるので、記録0%の完了（区域02の形）は今までどおり拾う */
 function coverAt(t, since, until, adopt) {
@@ -9220,7 +9209,7 @@ function coverAt(t, since, until, adopt) {
   let done = 0, total = 0;
   for (const h of housesOf(t.id)) {
     if (banNo(h)) continue; // 立入禁止の建物は数えない（roundInfo・サーバーの terrDonePct_ と同じ。数えると、受け付けた完了を係の端末が途中の返却に戻す・監査 H-1）
-    if (h.createdAt && until && h.createdAt > until) continue; // 返却（完了）のあとに足された家は、その巡回の家ではない（足された家で完了を途中の返却に戻さない・総合監査 D-1・2026-10-31）
+    if (h.createdAt && until && h.createdAt > until) continue; // 返却（完了）のあとに足された家は、その巡回の家ではない（足された家で完了を途中の返却に戻さない・総合監査 D-1）
     const us = sp ? specialTargets(h, t) : targets(h);
     const aptIn = adopt && h.type === 'apt' && us.some(u => visitsOf(K(h.id, u)).some(v => v.at >= since && v.at <= until)); // この建物を巡回の中で訪ねた
     for (const u of us) {
@@ -9242,7 +9231,7 @@ function coverAt(t, since, until, adopt) {
    待つ日数のあとに数え直し、届いていれば正式返却のまま、届いていなければ自動で途中の返却に切りかえる */
 let lowBusy = false;
 /* 返却の記録の「回りはじめた日」（記録を数えはじめる日）：
-   ・from があればそれ：「続きから」受け取った巡回は前の人が回りはじめた日（サーバーが区域の roundFrom から付ける。第3回監査 K-1・2026-10-29）。
+   ・from があればそれ：「続きから」受け取った巡回は前の人が回りはじめた日（サーバーが区域の roundFrom から付ける。第3回監査 K-1）。
      印のない古い返却に足した記録（syn）も from に入れている（S-13 の行を作らないため lentAt は空）
    ・なければ受け取った日（lentAt）。サーバーが返却のときに確かめる期間（roundFrom || lentAt）と同じ起点になる */
 const lowFrom = r => (r && (r.from || r.lentAt)) || '';
@@ -9257,7 +9246,7 @@ function paperDoneIn(t, from, until) {
   return c.some(d => d && d >= lo && d <= hi);
 }
 /* 印のない正式返却（「記録の少ない返却」の機能より前の返却・係の「正式に返却したことにする」で終えた返却など）も、
-   まだ自動で受け取れる日になっていない区域だけ、同じように確かめる対象にする（2026-10-17。区域02：9月30日・0% が出てこなかった件）。
+   まだ自動で受け取れる日になっていない区域だけ、同じように確かめる対象にする（区域02：9月30日・0% が出てこなかった件）。
    ・自動受け取りを使っていて、区域の貸し出しが「きまりのとおり」、正式返却から freeAfterDays 日がまだたっていない区域だけ
      （たっていれば、もう受け取れるので変えない。S-13 の日付をむだに動かさない）
    ・訪問記録が整理されて消えた古い返却は、数え直せないので対象にしない（keepMonths）
@@ -9265,7 +9254,7 @@ function paperDoneIn(t, from, until) {
    ・紙や口頭で回り終えた巡回（区域の recLess）も対象にしない（訪ねた家がアプリにない。係が「紙や口頭で確かめた」で1回目を終え、本人が返した区域など）
    ・受け取った日から返却（完了）した日までの記録で数え、目安から10ポイント下（サーバーの監査D5と同じ幅）に届いていない区域だけ。伝道者がふつうに返した区域を、数え方の少しの差で動かさない
      （以前は「1回目を終えた日（firstAt）」までしか数えず、1回目のあとに留守宅を回った・留守宅カードで訪ね直した記録が数えられないため、
-       完了した区域を途中の返却にもどし、S-13 の完了日が前回にもどっていた。2026-10-29 監査 R1）
+       完了した区域を途中の返却にもどし、S-13 の完了日が前回にもどっていた。監査 R1）
    ・返却の記録がない（古いデータ）ときは、S-13 の行を作らない記録を足して、あとで「正式返却に戻す」ができるようにする
    返り値：[区域, 返却の記録（なければ null）, 回りはじめた日, 巡回で訪ねた割合] */
 function lowAdoptList() {
@@ -9280,10 +9269,10 @@ function lowAdoptList() {
     const r = D().returns.find(x => x.terrId === t.id && x.completed && x.at === t.completedAt) || null;
     if (r && (r.low || r.lowOk || r.lowAuto || r.lowSkip || r.ph)) continue; // ph＝紙の区域カードで回った（アプリに記録がない）
     // サーバーが返却のときに記録で数えて受け付けた完了（sp＝サーバーで数えた割合が目安−10 以上）は、あとから数え直さない。
-    // 完了のあとに家・部屋が足された・毎月の整理で記録が消えた、で分母や記録が変わり、正しい完了を途中の返却に戻していた（総合監査 D-1〜D-3・2026-10-31）
+    // 完了のあとに家・部屋が足された・毎月の整理で記録が消えた、で分母や記録が変わり、正しい完了を途中の返却に戻していた（総合監査 D-1〜D-3）
     if (r && r.sp != null && Number(r.sp) >= th) continue;
     const from = r ? lowFrom(r) : noRecFrom(t);
-    // 巡回の始まりが記録の保存期間（毎月の整理・keepMonths）より前なら、巡回の中の記録が整理で消えているかもしれないので数え直さない（総合監査 D-3・2026-11-04）
+    // 巡回の始まりが記録の保存期間（毎月の整理・keepMonths）より前なら、巡回の中の記録が整理で消えているかもしれないので数え直さない（総合監査 D-3）
     if (from && Date.parse(from) < Date.now() - Math.max(1, Number(st.keepMonths) || 12) * 30.5 * DAY) continue;
     if (paperDoneIn(t, from, t.completedAt)) continue;
     const pct = coverAt(t, from, t.completedAt, true); // 返却（完了）した日まで（r.at と同じ。1回目を終えた日 firstAt ではない）
@@ -9293,7 +9282,7 @@ function lowAdoptList() {
 }
 /* 完了日に合う返却の記録がない区域の「回りはじめた日」：いちばん新しい受け取り日（lastLentAt）。
    ただし、その受け取りが同じ区域の途中返却の続き（返されてから contDays 日以内・サーバーの続きからと同じ条件）なら、前の人が回りはじめた日。
-   受け取り日だけで数えると、続きから回った巡回の前の人の記録が数えられず、回り終えた区域を途中の返却に戻していた（総合監査 C-S13-3・2026-11-04）。
+   受け取り日だけで数えると、続きから回った巡回の前の人の記録が数えられず、回り終えた区域を途中の返却に戻していた（総合監査 C-S13-3）。
    起点は前にしか動かないので、数える記録が増える方向（途中に戻さない方向）にしか働かない */
 function noRecFrom(t) {
   const L = t.lastLentAt || '';
@@ -9330,12 +9319,12 @@ function lowSweep() {
     if (t.holder || t.awayPoolAt || t.completedAt !== r.at) { skip.push(r); continue; } // あとの動きがあるので、何も変えない
     if (paperDoneIn(t, lowFrom(r), r.at)) { paper.push([r, t]); continue; } // 紙の記録（S-13）の完了日がその巡回にある：途中にしない（H1）
     // 受け取った日から返却（完了）した日 r.at まで数える。1回目を終えた日（r.firstAt）までにすると、そのあとに本人が留守宅を回った記録・
-    // 留守宅カードで訪ね直した記録が数えられず、回り終えた区域が途中の返却にもどる（2026-10-29 監査 R1・R3）
+    // 留守宅カードで訪ね直した記録が数えられず、回り終えた区域が途中の返却にもどる（監査 R1・R3）
     const pct = coverAt(t, lowFrom(r), r.at);
     (pct >= th ? ok : flip).push([r, t, pct]);
   }
   // 印のない返却：この回では印を付けて確かめ待ちに出すだけ。途中の返却への切りかえは次の回（上のループ）で、そのときの記録で数え直してから行う
-  // （以前は待つ日数がすぎていれば同じ回で切りかえていた。開いた直後の端末に残っている古い記録で数えたまま切りかえないため。第3回監査 P6・2026-10-29）
+  // （以前は待つ日数がすぎていれば同じ回で切りかえていた。開いた直後の端末に残っている古い記録で数えたまま切りかえないため。第3回監査 P6）
   if (!ok.length && !flip.length && !skip.length && !paper.length && !adopt.length) return;
   lowBusy = true;
   try {
@@ -9352,7 +9341,7 @@ function lowSweep() {
     else { apply(); Store.save(true); } // 切りかえがないときは、お知らせを出さず静かに保存
   } finally { lowBusy = false; }
 }
-/* この直しより前に「紙で回り終えた」「係が紙や口頭で確かめた」で完了した区域に、印（recLess）を付ける（H2・2026-10-29）。
+/* この直しより前に「紙で回り終えた」「係が紙や口頭で確かめた」で完了した区域に、印（recLess）を付ける（H2）。
    係の端末だけ（返却の記録は係の端末にしかない）。何度動いても同じ。お知らせは出さない */
 function recLessFill() {
   if (!isAdmin() || !D().returns) return;
@@ -9367,7 +9356,7 @@ function recLessFill() {
   add.forEach(t => { t.recLess = 1; });
   Store.save(true);
 }
-/* この直しより前に「続きから」で回った返却の記録（from が無い）に、回りはじめた日（from）を補う（第3回監査 N-7・2026-10-29）。
+/* この直しより前に「続きから」で回った返却の記録（from が無い）に、回りはじめた日（from）を補う（第3回監査 N-7）。
    サーバーが「続きから」と判定する規則と同じ条件で、同じ区域のひとつ前の返却が「途中で返した」（完了でない・留守宅カードでない・担当交代でない）で、
    その返却から contDays 日以内に受け取っていれば、前の記録の回りはじめた日を引きつぐ（古い順に補うので、途中→途中→完了もいちばん前の日にもどる）。
    対象は自動の確かめが見る範囲（keepMonths）の記録だけ。係の端末だけ（返却の記録は係の端末にしかない）。何度動いても同じ。お知らせは出さない。
@@ -9534,7 +9523,7 @@ function extState(t) {
 }
 const extRl = () => { const r = awayRule(), x = extSet(); return Object.assign({}, r, { cap: x.cap, gap: Math.max(r.gap, x.rest) }); };
 /* 完了した区域（S-13 に完了として記録したあと、次に区域カードとして受け取られるまで）。
-   2026-10-26 から、残った留守宅は留守宅カードにせず、おすすめタブだけに出す（区域カードのタブの役目は、完了まで） */
+   残った留守宅は留守宅カードにせず、おすすめタブだけに出す（区域カードのタブの役目は、完了まで） */
 function afterDone(t) { return !!t && !t.holder && !t.awayPoolAt && !!t.completedAt && !t.dummy && !!roundBounds(t.id).ext; }
 /* 完了した区域の留守宅を、おすすめに出す期間（係の設定：寝かせる日数 extRest・出す期間 extDays・次の新規の前に止める extStopBefore）。
    返り値：null（完了した区域でない）／{ open, why：'open' 出している・'rest' 寝かせ中・'over' 期間が終わった・'stop' 止めている, from, end } */
@@ -9597,7 +9586,7 @@ function awayOk(x, slot, rl, now) {
    triedAll・first：これまでの全記録（「手紙の候補」「いつから会えていないか」の材料として残す） */
 let UM_MEMO = null; // 全体を調べた結果は、同じ画面の描きかえの間（同じ処理の中）だけ使い回す（3万件を何度も1周しない）
 /* 1つの家（部屋）を調べる。留守宅でなければ null。b は roundBounds の結果。
-   完了した区域（b.ext）は、終わった巡回から続けて見る（おすすめに出す留守宅。2026-10-26 から、係の設定 extOn にかかわらず） */
+   完了した区域（b.ext）は、終わった巡回から続けて見る（おすすめに出す留守宅。係の設定 extOn にかかわらず） */
 function umItem(k, h, u, b, rl, now, gapMs) {
   const s = sum(k);
   if (!s.n) return null; // 一度も訪ねていない家は、留守宅ではない
@@ -9646,11 +9635,11 @@ function unmetIndex(onlyTid, rlOv) {
   if (!onlyTid && !rlOv) { UM_MEMO = { src: D().visits, key: memoKey, m }; Promise.resolve().then(() => { if (UM_MEMO && UM_MEMO.m === m) UM_MEMO = null; }); }
   return m;
 }
-/* 回り残し（2026-10-26）：完了した区域で、終わった巡回の中で一度も訪ねていない家（完了の目安に届いたので回らなかった家など）。
+/* 回り残し：完了した区域で、終わった巡回の中で一度も訪ねていない家（完了の目安に届いたので回らなかった家など）。
    おすすめで、留守宅より先に出す。拒否・再訪問・引き継ぎ待ち・特別区域で回る家と、区域を受け取る前に最近会えていた家（係の「最近会えた家」の日数）は入れない。
    一度訪ねて留守なら、次からは留守宅（umItem）として、間隔・時間帯の決まりで出る */
 function leftOf(t) {
-  if (t.recLess) return []; // 紙や口頭で回り終えた巡回：訪ねた家がアプリにないので、回り残しは出さない（H2・2026-10-29）
+  if (t.recLess) return []; // 紙や口頭で回り終えた巡回：訪ねた家がアプリにないので、回り残しは出さない（H2）
   const b = roundBounds(t.id), e = b.ext, out = [];
   if (!e) return out;
   const sp = isSpecial(t), st0 = e.start, start = st0 ? Date.parse(st0) : 0, skip = skipDays() * DAY;
@@ -9667,7 +9656,7 @@ function leftOf(t) {
   }
   return out;
 }
-/* 特別区域の「まだ会えていない家」（unmetIndex と同じ数え方）。完了した特別区域の留守宅を、おすすめに出すときに使う（2026-10-26） */
+/* 特別区域の「まだ会えていない家」（unmetIndex と同じ数え方）。完了した特別区域の留守宅を、おすすめに出すときに使う */
 function unmetOfSpecial(t, rlOv) {
   const out = [];
   if (!isSpecial(t)) return out;
@@ -9688,7 +9677,7 @@ function unmetOfSpecial(t, rlOv) {
 const triedUnion = items => { let m = 0; for (const x of (items || [])) m |= x.tried; return m; };
 const triedOf = items => { const xs = (items || []).filter(x => !x.hard); return xs.length ? slotCount(triedUnion(xs)) : null; }; // 10通りすべて留守の家（hard）は、カード・um と同じく除く（入れると必ず 10/10 になる）
 function lockedKeys() { const s = new Set(); activeCards().forEach(c => c.keys.forEach(k => s.add(k))); liveHolds().forEach(h => (h.keys || []).forEach(k => s.add(k))); return s; }
-/* おすすめの押さえ（holds・kangaeru.js・2026-10-26）：完了した区域の留守宅を「今行く」（今日の終わりまで）・「予定に入れる」（予定の日の終わりまで）で押さえる。
+/* おすすめの押さえ（holds・kangaeru.js）：完了した区域の留守宅を「今行く」（今日の終わりまで）・「予定に入れる」（予定の日の終わりまで）で押さえる。
    押さえた家は、ほかの人のおすすめに出ない。その区域が次に区域カードとして受け取られたら（担当者・完了日が変わったら）効かない */
 function holdLive(h, now) {
   if (!h || h.endedAt || !(Date.parse(h.until) > (now || Date.now()))) return false;
@@ -9708,7 +9697,7 @@ function awaySuggestions(uid, slots) {
   const idx = unmetIndex(), locked = lockedKeys(), res = [];
   for (const t of D().territories) {
     if (!awayEligibleTerr(t, uid) || !idx.has(t.id)) continue;
-    if (afterDone(t)) continue; // 完了した区域の残りの留守宅は、留守宅カードにせず、おすすめだけに出す（2026-10-26。重点の時間帯があっても）
+    if (afterDone(t)) continue; // 完了した区域の残りの留守宅は、留守宅カードにせず、おすすめだけに出す（重点の時間帯があっても）
     const base = awayEligibleBase(t, uid), fs = focusSlots(t);
     for (const slot of slots) {
       const focus = fs.includes(slot);
@@ -9731,7 +9720,7 @@ function takeAwayCard(tid, slot, grp) {
   }
   const t = terrById(tid);
   if (!t || !awayEligibleTerr(t, me().id) || (!awayEligibleBase(t, me().id) && !focusSlots(t).includes(slot))) { toast('このカードは受け取れません'); return; }
-  if (afterDone(t)) { toast('この区域は回り終えています。残りの留守宅は、おすすめに出ています'); renderAll(); return; } // 完了した区域は、留守宅カードにしない（2026-10-26）
+  if (afterDone(t)) { toast('この区域は回り終えています。残りの留守宅は、おすすめに出ています'); renderAll(); return; } // 完了した区域は、留守宅カードにしない
   const rl = awayRule(); // 受け取った時点のルールを、カードに控える（あとで係が設定を変えても、このカードは変わらない）
   const keys = cardKeys(unmetIndex().get(tid) || [], slot, lockedKeys(), rl);
   if (!keys.length) { toast('このカードの家は、今はありません'); renderAll(); return; }
@@ -9745,7 +9734,7 @@ function takeAwayCard(tid, slot, grp) {
     expiresAt: new Date(exp).toISOString(), keys, rl };
   if (day) card.day = 1;
   if (G) { card.group = myGroup(); card.helpers = []; card.mode = awayGroupMode === 'split' ? 'split' : 'share'; card.view = 'new'; card.parts = []; }
-  if (G && reqUse === 'all') card.use = 'all'; // 全体の集まりで回る留守宅カード（2026-10-24）
+  if (G && reqUse === 'all') card.use = 'all'; // 全体の集まりで回る留守宅カード
   commit(`${G ? (card.use === 'all' ? '全体の集まりの' : 'グループの') : ''}留守宅カード（区域${t.no}・${slotShort(slot)}）を受け取りました`, () => { D().awayCards.push(card); });
   if (G) openHelpers(null, card.id); // グループのカードは、続けて「今日回る人」をえらぶ
   else openAwayCard(card.id);
@@ -9907,7 +9896,7 @@ function awayAgain(k, since) {
   }
   return '';
 }
-/* 訪ね直したと数える条件（係の設定 awayAgainSlot・2026-10-26。はじめは「別の日で、別の時間帯」）
+/* 訪ね直したと数える条件（係の設定 awayAgainSlot。はじめは「別の日で、別の時間帯」）
    ・0＝別の日：1回目に訪ねた日と別の日に訪ねれば、会えても留守でも「訪ね直した」（今までの決まり）
    ・1＝別の日で、別の時間帯：さらに、1回目に訪ねた時間帯と別の時間帯で訪ねる。会えた・拒否は、時間帯にかかわらず数える */
 const againSlot = () => !Store.data || Number(D().settings.awayAgainSlot) !== 0;
@@ -10309,7 +10298,7 @@ function openSlotSheet() {
   paint();
 }
 
-/* 係：完了のあとの留守宅（おすすめ）（2026-10-26。前は「返却後の留守宅カード」）
+/* 係：完了のあとの留守宅（おすすめ）（前は「返却後の留守宅カード」）
    完了した区域（S-13 に完了として記録したあと、次に区域カードとして受け取られるまで）の残りの留守宅は、留守宅カードにせず、
    おすすめタブだけに出す。extSetHtml＝設定の行（設定タブの「区域の決まり」に出す）・extAdminHtml＝完了した区域の表（状況に出す）。
    表は renderAwayAdmin で作った idx（unmetIndex の結果）を使い回す（区域ごとに unmetIndex を呼ばない） */
@@ -10980,7 +10969,7 @@ function openUiSheet() {
     // 帯（見出しの行）はなし。下にスワイプすると、設定を残して閉じる（小さな「×」と、いちばん下の「閉じる」でも閉じられる）
     let b = `<h2 id="sheetTitle" class="vh">設定</h2>` + (window.dougaSettingsRow ? dougaSettingsRow() : '') + (window.KI ? KI.picker(false) : '') + S_BASE + S_VIEW + S_FEAT;
     b += `<button class="btn block" id="uiReset">見え方を最初にもどす</button><button class="btn primary block" data-close>閉じる</button>`;
-    // この端末で動いているアプリの版（更新が届いたかを、だれでも確かめられるように。2026-10-29）
+    // この端末で動いているアプリの版（更新が届いたかを、だれでも確かめられるように）
     b += `<p class="muted appver" style="text-align:center;margin-top:12px;font-size:15px">区域マップ 版 ${esc(APP_VERSION)}</p>`; // hint は「説明を出さない」で消えるので使わない
     b = `<div class="grabrow"><span class="grab" aria-hidden="true"></span><button type="button" class="xmini" data-close aria-label="閉じる">×</button></div><p class="grabhint">下にスワイプすると、設定を残して閉じます</p>` + b;
     setSheet(b);
@@ -11612,7 +11601,7 @@ const kanjiNum = k => {
 function azaKey(s) {
   let x = String(s || '').normalize('NFKC').replace(/\s+/g, '');
   x = stripPref(x);
-  const mu = CFG_AREA.names.concat(['豊見城市']).find(m => x.startsWith(m)); if (mu) x = x.slice(mu.length); // 会衆の市町村（config）と豊見城市
+  const mu = XL_MUNI_LIST.find(m => x.startsWith(m)); if (mu) x = x.slice(mu.length); // 会衆の市町村（config）
   x = x.replace(/^大字/, '').replace(/^字/, '');
   return x.replace(/([一二三四五六七八九十]+)丁目/, (m, k) => kanjiNum(k) + '丁目');
 }
@@ -11785,15 +11774,8 @@ function parseEstat(rows, fname) {
   const all = ageAllOf(codes.map(k => munis[k].all || ageAllOf(munis[k].areas)));
   return { estat: true, munis, areas, all, asOf: ym ? `${ym[1]}-10-01` : '', file: String(fname || '').slice(0, 80) };
 }
-/* 沖縄県の市町村コード（国土地理院の住所検索・e-Stat の地域コードの先頭5けたと同じ） */
-const OKI_MUNI = { '47201': '那覇市', '47205': '宜野湾市', '47207': '石垣市', '47208': '浦添市', '47209': '名護市', '47210': '糸満市', '47211': '沖縄市',
-  '47212': '豊見城市', '47213': 'うるま市', '47214': '宮古島市', '47215': '南城市', '47301': '国頭村', '47302': '大宜味村', '47303': '東村',
-  '47306': '今帰仁村', '47308': '本部町', '47311': '恩納村', '47313': '宜野座村', '47314': '金武町', '47315': '伊江村', '47324': '読谷村',
-  '47325': '嘉手納町', '47326': '北谷町', '47327': '北中城村', '47328': '中城村', '47329': '西原町', '47348': '与那原町', '47350': '南風原町',
-  '47353': '渡嘉敷村', '47354': '座間味村', '47355': '粟国村', '47356': '渡名喜村', '47357': '南大東村', '47358': '北大東村', '47359': '伊平屋村',
-  '47360': '伊是名村', '47361': '久米島町', '47362': '八重瀬町', '47375': '多良間村', '47381': '竹富町', '47382': '与那国町' };
-/* 年齢データ（市町村のCSV）でえらぶ市町村：config の市町村（配布パック）。沖縄県のときは沖縄の市町村も */
-const AGE_MUNI = Object.keys(CFG_AREA.munis).length ? Object.assign({}, CFG_AREA.munis, CFG_AREA.okinawa ? OKI_MUNI : {}) : OKI_MUNI;
+/* 年齢データ（市町村のCSV）でえらぶ市町村：config の市町村 */
+const AGE_MUNI = CFG_AREA.munis;
 /* 市町村のCSVが、どの市町村のものかを推しはかる（「市計」の行の名前・ファイル名） */
 function guessMuni(res) {
   const txt = [(res.all && res.all.n) || '', res.file || '', ...(res.areas || []).slice(0, 3).map(a => a.n)].join(' ');
@@ -11933,7 +11915,7 @@ function renderAgeAdmin() {
       ${old ? '<div class="notice warn">1年以上前のデータです。下の手順で新しくしてください。</div>' : ''}`
       : '<div class="notice info">まだ年齢データがありません。下の手順で入れてください。</div>'}
     <ol class="hsteps">
-      <li><span class="hnum">1</span><div><p>e-Stat（政府統計の総合窓口）の統計GISで、国勢調査の「小地域（町丁・字等別）」から「男女，年齢（5歳階級）別人口」をえらび、<b>${CFG_AREA.okinawa ? '47 沖縄県' : esc((Object.keys(CFG_AREA.munis)[0] || '').slice(0, 2) + ' ' + CFG_AREA.pref)}</b>のファイル（zip）をダウンロードします。${CFG_AREA.okinawa ? '沖縄県全体が1つのファイルです。' : esc(CFG_AREA.pref) + '全体が1つのファイルです（会衆の市町村の分だけを使います）。'}</p>
+      <li><span class="hnum">1</span><div><p>e-Stat（政府統計の総合窓口）の統計GISで、国勢調査の「小地域（町丁・字等別）」から「男女，年齢（5歳階級）別人口」をえらび、<b>${esc(CFG_AREA.prefs.map(p => ('0' + PREF_NAMES.indexOf(p)).slice(-2) + ' ' + p).join('・') || '会衆の県')}</b>のファイル（zip）をダウンロードします。県全体が1つのファイルです（会衆の市町村の分だけを使います）。${CFG_AREA.prefs.length > 1 ? '県ごとに1つずつ読み込みます。' : ''}</p>
         <a class="btn small" href="${AGE_PAGE}" target="_blank" rel="noopener">e-Stat を開く</a></div></li>
       <li><span class="hnum">2</span><div><p>下の「年齢データを更新する」を押して、そのファイルをえらびます。市町村が出している字ごとの年齢別人口（CSV）も使えます。そのときは、どの市町村のデータかをえらびます（その市町村の分だけ入れかわります）。</p></div></li>
       <li><span class="hnum">3</span><div><p>出てきた内容を確かめて「保存する」を押します。あとは自動です。</p></div></li>
@@ -11976,11 +11958,11 @@ async function onAgeFile(file) {
 }
 /* e-Stat：市町村ごとに分けて保存する（1つの市町村が1つの記録） */
 function onEstatFile(res) {
-  // 沖縄県以外（配布パック）：県のファイルから、config の市町村（munis）の分だけを使う（ほかの市町村は保存しない。全員の端末に配られるため）
-  if (!CFG_AREA.okinawa && Object.keys(CFG_AREA.munis).length) {
+  // 県のファイルから、config の市町村（munis）の分だけを使う（ほかの市町村は保存しない。全員の端末に配られるため）
+  if (Object.keys(CFG_AREA.munis).length) {
     const keep = {};
     Object.keys(res.munis).forEach(c => { if (CFG_AREA.munis[c]) keep[c] = res.munis[c]; });
-    if (!Object.keys(keep).length) { infoSheet('会衆の市町村が見つかりませんでした', `このファイルには ${esc(CFG_AREA.names.join('・'))} のデータがありませんでした。${esc(CFG_AREA.pref)}のファイルかを確かめてください。今のデータはそのまま使います。`); return; }
+    if (!Object.keys(keep).length) { infoSheet('会衆の市町村が見つかりませんでした', `このファイルには ${esc(CFG_AREA.names.join('・'))} のデータがありませんでした。${esc(CFG_AREA.prefs.join('・'))}のファイルかを確かめてください。今のデータはそのまま使います。`); return; }
     const areas = Object.keys(keep).flatMap(c => keep[c].areas);
     res = Object.assign({}, res, { munis: keep, areas, all: ageAllOf(Object.keys(keep).map(c => keep[c].all || ageAllOf(keep[c].areas))) });
   }
@@ -11997,7 +11979,9 @@ function onEstatFile(res) {
       const now = new Date().toISOString();
       // 市町村のCSVで入れた市町村は、そのまま残す（e-Stat より新しいため）
       const keepCity = new Set((D().agedata || []).filter(x => x && /^cur:\d{5}$/.test(x.id) && x.src === 'city').map(x => x.id));
-      const rest = (D().agedata || []).filter(x => x && (!/^cur:\d{5}$/.test(x.id) || keepCity.has(x.id)));
+      // 県のちがう市町村にまたがる会衆：このファイルに入っていない、会衆の市町村のデータ（ほかの県のファイルで入れた分）は残す
+      const other = id => { const c = id.slice(4); return codes.indexOf(c) < 0 && !!CFG_AREA.munis[c]; };
+      const rest = (D().agedata || []).filter(x => x && (!/^cur:\d{5}$/.test(x.id) || keepCity.has(x.id) || other(x.id)));
       codes.forEach(c => { if (keepCity.has('cur:' + c)) return; const m = res.munis[c]; rest.push({ id: 'cur:' + c, src: 'estat', asOf: res.asOf, city: m.city, areas: m.areas, all: m.all || ageAllOf(m.areas), file: res.file, savedAt: now, by: me().id }); });
       D().agedata = rest;
     });
@@ -12168,7 +12152,7 @@ let poolSweepAt = 0;
 /* 係の端末の自動の確かめ：目安に届いた留守宅カードの区域を正式な返却として記録する（finalizePools）・記録の少ない返却を確かめる（lowSweep）・
    紙や口頭で回り終えた区域に印を付ける（recLessFill）。5分に1回まで。描画の途中で記録しないよう、あとで動かす。
    本番では、この起動でサーバーの最新の変更を一度受け取ってから動かす（開いた直後の端末に残っている古い記録で数えて、
-   回り終えた区域を途中の返却にしないため。受け取ったときに係の画面を開いていれば applyInbox が呼ぶ。第3回監査 P6・2026-10-29） */
+   回り終えた区域を途中の返却にしないため。受け取ったときに係の画面を開いていれば applyInbox が呼ぶ。第3回監査 P6） */
 function adminSweepSoon() {
   if (!isAdmin() || (LIVE && !Store.pulled)) return;
   if (Date.now() - poolSweepAt > 300000) { poolSweepAt = Date.now(); setTimeout(() => { finalizePools(); fromFill(); lowSweep(); recLessFill(); }, 400); } // fromFill は lowSweep の前（古い続きからの記録に回りはじめた日を補ってから数える。N-7）
@@ -12501,7 +12485,7 @@ const isOverseer = () => !!me().overseer && !!me().group;
 /* グループ奉仕の区域を受け取れる人：グループ監督と司会者 */
 const canGroupTerr = () => !!me().group && (!!me().overseer || !!me().leader);
 const canGroupUser = u => !!u && !!u.group && (!!u.overseer || !!u.leader); // その人が集まりで使う区域を持てるか
-/* 集まりで使う区域の使い道（2026-10-22）：t.group があるのが「集まりで使う区域」。
+/* 集まりで使う区域の使い道：t.group があるのが「集まりで使う区域」。
    t.use === 'all' は全体の集まり（金曜の晩・日曜の昼など、グループをこえた集まり）、なければグループ奉仕。
    今日回る人・範囲分け・枚数の数え方は、どちらも同じ（枚数はグループ奉仕と合わせて数える） */
 const isAllUse = x => !!(x && x.group && x.use === 'all');
@@ -12700,7 +12684,7 @@ function addToday(dm) {
 /* ---- 日本の祝日（アプリの中で計算する。外のサービスには問い合わせない） ----
    ・今の祝日法にそって計算（春分・秋分は計算式。2099年まで使える）
    ・振替休日（日曜の祝日の次の休みでない日）と、国民の休日（祝日にはさまれた平日）も入れる
-   ・沖縄の「慰霊の日」（6月23日）は、県の休日として入れる（学校や役所が休みで、家にいる人が多いため） */
+   ・地域の休日（例：県の記念日で、学校や役所が休みの日）は config.js の holidays（{ '月-日': '名前' }）で足す */
 const HOL_CACHE = {};
 function jpHolidays(y) {
   if (HOL_CACHE[y]) return HOL_CACHE[y];
@@ -12726,7 +12710,8 @@ function jpHolidays(y) {
     do { n.setDate(n.getDate() + 1); } while (H[ymd(n)]);
     if (n.getFullYear() === y) H[ymd(n)] = '振替休日';
   });
-  if (CFG_AREA.okinawa) { const irei = ymd(new Date(y, 5, 23)); if (!H[irei]) H[irei] = '慰霊の日（沖縄）'; } // 沖縄県の会衆だけ（config の pref）
+  const extra = (window.KUIKI_CONFIG && window.KUIKI_CONFIG.holidays) || {};
+  Object.keys(extra).forEach(md => { const m = /^(\d{1,2})-(\d{1,2})$/.exec(md); const key = m && ymd(new Date(y, m[1] - 1, m[2])); if (key && !H[key] && typeof extra[md] === 'string') H[key] = extra[md].slice(0, 20); });
   return (HOL_CACHE[y] = H);
 }
 const holidayOf = key => jpHolidays(Number(key.slice(0, 4)))[key] || '';
@@ -12749,7 +12734,7 @@ const isLastDayStr = s => { const d = parseYmd(s); return d.getDate() === new Da
    ・奉仕時間を使う人には、いつでも「奉仕報告」ボタン（新しい設定は作らない）
    ・報告の時期（月末の日〜翌月の締切日）にまだ送っていなければ、目立つ色にして「○月の報告がまだです」
    ・押すと、報告の画面（先月｜今月を切りかえられる）。はじめの月は、1日〜締切日は先月、それ以外は今月
-   ・締切日：翌月10日（S21 v37・2026-10-28 から。以前は5日）。S21 に送る人は、S21 が返した締切日（この端末の o.s21p.dl）を使う */
+   ・締切日：翌月10日（S21 v37 から。以前は5日）。S21 に送る人は、S21 が返した締切日（この端末の o.s21p.dl）を使う */
 const REPORT_DL = 10;
 function reportDl() {
   let n = NaN;
@@ -12813,7 +12798,7 @@ const WHEEL_MAX = 10 * 60, WHEEL_STEP = 15;
 const WHEEL_VALS = Array.from({ length: WHEEL_MAX / WHEEL_STEP + 1 }, (_, i) => i * WHEEL_STEP);
 const HOL_SHORT = { 元日: '元日', 成人の日: '成人', 建国記念の日: '建国', 天皇誕生日: '天皇誕生', 春分の日: '春分', 昭和の日: '昭和', 憲法記念日: '憲法',
   みどりの日: 'みどり', こどもの日: 'こども', 海の日: '海の日', 山の日: '山の日', 敬老の日: '敬老', 秋分の日: '秋分', スポーツの日: 'スポーツ',
-  文化の日: '文化', 勤労感謝の日: '勤労感謝', 振替休日: '振替休日', 国民の休日: '休日', '慰霊の日（沖縄）': '慰霊の日' };
+  文化の日: '文化', 勤労感謝の日: '勤労感謝', 振替休日: '振替休日', 国民の休日: '休日' };
 const shortTime = t => String(t || '').replace(/^0(\d)/, '$1');
 /* 集まりの長さ（分）。終わりの時刻がない集まりは数えない */
 function schedDur(sc) {
@@ -13225,7 +13210,7 @@ function tryHello() {
   }
   showHello();
 }
-/* 天気のひと言（2026-10-22）：サーバーが調べた天気（WX・Open-Meteo・区域の真ん中の地点）が新しいときだけ使う。
+/* 天気のひと言：サーバーが調べた天気（WX・Open-Meteo・区域の真ん中の地点）が新しいときだけ使う。
    雨 → 冷える → 肌寒い → とても暑い → かさ の順に1つ。どれにも当たらない日は、ふだんの日替わりの言葉（だから「時々」）。
    区域係が雨の日の機能を止めている（wxOn＝0）ときや、夜・調べられなかったときは使わない。端末の場所は使わない */
 const HELLO_WX = {
@@ -13371,7 +13356,7 @@ let calMonth = null, calMode = 'cal';
 const schedsOn = date => D().schedules.filter(s => s.date === date && (!s.group || s.group === myGroup() || isAdmin()))
   .sort((a, b) => (a.time || '') < (b.time || '') ? -1 : 1);
 const schedGroupName = g => (g ? `${g}グループ` : '全体');
-/* 全体の集まりの司会者（2026-11-11）：全体の予定だけ。グループ名のあとに「・司会：○○」（文字だけ返す。esc は使う側で） */
+/* 全体の集まりの司会者：全体の予定だけ。グループ名のあとに「・司会：○○」（文字だけ返す。esc は使う側で） */
 const schedHost = s => (s && !s.group && s.host ? String(s.host) : '');
 const schedTag = s => schedGroupName(s.group) + (schedHost(s) ? `・司会：${schedHost(s)}` : '');
 /* 画面に出す形：名前は data-notr（スペイン語でも名前は訳さず、「・司会：」だけ訳す。登録されていない名前でも札が訳されるように） */
@@ -13411,7 +13396,7 @@ function gcalUrl(title, date, time, end, place, note) {
   return 'https://calendar.google.com/calendar/render?action=TEMPLATE&ctz=Asia%2FTokyo&text=' + encodeURIComponent(title) +
     '&dates=' + dates + (place ? '&location=' + encodeURIComponent(place) : '') + (note ? '&details=' + encodeURIComponent(note) : '');
 }
-/* 集まりの予定（2026-11-11）：入れられるのは区域係・監督・司会者（グループのある人）。
+/* 集まりの予定：入れられるのは区域係・監督・司会者（グループのある人）。
    直す・消すのは、グループの予定は区域係とそのグループの監督（今までどおり）、全体の予定は区域係と入れた本人（サーバーの schedCan_ と同じ） */
 const canAddSched = () => isAdmin() || isOverseer() || canGroupTerr();
 const canEditSched = s => isAdmin() || (s.group ? isOverseer() && s.group === myGroup() : canGroupTerr() && s.by === me().id);
@@ -13884,7 +13869,7 @@ function renderHome() {
   }
   $('#homeCal').innerHTML = calHtml(o);
   // ②の対応：グループ監督の「グループ」タブをなくしたので、そこにあった月の予定印刷（掲示板用）をホームに置く
-  // 司会者（監督でない人）は、全体の集まりの予定を入れるボタンだけ（月の予定の印刷は区域係・監督だけ。2026-11-11）
+  // 司会者（監督でない人）は、全体の集まりの予定を入れるボタンだけ（月の予定の印刷は区域係・監督だけ）
   $('#homeSchedTools').innerHTML = canAddSched()
     ? `<button type="button" class="btn primary block" id="homeScNew">＋ 集まりの予定を入れる</button>${isAdmin() || isOverseer() ? printMonthPicker('homeScPrint') : ''}` : '';
   if (window.IkenR) IkenR.home(); // こまったこと・提案を送る（iken.js）
@@ -14005,7 +13990,7 @@ const schedHostCands = () => D().users.filter(u => !u.inactive && u.group && (u.
 function openSchedForm(s, date, back, draft) {
   const admin = isAdmin(), ov = !admin && isOverseer(), groups = groupsAll();
   const v = (k, def) => (draft && draft[k] != null ? draft[k] : (s && s[k] != null ? s[k] : def));
-  // どの予定か：区域係＝全体かどのグループでも／監督＝自分のグループか全体／司会者＝全体だけ（2026-11-11）
+  // どの予定か：区域係＝全体かどのグループでも／監督＝自分のグループか全体／司会者＝全体だけ
   const g0 = v('group', admin ? (groups[0] || '') : ov ? myGroup() : '');
   const loc = v('loc', null);
   const rep = Number(v('rep', 0)) || 0;
@@ -14514,7 +14499,7 @@ function handoffHtml() {
     }).join('');
 }
 
-/* ---- 残った再訪問の印の掃除（区域係だけ・2026-11-12） ----
+/* ---- 残った再訪問の印の掃除（区域係だけ） ----
    再訪問の印（released：引き継ぎ待ち・外した）は、受け持ちを外したときに付く。リセットや記録の取り消しで、
    記録と受け持ちが消えても印だけが残ることがあった。残った印は、仮の家を消せなくする（houseRecCounts）ので、ここで消す。
    対象：受け持ちがなく、「会えた」記録もない家の印／家がもうない印。家・記録・拒否・注意には手をふれない。取り消せる */
@@ -16395,7 +16380,7 @@ function afterWelcome() {
   const first = !!lsGet(FIRST_OK);
   lsDel(FIRST_OK);
   // 「ホーム画面に追加する」の案内：ほかの画面（返却・記録など）を開いて使いはじめていたら、その画面を置きかえない。
-  // 少し待って、閉じていれば出す（数回ためしても開いたままなら出さない。設定の「ホーム画面に追加」からいつでも開ける。第3回監査・2026-10-29）
+  // 少し待って、閉じていれば出す（数回ためしても開いたままなら出さない。設定の「ホーム画面に追加」からいつでも開ける。第3回監査）
   const guide = n => { if ($('#sheet').hidden) openHomeGuide(); else if (n > 0) setTimeout(() => guide(n - 1), 3000); };
   if (isMobile() && !isStandalone() && !lsGet(HOME_SEEN) && (first || isIOS())) setTimeout(() => guide(5), first ? 600 : 1500);
 }

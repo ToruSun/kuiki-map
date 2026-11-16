@@ -161,7 +161,7 @@ function gsiRun_() {
   let rows = [];
   while (st.idx < st.files.length && Date.now() - t0 < GSI_RUN_MS) {
     const info = st.files[st.idx];
-    // 大きい xml（ドライブの1回で読める大きさをこえるもの）は、少しずつ読む（2026-11-15）
+    // 大きい xml（ドライブの1回で読める大きさをこえるもの）は、少しずつ読む
     let big = 0;
     try { big = gsiBigSize_(info); } catch (e) { big = 0; }
     if (big < 0) { st.idx++; st.off = 0; st.boff = 0; continue; } // 建物でない大きいファイル（道路など）は読まない
@@ -207,7 +207,7 @@ function gsiRun_() {
   gsiSave_(st);
 }
 
-/* ---------- 大きい xml を少しずつ読む（2026-11-15） ----------
+/* ---------- 大きい xml を少しずつ読む ----------
    ドライブのファイルは、1回で読めるのが約50MBまで。人の多い地域の建築物（BldA）の xml はそれをこえるので、
    ドライブの API から 8MB ずつ（Range）取り、建物の区切り（</BldA>）で切って読む。続きはバイトの位置（st.boff）から */
 const GSI_BIG = 30 * 1024 * 1024;   // これより大きい xml は少しずつ読む
@@ -257,7 +257,7 @@ function gsiUnzip_(blob, depth) {
   const texts = [], names = [];
   let items;
   try { items = Utilities.unzip(blob); } catch (e) {
-    // 人の多いメッシュの「全項目」の zip は、中のファイルが大きすぎて Apps Script では開けない（100MBの制限）。展開した xml なら読める（2026-11-15）
+    // 人の多いメッシュの「全項目」の zip は、中のファイルが大きすぎて Apps Script では開けない（100MBの制限）。展開した xml なら読める
     if (depth === 0) throw new Error('zip を開けません。パソコンで展開し、中の「FG-GML-…-BldA-…xml」だけをフォルダに入れてください（' + (e && e.message ? e.message : e) + '）');
     return { texts: texts, names: names };
   }

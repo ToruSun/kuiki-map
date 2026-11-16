@@ -1,7 +1,7 @@
 /* =========================================================
    区域マップ：スペイン語の辞書の足し分（i18n-es-tenken.js）／ Diccionario adicional (revisión antes de la prueba)
    ・i18n-es.js の「あと」に読み込みます（index.html の辞書の行）。
-   ・試験運用前の点検（2026-10-24）で直したところの文：受け付けられなかった変更の名前、送れなかった記録、
+   ・試験運用前の点検で直したところの文：受け付けられなかった変更の名前、送れなかった記録、
      iPhone の「ホーム画面に追加」（iOS 26）、集合住宅の部屋の前回の結果、簡単モードの区域カードなど
    ========================================================= */
 window.KUIKI_I18N = window.KUIKI_I18N || {};
@@ -59,7 +59,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "右下の「?」を押すと、印の見かたと「返す」ボタンが出ます": "Toque «?» abajo a la derecha para ver el significado de las marcas y el botón «Devolver»",
 "かんたんな表示のホームに、次の集まりと「あなたの区域カード」を大きく出すようにしました。カレンダーは「カレンダーで見る」で開きます": "En la vista sencilla, el inicio ahora muestra en grande la próxima reunión y «Su tarjeta de territorio». El calendario se abre con «Ver en el calendario»",
 "かんたんな表示の地図に「区域○　あと○軒」の帯を出し、地図は回らないようにしました。留守宅カードをえらぶ画面も見やすくしました": "En la vista sencilla, el mapa muestra una franja «Territorio ○ · Faltan ○ casas» y ya no gira. También se simplificó la pantalla para elegir tarjetas de casas ausentes",
-/* ---- 致命的な3件の直し（2026-10-29・2026.13.99） ---- */
+/* ---- 致命的な3件の直し（2026.13.99） ---- */
 "記録が目安（{0}%）に届いていません（いま {1}%）。どちらかをえらんでください": "Los registros no llegan al porcentaje indicado ({0}%) (ahora {1}%). Elija una opción",
 "記録が目安（{0}%）に届いていません。どちらかをえらんでください": "Los registros no llegan al porcentaje indicado ({0}%). Elija una opción",
 "このまま完了にします。あとで自動で途中の返却にはしません。おすすめに「まだ訪ねていない家」を出しません。": "Se da por terminado así. Después no pasará automáticamente a devolución parcial. En Recomendadas no aparecerán «casas aún no visitadas».",

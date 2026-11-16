@@ -1,5 +1,5 @@
 /* =========================================================
-   gaikokugo.js  外国語の家（2026-11-08・GK）
+   gaikokugo.js  外国語の家（GK）
 
    ・家の編集の種別「外国語」と言語（英語・中国語・ネパール語・スペイン語・韓国語・タガログ語・手話）
      データと判定は app.js（D().langs・LANGS・langNo・dncAt・kindChips・setLang）
@@ -27,10 +27,10 @@
   st.textContent = `
   .ch-seg.four{grid-template-columns:repeat(4,1fr)}
   .ch-seg.four button{flex-direction:column;gap:2px;font-size:14px;line-height:1.15;min-height:58px;padding:0 2px}
-  /* 外国語の印：ほかの種別（会社の青・事業所の緑など）とまぎれない赤紫。白い字で頭文字（区域係）か「外」（2026-11-08 見やすさの直し） */
+  /* 外国語の印：ほかの種別（会社の青・事業所の緑など）とまぎれない赤紫。白い字で頭文字（区域係）か「外」（見やすさの直し） */
   .kb.k-lang,.pin .kb.k-lang{background:#AD1457;color:#fff}
   .kb.k-lang .lg{font-style:normal;font-size:13px;font-weight:900;line-height:1;color:#fff}
-  /* 部屋のボタンでは、角に出すと上の部屋の印に見えるので、拒・ー と同じく名前の前に並べる（2026-11-08） */
+  /* 部屋のボタンでは、角に出すと上の部屋の印に見えるので、拒・ー と同じく名前の前に並べる */
   .uchip .kb.k-lang{position:static;display:inline-grid;vertical-align:-3px;width:20px;height:20px;margin-right:3px;border-width:0;box-shadow:none}
   .uchip .kb.k-lang .lg{font-size:12px}
   .unit .kb.k-lang .lg{font-size:14px}

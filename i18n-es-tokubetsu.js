@@ -1,5 +1,5 @@
 /* =========================================================
-   区域マップ：スペイン語の辞書の足し分（i18n-es-tokubetsu.js）／ Diccionario adicional (2026-10-21)
+   区域マップ：スペイン語の辞書の足し分（i18n-es-tokubetsu.js）／ Diccionario adicional 
    ・特別区域のカード分け（tokubetsu.js）・区域の線と取り込み（torikomi.js）・受け取る前の地図（nozoku.js）・
      状況の内訳・取り込みの種類分け（kml-koushin.js）・区域を分けるときの数（kyoukai.js）の文です。
    ・i18n-es.js の「あと」、i18n.js の「前」に読み込みます。{0}{1}… は数字や名前が入る場所です。
@@ -10,7 +10,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "区域の線・取り込み": "Límites e importación",
 "線を引く・直す・ファイル・特別区域": "Dibujar · corregir · archivos · especiales",
 "区域の決まり": "Reglas de los territorios",
-/* ---- 係の画面「状況」の見出しの［⚙ 決まり］と、設定タブの［← 状況にもどる］（kimari.js・2026-11-09） ---- */
+/* ---- 係の画面「状況」の見出しの［⚙ 決まり］と、設定タブの［← 状況にもどる］（kimari.js） ---- */
 "⚙ 決まり": "⚙ Reglas",
 "この見出しにかかわる区域の決まりを開く": "Abrir las reglas de los territorios relacionadas con esta sección",
 "← 状況にもどる": "← Volver a Situación",
@@ -283,7 +283,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "枝番の線を整える部品を読めなかったので、枝番の線は直さずにそのまま入れます（親の線で切る・重なりを直す・すき間を埋める・目印から枝番を作る、は行いません）": "No se pudo cargar el componente que ordena las líneas; se importan tal cual (sin recortar, sin corregir superposiciones, sin rellenar huecos ni crear subdivisiones desde marcas)",
 "枝番 {0} の親（区域{1}）の線がありませんでした": "La subdivisión {0} no tiene línea del territorio principal (territorio {1})",
 "区域{0}：枝番の線を整えられませんでした（線が交差しているかもしれません）。直さずに入れます": "Territorio {0}: no se pudieron ordenar las líneas de subdivisión (quizá se cruzan). Se importan tal cual",
-/* ---- 集合住宅・エレベーター（2026-10-22） ---- */
+/* ---- 集合住宅・エレベーター ---- */
 "集合住宅": "Edificios de apartamentos",
 "アパート・マンションの住まいの部屋（立入禁止の建物はのぞく）": "Viviendas en edificios de apartamentos (sin los de acceso prohibido)",
 "エレベーター（集合住宅のとき）": "Ascensor (para edificios de apartamentos)",
@@ -315,7 +315,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "（　）は部屋の数です。": "Entre paréntesis: número de departamentos.",
 "アパートの建物の編集で「エレベーター：まだ確かめていない／あり／なし」を選べるようになりました。分かったら直してください": "Al editar un edificio de apartamentos ya puede elegir «Ascensor: aún no confirmado / sí / no». Corríjalo cuando lo sepa",
 "区域係：特別区域の条件に「集合住宅」と「エレベーターあり／なし・未確認」を加えました。集合住宅は部屋の数（はじめは1枚40部屋くらい）でカードに分けます。カードには「エレベーターあり」と文字で出ます": "Encargado: se añadieron las condiciones «Edificios de apartamentos» y «Con ascensor / sin ascensor o sin confirmar» a los territorios especiales. Los apartamentos se dividen por número de departamentos (unos 40 por tarjeta al inicio). La tarjeta muestra «Con ascensor»",
-/* ---- 集める種別（2026-10-22） ---- */
+/* ---- 集める種別 ---- */
 "集める種別（いくつでも。どれかに当たる家を集めます）": "Tipos a reunir (varios. Se reúnen las casas que cumplan alguno)",
 "集合住宅はアパート・マンションの住まいの部屋、オートロックはオートロックの建物です（どちらも立入禁止の建物は入りません）。どれに当たるか迷う建物は「その他」にします。": "«Apartamentos» son las viviendas en edificios; «portero automático», los edificios con portero (no entran los de acceso prohibido). Si duda del tipo de un edificio, use «Otros».",
 "「あり」と「なし・未確認」で2つの特別区域をつくると、高齢の方は「エレベーターあり」のカードをえらべます。": "Si crea dos territorios especiales («Sí» y «Sin ascensor / sin confirmar»), las personas mayores pueden elegir tarjetas con ascensor.",
@@ -334,7 +334,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "例：〇〇（どれに当たるか迷う建物）": "Ej.: ○○ (edificio de tipo dudoso)",
 "区域係：特別区域をつくる画面の「条件」をなくし、集合住宅・オートロックも種別のボタンにまとめました。カードを「建物の数で分ける」か「部屋の数で分ける」かを選べます（オートロックは、はじめは1枚4件まで）": "Encargado: en «Crear territorio especial» se quitaron las «condiciones»; apartamentos y portero automático ahora son botones de tipo. Puede elegir dividir las tarjetas por edificios o por departamentos (portero automático: 4 edificios por tarjeta al inicio)",
 "種別に「その他」を加えました。どれに当たるか迷う、住居以外の建物に使います": "Se añadió el tipo «Otros», para edificios no residenciales de tipo dudoso",
-/* ---- 特別区域を止める・消す（2026-10-22） ---- */
+/* ---- 特別区域を止める・消す ---- */
 "止める・消す": "Pausar · borrar",
 "今は貸出中止です。家は、ふつうの区域カードで回っています。": "Ahora está pausado. Las casas se visitan con las tarjetas normales.",
 "貸出を再開する": "Reanudar la asignación",
@@ -344,7 +344,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "消すのは、作り方をまちがえたときや、もう使わないときです。家と訪問の記録は消えません。": "Bórrelo solo si lo creó mal o ya no lo usará. Las casas y los registros de visitas no se borran.",
 "特別区域「{0}」を貸出中止にしました": "Territorio especial «{0}» pausado",
 "特別区域「{0}」の貸出を再開しました": "Se reanudó el territorio especial «{0}»",
-/* ---- 雨の日（2026-10-22） ---- */
+/* ---- 雨の日 ---- */
 "雨のため、集合住宅の多い区域を先に出しています": "Por la lluvia, se muestran primero los territorios con más apartamentos",
 "雨のため、集合住宅の多い区域をさがしましたが、空いている区域にはありませんでした": "Llueve, pero no hay territorios libres con muchos apartamentos",
 "雨の日は、集合住宅の多い区域を先に出す": "En días de lluvia, mostrar primero los territorios con más apartamentos",

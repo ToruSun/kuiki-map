@@ -198,7 +198,7 @@ def parse_geojson(name, data, out, stats):
 
 
 def enc_bbox(entries):
-    """符号化した土地の一覧から、範囲 [南, 西, 北, 東]（度）を出す（地図に出す範囲をしぼるため・2026-11-13）"""
+    """符号化した土地の一覧から、範囲 [南, 西, 北, 東]（度）を出す（地図に出す範囲をしぼるため）"""
     s = n = w = e = None
     for p in entries:
         cy, cx = p[1], p[2]

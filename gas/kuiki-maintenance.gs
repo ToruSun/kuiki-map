@@ -222,7 +222,7 @@ function clearVisitHistoryCount_() {
   });
   let cards = 0, live = 0;
   readCol_('awayCards').forEach(function (x) { if (x && x.data && x.data.endedAt) cards++; else live++; });
-  let dnc = 0, skip = 0; // 訪問しない（dnc の q。2026-11-05）は拒否と分けて数える（監査 HS-A9）
+  let dnc = 0, skip = 0; // 訪問しない（dnc の q）は拒否と分けて数える（監査 HS-A9）
   readCol_('dnc').forEach(function (x) { if (isDncQ_(x && x.data)) skip++; else dnc++; });
   const caution = readCol_('caution').size;
   return { visits: visits, met: met, away: away, keep: keep, cards: cards, live: live, dnc: dnc, skip: skip, caution: caution };

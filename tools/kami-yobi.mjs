@@ -21,7 +21,7 @@ const FORCE = String(process.env.FORCE || '') === 'true'; // すべて作り直�
 const DEMO = String(process.env.KUIKI_DEMO || '') === '1'; // 試作モードでの動作確認用（ふだんは使わない）
 const UPLOAD = String(process.env.KUIKI_UPLOAD || '').trim(); // 動作確認用：送り先を変える（ふだんは空）
 const PER_FILE = 8;            // 1ファイルに入れる区域の数（A4の表・裏が2組）
-const LAYOUT = 's12-a6-v3';    // カードの形を変えたときは、この文字を変える（全部を作り直す）。v3：土地の区切り（2026-11-13）
+const LAYOUT = 's12-a6-v3';    // カードの形を変えたときは、この文字を変える（全部を作り直す）。v3：土地の区切り
 const LOAD_WAIT_MS = 15 * 60000;
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);

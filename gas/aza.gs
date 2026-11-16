@@ -26,7 +26,7 @@ function azaKanjiNum_(k) {
 /* 字の名前をそろえる（画面の azaKey と同じ決まり） */
 function azaKeyGs_(s) {
   let x = String(s || '').normalize('NFKC').replace(/\s+/g, '');
-  x = x.replace(/^(北海道|東京都|京都府|大阪府|[^\s\d]{2,3}県)/, '').replace(/^豊見城市/, '').replace(/^大字/, '').replace(/^字/, ''); // 県の頭はどの県でも取る（配布パック）
+  x = x.replace(/^(北海道|東京都|京都府|大阪府|[^\s\d]{2,3}県)/, '').replace(/^大字/, '').replace(/^字/, ''); // 県の頭はどの県でも取る（配布パック）
   return x.replace(/([一二三四五六七八九十]+)丁目/, function (m, k) { return azaKanjiNum_(k) + '丁目'; });
 }
 function azaSig_(poly) {

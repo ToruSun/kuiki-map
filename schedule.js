@@ -645,7 +645,7 @@ button.ktag{cursor:pointer}
   // 簡単モード：はじめは5件と「もっと見る」（10/09 の指示書3.4・改善案A2）。並べ方を変えたとき・地図で見てもどったときは、開いたまま
   const REQ_FIRST = 5;
   let reqMore = false;
-  /* 「区域をもらう」一覧の1区域分の中身。一覧と、地図で区域をタップしたときの画面（openTerrPick）で同じものを使う（2026-11-08） */
+  /* 「区域をもらう」一覧の1区域分の中身。一覧と、地図で区域をタップしたときの画面（openTerrPick）で同じものを使う */
   function reqInfoCore(x, showD, back) {
     const { t, last, n, dist, yg } = x;
     return `<p class="muted">${n}軒・部屋　${last ? `前回返却した日 ${fmtDay(last)}` : 'まだ回ったことがない区域'}${partialTag(t) ? ' ' + partialTag(t) : ''}${showD ? `　ここから約${fmtDist(dist)}` : ''}</p>${yg && yg.pct != null && !yg.city ? `<p class="muted">${yg.manual ? `若い世代 ${yg.pct}%（区域係が手直し）` : yg.city ? '' : `若い世代 ${yg.pct}%（会えた記録 ${yg.n}件から）`}</p>` : ''}${profLine(t, back)}`;
@@ -708,7 +708,7 @@ button.ktag{cursor:pointer}
           ${infoHtml(x)}${askWhy(x)}</div>
         ${btnsHtml(x)}
       </article>`; };
-    /* 簡単モード（2026-10-22）：1区域＝見出しと軒数・状態1行・目印2つまで・ボタン。数字や統計は「くわしく」の中 */
+    /* 簡単モード：1区域＝見出しと軒数・状態1行・目印2つまで・ボタン。数字や統計は「くわしく」の中 */
     const kRow = x => `<article class="pick kpick">
         <div class="kp-head"><b>${reqName(x.t)}</b><span class="kp-n">${x.n}軒</span></div>
         <p class="kp-st">${reqState(x)}${showDist(x) ? `<span class="kp-dist">ここから約${fmtDist(x.dist)}</span>` : ''}</p>
@@ -790,7 +790,7 @@ button.ktag{cursor:pointer}
     });
   };
 
-  /* 地図で区域をタップしたとき：「区域をもらう」一覧の1区域分と同じ中身を出し、その場で受け取る・係に頼む（2026-11-08）
+  /* 地図で区域をタップしたとき：「区域をもらう」一覧の1区域分と同じ中身を出し、その場で受け取る・係に頼む
      ・出すのは、まだだれも持っていない区域のうち「区域をもらう」一覧に出る区域だけ（貸出中・貸出中止・紙の記録で貸出中は出さない）
      ・ボタンの出し分けは一覧と同じ。受け取りは takeTerr、申し込みは askTerr が最後に確かめる（申し込み制はそのまま）
      ・地図からもらうのは個人の区域（集まりで使う区域は、今までどおり一覧から）
@@ -940,7 +940,7 @@ button.ktag{cursor:pointer}
     const d = typeof ageCur === 'function' ? (ageCur() || {}) : {};
     const doc = (d.docs || []).find(x => x && x.id === 'cur:' + muni) || null;
     if (doc && doc.src === 'estat') return `出典：総務省統計局「国勢調査 小地域集計」（e-Stat）を加工して作成${doc.asOf ? `（${esc(doc.asOf)}）` : ''}`;
-    return `出典：${esc((doc && doc.city) || '市')}「地域・年齢別人口」${doc && doc.asOf ? `（${esc(doc.asOf)}時点）` : ''}を加工して作成（CC BY 2.1 JP）`;
+    return `出典：${esc((doc && doc.city) || '市')}「地域・年齢別人口」${doc && doc.asOf ? `（${esc(doc.asOf)}時点）` : ''}を加工して作成${doc && doc.lic ? `（${esc(doc.lic)}）` : ''}`;
   }
   let awayG = false;
   function openProfile(tid, back) {
@@ -1113,7 +1113,7 @@ button.ktag{cursor:pointer}
         const full = myAwayCount(G) >= D().settings.awayMax;
         const sorts = [['easy', '会いやすい順'], ['near', '近い順'], ['long', '長く会えていない順'], ['many', '家が多い順']]
           .concat(ageOn ? [['young', '若い世代が多い順']] : []).concat(G ? [] : [['now', '今の時間帯']]);
-        const ALL = G && reqUse === 'all'; // 全体の集まりで回る留守宅カード（2026-10-24）
+        const ALL = G && reqUse === 'all'; // 全体の集まりで回る留守宅カード
         // 簡単モードの1行：区域番号・時間帯・○軒・受け取る（区域をもらうの簡単な形と同じ見た目）
         const kAway = x => `<article class="pick kpick"><div class="kp-head"><b>区域${esc(x.t.no)}</b><span class="kp-n">${x.keys.length}軒</span></div>
             <p class="kp-st">${slotText(x.slot)}</p>
@@ -1401,7 +1401,7 @@ button.ktag{cursor:pointer}
       row('#00796B', `${esc(uname(t.holder))}さんが、区域${esc(t.no)}を自分で受け取りました`, `${fmtDay(t.selfTakenAt)}に受け取り（今 ${heldCount(t.holder)}枚）`,
         `<button type="button" class="btn small primary" data-ttaken="${esc(t.id)}">確認した</button><button type="button" class="btn small" data-topen="${esc(t.id)}">地図</button>`);
     });
-    // 4b まだ対応していない「こまったこと・提案」（iken.js・2026-11-07）。「見る」で設定の一覧（まだのもの）へ
+    // 4b まだ対応していない「こまったこと・提案」（iken.js）。「見る」で設定の一覧（まだのもの）へ
     const ik = window.IkenR && IkenR.todayInfo ? IkenR.todayInfo() : null;
     if (ik) row('#6A1B9A', `こまったこと・提案が ${ik.n}件、まだ対応していません`, ik.sub, go('set', 'adIken', '見る').replace('<button ', '<button data-ikgo '));
     // 5 今月中に出したい区域
@@ -1684,7 +1684,7 @@ button.ktag{cursor:pointer}
     if (!t || !isAdmin() || lkLocked()) return;
     setSheet(karteHtml(t));
     const S = $('#sheet');
-    // もどる：下のボタンだけ（上の丸い × は、そのまま閉じる。丸いボタンに「もどる」の文字が縦に入って崩れていた・2026-11-07）
+    // もどる：下のボタンだけ（上の丸い × は、そのまま閉じる。丸いボタンに「もどる」の文字が縦に入って崩れていた）
     if (typeof back === 'function') $$('[data-close]', S).forEach(b => { if (b.classList.contains('icon-btn')) return; b.removeAttribute('data-close'); b.textContent = 'もどる'; b.onclick = back; });
     $$('[data-kper]', S).forEach(b => b.onclick = () => { karteState.period = Number(b.dataset.kper); sheetKeep = true; openKarte(tid, back); });
     const go = (sel, fn) => { const b = $(sel, S); if (b) b.onclick = fn; };
@@ -1915,7 +1915,7 @@ button.ktag{cursor:pointer}
      ・番号の札は、縮尺に合わせて出し分ける
        縮小：色だけ → 中間：小さな番号 → 拡大：くわしい札。重なるときは、期限の近い区域を優先
      ・係の画面では、「切」のときも同じ出し分けにする（番号が重なって区域が見えなくなるのを防ぐ）
-     ・2026-11-04：番号の札の出し分けは、係だけでなく全員の地図で使う（「期限：入／切」のボタンと色分けは係だけ）
+     ・番号の札の出し分けは、係だけでなく全員の地図で使う（「期限：入／切」のボタンと色分けは係だけ）
        親の「区域 14」の札は出さない（枝番の札「14-3」に親の番号が入っているため）。枝番は「14-3」を同じ大きさの文字で出す
        札は区域の中（labelPoint）に置く。重なるときは、えらんだ区域 → 自分の区域 → ほかの区域の順に残す
        縮めて番号を出さないときも、えらんだ区域の札だけは出す
@@ -2024,7 +2024,7 @@ body.duemode .terr-label:not(.duelab){display:none}
     }
     if (!dueLayer) dueLayer = L.layerGroup().addTo(map);
     dueLayer.clearLayers();
-    // show：「期限：入／切」のボタンを出すか（係だけ）。番号の札は全員に出す（2026-11-04）
+    // show：「期限：入／切」のボタンを出すか（係だけ）。番号の札は全員に出す
     const show = isAdmin() && !lkLocked(), on = show && dmState.on;
     document.body.classList.add('duemode'); // ふつうの区域の札（app.js）の代わりに、ここで札を出す
     const ctl = document.getElementById('dmCtl');
@@ -2079,7 +2079,7 @@ body.duemode .terr-label:not(.duelab){display:none}
     });
     items.sort((a, b) => a.pri - b.pri || cmpNo(a.t.no, b.t.no));
     const placed = [];
-    // 家の印・建物の名前と重ならないように、札を少しずらす（2026-11-08）。
+    // 家の印・建物の名前と重ならないように、札を少しずらす。
     // 今の画面に出ている家の印・名前の大きさを、そのまま障害物として使う（拡大・回転・文字の大きさに合わせられる）
     const obs = houseObstacles();
     const hitR = (r, list) => list.some(q => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
@@ -2149,7 +2149,7 @@ body.duemode .terr-label:not(.duelab){display:none}
   const bioCan = () => !!(window.PublicKeyCredential && navigator.credentials && lkCan());
   const lkActive = () => { try { return isAdmin() && !!lkCfg(); } catch (e) { return false; } };
   const lkLocked = () => lkActive() && lk.locked;
-  window.lkLocked = lkLocked; // 状況のグラフ（joukyou-graph.js）が、画面ロック中は出さないために使う（2026-10-31）
+  window.lkLocked = lkLocked; // 状況のグラフ（joukyou-graph.js）が、画面ロック中は出さないために使う
   const b64e = u8 => btoa(String.fromCharCode.apply(null, u8));
   const b64d = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   async function pinHash(pin, salt, iter) {
@@ -2390,7 +2390,7 @@ body.duemode .terr-label:not(.duelab){display:none}
   const today6 = () => ymd(new Date());
   const N = s => String(s == null ? '' : s).normalize('NFKC').toLowerCase().replace(/[－ー―‐−–—]/g, '-').replace(/\s+/g, '');
 
-  /* ---------- （12）名前をかくす：2026-10-21 に廃止（区域係の要望）。前に「かくす」にしていた端末の設定も消す ---------- */
+  /* ---------- （12）名前をかくす：廃止（区域係の要望）。前に「かくす」にしていた端末の設定も消す ---------- */
   try { lsDel('kuiki_hidenames'); } catch (e) { /* 何もしない */ }
 
   /* ---------- （6）各画面の「この画面の使い方」 ---------- */
@@ -2450,7 +2450,7 @@ body.duemode .terr-label:not(.duelab){display:none}
       bar.dataset.bound = '1';
       bar.addEventListener('click', e => { if (e.target.closest('[data-adhelp]')) openHelp(); });
     }
-    // 小さな文字のボタン1つだけにして、一覧までの場所を取らないようにする（2026-10-21）
+    // 小さな文字のボタン1つだけにして、一覧までの場所を取らないようにする
     bar.innerHTML = `<div class="adtop"><button type="button" class="adhelp" data-adhelp>？ この画面の使い方</button></div>`;
   }
 

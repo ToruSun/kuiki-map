@@ -1,7 +1,7 @@
 /* =========================================================
    区域マップ：スペイン語の辞書の足し分（i18n-es-shikai.js）／ Diccionario adicional (dirigir hoy)
    ・i18n-es.js の「あと」に読み込みます（index.html の辞書の行）。
-   ・今日の司会（ほかの監督・司会者のカードで、今日だけ司会する・2026-10-24）と、全体の集まりで回る留守宅カードの文
+   ・今日の司会（ほかの監督・司会者のカードで、今日だけ司会する）と、全体の集まりで回る留守宅カードの文
    ========================================================= */
 window.KUIKI_I18N = window.KUIKI_I18N || {};
 window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
@@ -41,10 +41,10 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "えらんだ「今日回る人」と範囲は、そのまま残ります。": "Las personas y las zonas elegidas para hoy se mantienen.",
 "{0}さんを今日の司会から外しました": "Se quitó a {0} como quien dirige hoy",
 "区域{0}の司会をやめました": "Dejó de dirigir con el territorio {0}",
-/* 全体の集まりで回る留守宅カード（2026-10-24） */
+/* 全体の集まりで回る留守宅カード */
 "全体の集まりで回る留守宅カード": "Tarjeta de ausentes para la reunión general",
 "全体の集まりの留守宅カード（区域{0}・{1}）を受け取りました": "Recibió la tarjeta de ausentes de la reunión general (territorio {0} · {1})",
-/* 全体の集まりの予定：監督・司会者が入れる・司会者の名前・くり返し（2026-11-11） */
+/* 全体の集まりの予定：監督・司会者が入れる・司会者の名前・くり返し */
 "全体・司会：{0}": "General · Dirige: {0}",
 "全体の集まりの予定として入れます（全員に届きます）。": "Se agregará como reunión general (llega a todos).",
 "はじめは入れた人の名前です。ほかの人が司会するときは書きかえてください。": "Al principio aparece el nombre de quien la agrega. Si dirige otra persona, cámbielo.",

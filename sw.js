@@ -13,7 +13,8 @@
    ・サーバー（GAS）とのやりとり・版の確認には、手を出さない
    ・招待コード（?t=）の入ったURLは保存しない（URLの ? から後ろを消して保存する）
    ========================================================= */
-const APP_CACHE = 'kuiki-app-v150'; // v150：2026.13.150（出典・お知らせから地域や時点に固有の言葉を外す）
+const APP_CACHE = 'kuiki-app-v151'; // v151：2026.13.151（いくつかの市町村・県にまたがる会衆。地域に固有の決め打ちを config.js へ）
+// v150：2026.13.150（出典・お知らせから地域や時点に固有の言葉を外す）
 // v149：2026.13.149（土地の区切り：法務省の線が無い所を、市町村の地番参考図でおぎなう。ログインした人だけ）
 // v148：2026.13.148（ピンチの途中から回したとき、線がずれて見えたのを直した）
 // v147：2026.13.147（地図を回しているとき、ピンチの途中で線がずれて見えたのを直した）
@@ -138,7 +139,7 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       const cache = await caches.open(APP_CACHE);
       // ブラウザの控え（GitHub Pages は10分ほど控える）を使わず、毎回サーバーに確かめる（変わっていなければ短い返事で済む）。
-      // 新しい index.html と古い schedule.js などがまざらないように（2026-10-22）
+      // 新しい index.html と古い schedule.js などがまざらないように
       const fresh = req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' });
       const net = fetch(fresh).then(res => {
         if (res && res.ok && res.type === 'basic') cache.put(key, res.clone()).catch(() => {});

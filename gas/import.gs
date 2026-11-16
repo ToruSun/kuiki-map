@@ -16,7 +16,7 @@ const OVERPASS_URLS = [                 // Googleのサーバーから届く先�
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter'
 ];
-const TILE_DEG = 0.01;                  // 1回にまとめて取る大きさ（約1km四方）。建物の形も取るので、大きいと地図サーバーが時間切れ（504）になる（2026-11-16）
+const TILE_DEG = 0.01;                  // 1回にまとめて取る大きさ（約1km四方）。建物の形も取るので、大きいと地図サーバーが時間切れ（504）になる
 const IMPORT_TRIES = 3;                 // 取れなかった範囲は、最後にもう一度（合わせて3回まで）試す
 const RUN_MS = 4.5 * 60000;             // 1回の実行で使う時間の上限（実行制限は6分）
 const IMPORT_STATE = 'IMPORT_STATE';    // 途中経過の置き場所
@@ -161,7 +161,7 @@ function nearExisting_(grid, lat, lng) {
 
 /** OpenStreetMap から、その四角の中の建物の中心点を取ってくる */
 function fetchBuildings_(s, w, n, e) {
-  // 建物（way）は形ごと取り、広さ（小さい物置をよける）と重心を出す。relation は中心だけ（2026-11-16）
+  // 建物（way）は形ごと取り、広さ（小さい物置をよける）と重心を出す。relation は中心だけ
   const bb = '(' + s + ',' + w + ',' + n + ',' + e + ')';
   const q = '[out:json][timeout:90];way["building"]' + bb + ';out geom tags qt;relation["building"]' + bb + ';out center tags qt;';
   for (let i = 0; i < OVERPASS_URLS.length; i++) {
@@ -232,7 +232,7 @@ function testOverpass() {
   const ts = terrBounds_();
   let s, w, n, e;
   if (ts.length) { s = ts[0].s; w = ts[0].w; n = ts[0].n; e = ts[0].e; }
-  else { s = 26.20; w = 127.68; n = 26.21; e = 127.69; }
+  else { ui.alert('区域がまだありません。区域の線を引いてから試してください。'); return; }
   const q = '[out:json][timeout:60];(way["building"](' + s + ',' + w + ',' + n + ',' + e + '););out center 20 qt;';
   const lines = [];
   OVERPASS_URLS.forEach(function (url) {
@@ -286,14 +286,14 @@ function importProvHouses() {
     if (!ts.length) { ui.alert('その番号の区域が見つかりませんでした。'); return; }
     ids = ts.map(function (t) { return t.id; });
   }
-  // 小さい建物を入れない目安（国土地理院の取り込みと同じ。2026-11-16）
+  // 小さい建物を入れない目安（国土地理院の取り込みと同じ）
   const ask2 = ui.prompt('小さい建物をよける',
     '何㎡より小さい建物を入れないかを決めます（物置・車庫をよけるため）。\n' +
     'ふつうは 30 くらいです。0 にすると、すべて入れます。',
     ui.ButtonSet.OK_CANCEL);
   if (ask2.getSelectedButton() !== ui.Button.OK) return;
   const minArea = Math.max(0, Number(ask2.getResponseText().trim() || 30) || 0);
-  // 建物は、GitHub Actions「OSM の建物」が作った osm/buildings.json（公開ページ）から読む（2026-11-16）
+  // 建物は、GitHub Actions「OSM の建物」が作った osm/buildings.json（公開ページ）から読む
   // Apps Script から地図サーバー（Overpass）に聞くと、混んでいて時間切れ（504）になるため
   const got = osmBuildings_();
   if (!got.list) { ui.alert('建物のデータが読めませんでした', got.note, ui.ButtonSet.OK); return; }

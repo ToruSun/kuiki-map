@@ -1,5 +1,5 @@
 /* =========================================================
-   kyohi.js  係の画面の「拒否」（2026-10-17）
+   kyohi.js  係の画面の「拒否」
 
    ・入口：係の画面 ＞ 区域 ＞［一覧］［状況］［拒否］［期限の地図］の「拒否」
    ・一覧：区域ごとにたたんで出す（「区域12　拒否5件」の行を押すと開く）。上に「すべて／要確認」と検索
@@ -232,7 +232,7 @@
     // 訪問しない（区域係が付ける・理由なし）：新しいサーバーか、もう付いている印があるときだけ出す
     const skN = skipEntries().length, showSk = capSkip() || skN > 0;
     if (ui.mode === 'skip' && !showSk) ui.mode = 'dnc';
-    // 外国語の家（gaikokugo.js・2026-11-08）：新しいサーバーか、もう付いている家があるときだけ
+    // 外国語の家（gaikokugo.js）：新しいサーバーか、もう付いている家があるときだけ
     const lgN = window.langCount ? window.langCount() : 0, showLg = !!window.renderLangAdmin && (capLang() || lgN > 0);
     if (ui.mode === 'lang' && !showLg) ui.mode = 'dnc';
     const nSeg = 2 + (showSk ? 1 : 0) + (showLg ? 1 : 0);
@@ -333,7 +333,7 @@
   }
   function bindRows(root) { $$('[data-dk]', root).forEach(b => b.onclick = () => openDetail(b.dataset.dk)); }
 
-  /* ---------- 訪問しない（2026-11-05）：区域ごとの一覧・1件の画面 ---------- */
+  /* ---------- 訪問しない：区域ごとの一覧・1件の画面 ---------- */
   function skipEntries() {
     const out = [];
     for (const k in D().dnc) {
@@ -830,7 +830,7 @@
     const tail = xlSplitTail(p.rest);
     const label = tail.label && BLD_RE.test(tail.label) ? tail.label : ''; // 建物の名前だけ残す（人の名前は残さない）
     const a = `${p.muni}${p.town}${p.nums.join('-')}${label ? ' ' + label : ''}${tail.unit ? ' ' + tail.unit : ''}`;
-    return { q: CFG_AREA.pref + p.muni + p.town + p.nums.join('-'), muni: p.muni, town: p.town, nums: p.nums, unit: tail.unit, a: a.slice(0, 120), noMuni, raw: s };
+    return { q: addrQ(p), muni: p.muni, town: p.town, nums: p.nums, unit: tail.unit, a: a.slice(0, 120), noMuni, raw: s };
   }
 
   /* =========================================================
@@ -885,9 +885,11 @@
     if (!e || !e.nums || !e.nums.length) return null;
     const raw = String(e.raw || e.a || '');
     if (/\d\s*号/.test(raw) && !/番地/.test(raw)) return null; // 住居表示（〇番〇号）は地番ではない
-    // 沖縄県以外（配布パック）：丁目のある住所は住居表示のことが多く、「3丁目5-10」の形では地番か住居番号か分からない。
-    // 「番地」と書いてあるときだけ地番の地図を使い、ほかは国土地理院の住所検索（住居表示に対応）にまかせる
-    if (!CFG_AREA.okinawa && /丁目/.test(raw + (e.town || '')) && !/番地/.test(raw)) return null;
+    // 丁目のある住所は住居表示のことが多く、「3丁目5-10」の形では地番か住居番号か分からない。
+    // 「番地」と書いてあるときだけ地番の地図を使い、ほかは国土地理院の住所検索（住居表示に対応）にまかせる。
+    // 丁目があっても地番の地域（住居表示をしていない市町村）は、config.js の chomeChiban: true で地番の地図を使う
+    const chomeChiban = !!(window.KUIKI_CONFIG && window.KUIKI_CONFIG.chomeChiban);
+    if (!chomeChiban && /丁目/.test(raw + (e.town || '')) && !/番地/.test(raw)) return null;
     const idx = await cbIndex(e.muni);
     if (!idx || !idx.azas) return null;
     CB.src = '「登記所備付地図データ」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY 4.0）を加工して作成'; // 出典は決まった形（データの中の、市町村名や時点の入った文は使わない）
@@ -914,7 +916,7 @@
     return { pos: { lat: ps[0].lat, lng: ps[0].lng, good: true, chiban: true, exact }, polys: ps.map(x => x.ring), src: idx.src, asof: idx.asof };
   }
   window.chibanFind = chibanFind; // index.html のエクセル取り込みでも使う
-  /* 場所 → 地番の住所（外国語の家の一覧・gaikokugo.js。2026-11-08）。端末の中だけで調べる。
+  /* 場所 → 地番の住所（外国語の家の一覧・gaikokugo.js）。端末の中だけで調べる。
      names：その区域の字の名前（t.aza の n）。そこから探し、なければその市町村の字を全部見る */
   const inRing = (lat, lng, r) => {
     let c = false;
@@ -1399,7 +1401,7 @@
   }
 
   /* =========================================================
-     住所の一覧から「訪問しない」を入れる（2026-11-05・設計書 docs/superpowers/specs/2026-11-05-jusho-ichiran-shinai-design.md）
+     住所の一覧から「訪問しない」を入れる（設計書 docs/superpowers/specs/2026-11-05-jusho-ichiran-shinai-design.md）
      ・住所の列だけを使う（ほかの列は見せない・検索しない・保存しない・送らない）。住所の文字も、この端末のメモリの中だけ
      ・全件を地図で1軒ずつ確かめる（自動では付けない）。家につながらないものは入れない
      ・すでに印（拒否・訪問しない・注意）がある家は変えない。書くのは { q:1, s:'adm', at, lat, lng } だけ

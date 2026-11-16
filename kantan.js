@@ -231,7 +231,7 @@
     let left = null;
     try { const r = roundInfo(t.id, true); if (r) left = r.c.todo; } catch (e) { left = null; }
     const due = dueOf(t), over = own && due && Date.parse(due) < Date.now();
-    const lead = !own && typeof isLead === 'function' && isLead(t), ld = own && typeof leadOf === 'function' ? leadOf(t) : null; // 今日の司会（2026-10-24）
+    const lead = !own && typeof isLead === 'function' && isLead(t), ld = own && typeof leadOf === 'function' ? leadOf(t) : null; // 今日の司会
     const sub = (t.group ? `<span class="gbadge">${esc(useName(t))}の区域</span> ` : '') +
       (own ? (over ? '<span class="tag-warn">返す日を過ぎています</span>' : (due ? `返す目安：${fmtDay(due)}` : ''))
         : lead ? `<span class="leadtag">今日の司会</span>担当：${esc(uname(t.holder))}さん`

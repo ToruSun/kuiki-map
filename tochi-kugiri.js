@@ -198,7 +198,7 @@
     tkEnsure();
     if (!tkShow()) { if (lastSig) { tkGroup.clearLayers(); lastSig = ''; } return; }
     const top = TK.top;
-    // まだ読んでいない（undefined）か、凡例が先に読みはじめて読み込み中（Promise）のときは、読み終えてから描き直す（2026-11-15）
+    // まだ読んでいない（undefined）か、凡例が先に読みはじめて読み込み中（Promise）のときは、読み終えてから描き直す
     if (top === undefined || (top && typeof top.then === 'function')) { tkTop().then(() => renderTochiKugiri()).catch(() => {}); return; }
     if (!top) return; // この会衆には表がない
     const b = map.getBounds().pad(0.15), box = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
@@ -245,12 +245,14 @@
      ========================================================= */
   const TK_NOTE = '登記上の土地の区切りの目安です。実際の敷地や塀とは違うことがあります';
   /* 出典（CC BY）：データの中の文ではなく、ここで決まった形に作る（地域や時点の言葉を入れない）。
-     地番参考図は、出す人（市町村）の名前が要るので、config.js の muni を入れる */
+     地番参考図は、出す人（市町村）の名前が要るので、データの cities（作ったときの市町村。いくつでも）か、無ければ config.js の muni を入れる */
   const TK_SRC_MOJ = '「登記所備付地図データ」（法務省）をAIGIDがGeoJSONに変換したもの（CC BY 4.0）を加工して作成';
-  const tkSrcSan = () => {
-    const city = (window.KUIKI_CONFIG && window.KUIKI_CONFIG.muni) || '';
-    return '「固定資産（土地）地番参考図」' + (city ? '（' + city + '）' : '（市町村）') + 'を加工して作成（線だけ。地番は入れていない）';
+  const tkSanCities = () => {
+    const c = TK.cidx && TK.cidx[SAN] && Array.isArray(TK.cidx[SAN].cities) ? TK.cidx[SAN].cities.filter(x => typeof x === 'string' && x).map(x => x.slice(0, 20)) : [];
+    if (c.length) return c.join('・');
+    return (window.KUIKI_CONFIG && window.KUIKI_CONFIG.muni) || '市町村';
   };
+  const tkSrcSan = () => '「固定資産（土地）地番参考図」（' + tkSanCities() + '）を加工して作成（線だけ。地番は入れていない）';
   function tkSrcLine() {
     const codes = Object.keys(TK.cidx || {}).filter(c => TK.cidx[c] && TK.cidx[c].azas);
     if (!codes.length) return '';
@@ -399,7 +401,7 @@
     let idx = eo >= 0 ? eo + 'fill-rule="evenodd"/>'.length : -1;
     if (idx < 0) { const im = svg.lastIndexOf('<image'); idx = im >= 0 ? svg.indexOf('/>', im) + 2 : svg.indexOf('>') + 1; }
     svg = svg.slice(0, idx) + path + svg.slice(idx);
-    const add = (moj ? '登記所備付地図データ（法務省／AIGID）・' : '') + (san ? '地番参考図（' + (((window.KUIKI_CONFIG || {}).muni) || '市町村') + '）・' : '');
+    const add = (moj ? '登記所備付地図データ（法務省／AIGID）・' : '') + (san ? '地番参考図（' + tkSanCities() + '）・' : '');
     return svg.replace('出典：国土地理院（', '出典：' + add + '国土地理院（');
   }
   const _s12MapSvg = window.s12MapSvg;

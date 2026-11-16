@@ -2,28 +2,26 @@
  * 区域マップ：年齢データの自動取り込み（BODIK オープンデータ）
  * Code.gs と同じ Apps Script のプロジェクトに、別のファイル「AgeAuto.gs」として足します。
  *
- * ・豊見城市が毎月公開している「地域・年齢別人口」（字・丁目ごと、5歳きざみ）を、
+ * ・BODIK に「地域・年齢別人口」（字・丁目ごと、5歳きざみ）を毎月出している市町村のデータを、
  *   毎月10日の朝に取りに行き、新しい月のデータがあれば年齢データとして保存します。
- * ・保存の形は、区域係の画面で「市のCSV」を読み込んだときと同じです（cur:47212）。
+ * ・会衆がいくつかの市町村にまたがるときは、下の AGE_AUTO に市町村ごとに1行ずつ書きます。
+ * ・保存の形は、区域係の画面で「市のCSV」を読み込んだときと同じです（cur:<市町村コード>）。
  * ・はじめに1回、スプレッドシートのメニュー「区域マップ」→「年齢データを取り込む」を押すと、
  *   すぐに取り込み、毎月の自動取り込みも設定します。
  * ・通信は月1回・数KBだけです。取れなかった月は、今までどおり手で読み込めます。
  *
- * 出典：豊見城市「地域・年齢別人口」（クリエイティブ・コモンズ 表示 2.1 日本）
- * ほかの市町村で使うときは、下の AGE_AUTO を書きかえます（使わないときは pkg を '' に）。
+ * 出典：各市町村「地域・年齢別人口」（画面に市町村の名前と利用条件を出します）
  */
-const AGE_AUTO = {
-  // 使わないときは pkg を空に（何もしない）。例：豊見城市で使うときは pkg: '472123_population'・code: '47212'・city: '豊見城市'
-  pkg: '',                  // BODIK のデータセットの名前
-  code: '',                 // 市町村コード（5けた）
-  city: ''
-};
+const AGE_AUTO = [
+  // 市町村ごとに1行。使わないときは空のまま（何もしない）
+  // 例：{ pkg: '<BODIK のデータセットの名前>', code: '<市町村コード5けた>', city: '<市町村の名前>', lic: '<利用条件 例 CC BY 4.0>' },
+];
 const BODIK_API = 'https://data.bodik.jp/api/3/action/';
 
 /** メニュー：今すぐ取り込み、毎月の自動取り込みを設定する */
 function ageAutoMenu() {
   const ui = SpreadsheetApp.getUi();
-  if (!AGE_AUTO.pkg) { ui.alert('年齢データの自動取り込み', 'この会衆では使っていません（BODIK に年齢データを出している市町村のための機能です）。\n年齢データは、区域係の画面の「設定」→「年齢データ」から、e-Stat（国勢調査）のファイルで入れます。', ui.ButtonSet.OK); return; }
+  if (!AGE_AUTO.length) { ui.alert('年齢データの自動取り込み', 'この会衆では使っていません（BODIK に年齢データを出している市町村のための機能です）。\n年齢データは、区域係の画面の「設定」→「年齢データ」から、e-Stat（国勢調査）のファイルで入れます。', ui.ButtonSet.OK); return; }
   installAgeAuto_();
   let msg;
   try { msg = ageAutoImport().msg; } catch (e) { msg = '取り込めませんでした：' + (e && e.message ? e.message : e); }
@@ -37,16 +35,25 @@ function installAgeAuto_() {
   ScriptApp.newTrigger('ageAutoImport').timeBased().onMonthDay(10).atHour(5).create();
 }
 
-/** 毎月の自動取り込み（タイマーから呼ばれる） */
+/** 毎月の自動取り込み（タイマーから呼ばれる）。市町村ごとに1つずつ */
 function ageAutoImport() {
-  if (!AGE_AUTO.pkg) return { ok: false, msg: '設定がありません' };
-  const pkg = bodikGet_('package_show?id=' + encodeURIComponent(AGE_AUTO.pkg));
+  if (!AGE_AUTO.length) return { ok: false, msg: '設定がありません' };
+  const msgs = [];
+  AGE_AUTO.forEach(function (A) {
+    if (!A || !A.pkg || !/^\d{5}$/.test(String(A.code || ''))) return;
+    try { msgs.push((A.city || A.code) + '：' + ageAutoOne_(A).msg); }
+    catch (e) { msgs.push((A.city || A.code) + '：取り込めませんでした（' + (e && e.message ? e.message : e) + '）'); }
+  });
+  return { ok: true, msg: msgs.join('\n') || '設定がありません' };
+}
+function ageAutoOne_(A) {
+  const pkg = bodikGet_('package_show?id=' + encodeURIComponent(A.pkg));
   const list = (pkg.resources || [])
     .map(function (r) { return { r: r, d: bodikDate_(r) }; })
     .filter(function (x) { return x.d && !/割合/.test(String(x.r.name || '')); })
     .sort(function (a, b) { return a.d < b.d ? 1 : a.d > b.d ? -1 : 0; });
   if (!list.length) throw new Error('データが見つかりません');
-  const newest = list[0], docId = 'cur:' + AGE_AUTO.code;
+  const newest = list[0], docId = 'cur:' + A.code;
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -55,7 +62,7 @@ function ageAutoImport() {
     if (cur && cur.data && cur.data.asOf && cur.data.asOf >= newest.d) {
       return { ok: true, msg: '新しいデータはありません（今のデータ：' + cur.data.asOf + '時点）' };
     }
-    const doc = ageDocFrom_(bodikRecords_(newest.r), newest.d, String(newest.r.name || ''));
+    const doc = ageDocFrom_(bodikRecords_(newest.r), newest.d, String(newest.r.name || ''), A);
     if (doc.areas.length < 3) throw new Error('字のデータが少なすぎます');
     writeCol_('agedata', map, [[docId, doc]], [], 'auto');
     return { ok: true, msg: doc.asOf + '時点の年齢データ（' + doc.areas.length + '地域）を取り込みました' };
@@ -72,7 +79,7 @@ function bodikGet_(path) {
   return j.result;
 }
 
-/** データの日付：ファイル名の「_20260930.csv」か、名前の「令和8年9月末」から */
+/** データの日付：ファイル名の「_YYYYMMDD.csv」か、名前の「令和〇年〇月末」から */
 function bodikDate_(r) {
   const u = String(r.url || '').match(/(20\d{2})(\d{2})(\d{2})\.csv/i);
   if (u) return u[1] + '-' + u[2] + '-' + u[3];
@@ -106,7 +113,7 @@ function bodikRecords_(r) {
 }
 
 /** 字の名前をそろえる（画面の azaKey と同じ決まり） */
-function azaKeyS_(s) {
+function azaKeyS_(s, city) {
   const kan = function (k) {
     const d = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
     if (k.indexOf('十') < 0) return String(d[k] || k);
@@ -114,12 +121,14 @@ function azaKeyS_(s) {
     return String((p[0] ? d[p[0]] : 1) * 10 + (p[1] ? d[p[1]] : 0));
   };
   let x = String(s || '').normalize('NFKC').replace(/\s+/g, '');
-  x = x.replace(/^沖縄県/, '').replace(/^豊見城市/, '').replace(new RegExp('^' + AGE_AUTO.city), '').replace(/^大字/, '').replace(/^字/, '');
+  x = x.replace(/^(北海道|東京都|京都府|大阪府|[^\s\d]{2,3}県)/, '');
+  if (city && x.indexOf(city) === 0) x = x.slice(city.length);
+  x = x.replace(/^大字/, '').replace(/^字/, '');
   return x.replace(/([一二三四五六七八九十]+)丁目/, function (m, k) { return kan(k) + '丁目'; });
 }
 
 /** 行から年齢データを作る（％は小数1けた。画面で市のCSVを読んだときと同じ計算） */
-function ageDocFrom_(recs, asOf, srcName) {
+function ageDocFrom_(recs, asOf, srcName, A) {
   const num = function (v) { const x = Number(String(v == null ? '' : v).replace(/[,\s]/g, '')); return isFinite(x) ? x : 0; };
   const pc = function (v, tot) { return Math.round(v / tot * 1000) / 10; };
   const areas = [], seen = {};
@@ -141,7 +150,7 @@ function ageDocFrom_(recs, asOf, srcName) {
       if (lo === 0) s.c0 += v; else if (lo === 5) s.c1 += v; else if (lo === 10) s.c2 += v;
     });
     if (s.tot <= 0) return;
-    const a = { k: AGE_AUTO.code + ':' + azaKeyS_(name), n: AGE_AUTO.city + ' ' + name, pop: s.tot };
+    const a = { k: A.code + ':' + azaKeyS_(name, A.city), n: A.city + ' ' + name, pop: s.tot };
     ['c', 'y', 'm', 'o', 'o75', 't', 'c0', 'c1', 'c2'].forEach(function (f) { a[f] = pc(s[f], s.tot); });
     a.hh = num(rec['世帯数']);
     if (/^(全体|合計|総数|計|市計|総計)$/.test(name) || /市$/.test(name)) { all = a; return; }
@@ -162,7 +171,7 @@ function ageDocFrom_(recs, asOf, srcName) {
       all[f] = popAll ? Math.round(areas.reduce(function (x, a) { return x + a[f] * a.pop; }, 0) / popAll * 10) / 10 : 0;
     });
   }
-  all.k = '__all'; all.n = AGE_AUTO.city; delete all.hh;
-  return { id: 'cur:' + AGE_AUTO.code, src: 'city', asOf: asOf, city: AGE_AUTO.city, areas: areas, all: all,
+  all.k = '__all'; all.n = A.city; delete all.hh;
+  return { id: 'cur:' + A.code, src: 'city', asOf: asOf, city: A.city, lic: String(A.lic || '').slice(0, 40), areas: areas, all: all,
     file: ('BODIK ' + srcName).slice(0, 80), savedAt: new Date().toISOString(), by: 'auto' };
 }

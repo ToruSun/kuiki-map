@@ -8,7 +8,7 @@
 | 場所 | 中身 | 反映のしかた |
 |---|---|---|
 | いちばん上（`index.html`・`*.js`・`vendor/`） | 画面 | main にまぜると GitHub Pages が自動で公開（1〜2分） |
-| `config.js` | 会衆ごとの設定（サーバーの URL・会館の場所・会衆の範囲など） | 同上 |
+| `config.js` | 会衆ごとの設定（サーバーの URL・会館の場所・会衆の範囲・市町村など。いくつかの市町村や県にまたがってもよい） | 同上 |
 | `gas/` | サーバー（Apps Script）の15ファイルと `appsscript.json` | main にまぜると Actions「サーバーを入れる」が clasp で自動で入れる |
 | `chiban/`・`tools/chiban-*` | 地番の地図（土地の区切り）の表と、それを作る道具 | Actions「地番の地図」→ `chiban-update` → 確かめて main へ |
 | `gas/sankouzu*.gs`・`tools/sankouzu-build.py` | 市町村の地番参考図（SHP）で、法務省の線が無い所をおぎなう道具（データは公開しない） | スプレッドシートのメニュー「地番参考図から土地の区切りを作る」 |

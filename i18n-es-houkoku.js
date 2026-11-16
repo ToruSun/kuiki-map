@@ -5,7 +5,7 @@
    ========================================================= */
 window.KUIKI_I18N = window.KUIKI_I18N || {};
 window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
-/* こまったこと・提案（iken.js・2026-11-05） */
+/* こまったこと・提案（iken.js） */
 "写真をえらぶ（{0}枚まで）": "Elegir fotos (hasta {0})",
 "写真をえらぶ（あと{0}枚）": "Elegir fotos (quedan {0})",
 "写真を用意しています…": "Preparando las fotos…",
@@ -157,7 +157,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "時間 {0}時間": "Horas: {0}",
 "承認された活動 {0}時間": "Actividades aprobadas: {0} h",
 "補助開拓（{0}時間）": "Precursor auxiliar ({0} h)",
-/* S21 の直し（2026-10-30：同じ名前・S21 の名前・返事だけ届かなかった報告・URL を変えたとき） */
+/* S21 の直し（同じ名前・S21 の名前・返事だけ届かなかった報告・URL を変えたとき） */
 "S21 の「{0}」さんとして送ります": "Se enviará en S21 como «{0}»",
 "S21 の「{0}」さんとして送ります（開拓者）": "Se enviará en S21 como «{0}» (precursor)",
 "{0}月の奉仕報告は、会衆に届いていました（報告しました）": "El informe de predicación del mes {0} ya había llegado a la congregación (informe enviado)",
