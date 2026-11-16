@@ -13,6 +13,7 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "個人の区域としてもらいます。": "Se recibe como territorio personal.",
 "見やすい地図": "Mapa claro",
 "地名の多い地図": "Mapa con más nombres",
+"建物や店の名前がくわしい": "Más detalle de edificios y tiendas",
 "地図の種類": "Tipo de mapa",
 "地図にする": "Ver mapa",
 "写真にする": "Ver foto aérea",

@@ -109,6 +109,7 @@
   css.textContent = `#map.leaflet-container{background:#fff}
 body.kind-std .pin.st-plain{border-width:4px}
 .bprev.std{background:linear-gradient(135deg,#EFE7D4 0 30%,#fff 30% 36%,#D8E6D0 36% 62%,#E88 62% 66%,#fff 66% 72%,#EFE7D4 72%)}
+.bprev.osm{background:linear-gradient(135deg,#F2EFE9 0 30%,#fff 30% 36%,#D9D0C9 36% 48%,#F2EFE9 48% 60%,#F7FABF 60% 66%,#ADD19E 66% 80%,#F2EFE9 80%)}
 .lm-mark,.lm-label{background:none;border:0}
 .lmchip{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:5px;background:#17324D;color:#fff;font:700 14px/1 var(--font,sans-serif);border:1.5px solid #fff;box-shadow:0 0 0 1px #17324D66;vertical-align:middle}
 .lm-label span{position:absolute;left:0;top:14px;transform:translateX(-50%);white-space:nowrap;font-weight:700;font-size:14px;line-height:1.3;color:#17324D;pointer-events:none;
@@ -135,14 +136,21 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   const TILE_STD = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png';
   const TILE_CACHE = 'kuiki-tiles-v1';                      // sw.js と同じ入れ物
+  // OpenStreetMap（2026-11-16）：建物や店の名前がくわしい。配信の決まりで、まとめての保存（先読み）はしない＝電波のあるときだけ。
+  // 圏外では、保存してある国土地理院の地図（見やすい地図）に自動で切りかえる。紙の予備・S-12 は国土地理院のまま
+  const TILE_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+  const KINDS = ['pale', 'std', 'osm', 'photo'];
+  const cfgKind = () => { const v = window.KUIKI_CONFIG && window.KUIKI_CONFIG.baseMap; return KINDS.indexOf(v) >= 0 ? v : null; };
+  const offline = () => navigator.onLine === false;
   const K = { done: false, lastMap: 'pale' };
   const kindKey = () => 'kuiki_basekind_' + (Store.data ? me().id : 'guest');
   const adminKind = () => (Store.data && Number(D().settings.mapStd) === 1 ? 'std' : 'pale');
   function wantKind() {
     const s = lsGet(kindKey());
-    if (s === 'pale' || s === 'std' || s === 'photo') return s;      // 自分で選んだもの
+    if (KINDS.indexOf(s) >= 0) return s;                             // 自分で選んだもの
     if (typeof UI !== 'undefined' && UI.base === 'photo') return 'photo';
-    return adminKind();                                              // まだ選んでいない人は、係の決めたもの
+    return cfgKind() || adminKind();                                 // まだ選んでいない人は、config.js の baseMap、なければ係の決めたもの
   }
   function syncPaneOpacity() {
     if (!map) return;
@@ -161,6 +169,7 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
     baseLayers.pale = mk(TILE_PALE, 18, { crossOrigin: 'anonymous', errorTileUrl: BLANK, attribution: GSI_ATTR });
     baseLayers.std = mk(TILE_STD, 18, { crossOrigin: 'anonymous', errorTileUrl: BLANK, attribution: GSI_ATTR });
     baseLayers.photo = mk(TILE_PHOTO, 18, { attribution: GSI_ATTR });
+    baseLayers.osm = mk(TILE_OSM, 19, { errorTileUrl: BLANK, attribution: OSM_ATTR });
     baseLayers.paleLow = mk(TILE_PALE, 16, { crossOrigin: 'anonymous', errorTileUrl: BLANK });  // 圏外で、くわしい画像がないとき見える「ぼやけた代わり」
     baseLayers.stdLow = mk(TILE_STD, 16, { crossOrigin: 'anonymous', errorTileUrl: BLANK });
     try { new MutationObserver(syncPaneOpacity).observe(map.getPane('tilePane'), { attributes: true, attributeFilter: ['style'] }); } catch (e) { /* 線引きの濃さだけ連動しない */ }
@@ -170,19 +179,25 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   }
   function applyBase(name) {
     if (!map || !baseLayers.std) return;
-    if (name !== 'pale' && name !== 'std' && name !== 'photo') name = 'pale';
+    if (KINDS.indexOf(name) < 0) name = 'pale';
+    K.want = name;                                                   // 本当に出したい地図（圏外で一時的に切りかえても覚えておく）
+    if (name === 'osm' && offline()) name = 'pale';                  // 圏外では OSM が出ないので、保存してある地図にする
     Object.keys(baseLayers).forEach(k => { const l = baseLayers[k]; if (l && l.addTo && map.hasLayer(l)) map.removeLayer(l); });
     baseName = name;
     if (name === 'pale' || name === 'std') baseLayers[name + 'Low'].addTo(map);
+    if (name === 'osm') baseLayers.paleLow.addTo(map);               // OSM の画像が来ないところ（電波が弱いなど）は、下の国土地理院の地図が見える
     baseLayers[name].addTo(map);
     syncPaneOpacity();
     document.body.classList.toggle('kind-std', name === 'std');
     stdPrefetchSoon(3000);
   }
+  /* OSM を選んでいる人：圏外になったら国土地理院の地図に、電波がもどったら OSM にもどす（選んだものは変えない） */
+  window.addEventListener('offline', () => { if (K.want === 'osm' && baseName === 'osm') applyBase('osm'); });
+  window.addEventListener('online', () => { if (K.want === 'osm' && baseName !== 'osm') applyBase('osm'); });
   /* index.html・各画面の setBase の呼び出しは「本人の選び」として覚える */
   window.setBase = function (name) {
     if (!map) return;
-    try { if (Store.data && (name === 'pale' || name === 'std' || name === 'photo')) lsSet(kindKey(), name); } catch (e) { /* 覚えられなくても動く */ }
+    try { if (Store.data && KINDS.indexOf(name) >= 0) lsSet(kindKey(), name); } catch (e) { /* 覚えられなくても動く */ }
     applyBase(name);
   };
   /* 「写真にする／地図にする」：写真から戻るときは、直前の地図の種類にもどる */
@@ -190,7 +205,7 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
     const b = e.target.closest && e.target.closest('#addBase');
     if (!b) return;
     e.stopImmediatePropagation(); e.preventDefault();
-    if (baseName !== 'photo') K.lastMap = baseName;
+    if (baseName !== 'photo') K.lastMap = K.want === 'osm' ? 'osm' : baseName;
     window.setBase(baseName === 'photo' ? K.lastMap : 'photo');
     if (typeof updateAddBar === 'function') updateAddBar();
   }, true);
@@ -215,8 +230,13 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
     std.setAttribute('aria-pressed', String(baseName === 'std'));
     std.innerHTML = '<i class="bprev std"></i>地名の多い地図';
     pale.after(std);
-    const box = pale.parentNode;
-    if (box && box.classList.contains('two')) { box.classList.remove('two'); box.classList.add('three'); }
+    const osm = pale.cloneNode(false);
+    osm.dataset.v = 'osm';
+    osm.className = 'choice' + (K.want === 'osm' ? ' on' : '');
+    osm.setAttribute('aria-pressed', String(K.want === 'osm'));
+    osm.innerHTML = '<i class="bprev osm"></i>OSM<small>建物や店の名前がくわしい</small>';
+    std.after(osm);
+    // 4つは2列×2段（.two のまま）
   }
   /* ---- S-12 の印刷の画面：地図の種類と、目印を入れるかをえらぶ ---- */
   const S12X = { kind: null, lm: true, cur: { kind: 'pale', lm: true } };
