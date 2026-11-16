@@ -209,6 +209,23 @@ function osmShape_(geo) {
   return { lat: lat, lon: lng, area: area };
 }
 
+/** 公開ページの osm/buildings.json（GitHub Actions「OSM の建物」が作る）を読む */
+function osmBuildings_() {
+  const base = props_().getProperty('PAGES_URL');
+  if (!base) return { list: null, note: '公開ページのURLが設定されていません。メニューの「② 公開ページのURLを設定」を先に行ってください。' };
+  const url = String(base).replace(/[?#].*$/, '').replace(/[^\/]*$/, '') + 'osm/buildings.json';
+  try {
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'Cache-Control': 'no-cache' } });
+    if (res.getResponseCode() !== 200) return { list: null, note: url + ' が読めません（番号 ' + res.getResponseCode() + '）。GitHub の「Actions」→「OSM の建物」→「Run workflow」で作ってください。' };
+    const j = JSON.parse(res.getContentText());
+    const list = (j.b || []).map(function (r) { return { lat: Number(r[0]), lng: Number(r[1]), area: r[2] == null ? null : Number(r[2]), b: String(r[3] || ''), name: String(r[4] || '') }; })
+      .filter(function (x) { return isFinite(x.lat) && isFinite(x.lng); });
+    return { list: list, at: j.at || '', note: '' };
+  } catch (e) {
+    return { list: null, note: url + ' が読めません：' + (e && e.message ? e.message : String(e)).slice(0, 120) };
+  }
+}
+
 /** 通信だけを試す（原因さがし用） */
 function testOverpass() {
   const ui = SpreadsheetApp.getUi();
@@ -246,9 +263,9 @@ const APT_BUILDING = ['apartments', 'residential', 'dormitory'];
 function importProvHouses() {
   const ui = SpreadsheetApp.getUi();
   const running = importState_();
-  if (running && running.tiles && !running.done) {
+  if (running && (running.tiles || running.src === 'file') && !running.done) {
     const go = ui.alert('取り込みは進行中です',
-      '前の取り込みが、まだ途中です（' + running.idx + '／' + running.tiles.length + '）。\n\n' +
+      '前の取り込みが、まだ途中です（' + (running.src === 'file' ? running.off + '／' + running.total : running.idx + '／' + running.tiles.length) + '）。\n\n' +
       '「はい」＝やめて、新しく始める\n「いいえ」＝そのまま続ける（進み具合を見る）', ui.ButtonSet.YES_NO_CANCEL);
     if (go === ui.Button.CANCEL || go === ui.Button.CLOSE) return;
     if (go === ui.Button.NO) { importStatus(); return; }
@@ -276,26 +293,16 @@ function importProvHouses() {
     ui.ButtonSet.OK_CANCEL);
   if (ask2.getSelectedButton() !== ui.Button.OK) return;
   const minArea = Math.max(0, Number(ask2.getResponseText().trim() || 30) || 0);
-  // 取りに行く四角を決める（区域にかかるところだけ）
-  let S = 90, N = -90, W = 180, E = -180;
-  ts.forEach(function (t) { S = Math.min(S, t.s); N = Math.max(N, t.n); W = Math.min(W, t.w); E = Math.max(E, t.e); });
-  const tiles = [];
-  for (let la = S; la < N + 1e-9; la += TILE_DEG) {
-    for (let ln = W; ln < E + 1e-9; ln += TILE_DEG) {
-      const s2 = la, n2 = Math.min(N, la + TILE_DEG), w2 = ln, e2 = Math.min(E, ln + TILE_DEG);
-      if (n2 - s2 < 1e-7 || e2 - w2 < 1e-7) continue;
-      const hit = ts.some(function (t) { return !(t.n < s2 || t.s > n2 || t.e < w2 || t.w > e2); });
-      if (hit) tiles.push([s2, w2, n2, e2]);
-    }
-  }
-  if (!tiles.length) { ui.alert('取りに行く範囲を作れませんでした。'); return; }
-  saveImportState_({ tiles: tiles, idx: 0, ids: ids, minArea: minArea, got: 0, skipped: 0, small: 0, failed: 0, note: '', at: new Date().toISOString(), done: false });
+  // 建物は、GitHub Actions「OSM の建物」が作った osm/buildings.json（公開ページ）から読む（2026-11-16）
+  // Apps Script から地図サーバー（Overpass）に聞くと、混んでいて時間切れ（504）になるため
+  const got = osmBuildings_();
+  if (!got.list) { ui.alert('建物のデータが読めませんでした', got.note, ui.ButtonSet.OK); return; }
+  saveImportState_({ src: 'file', off: 0, total: got.list.length, made: got.at, ids: ids, minArea: minArea, got: 0, skipped: 0, small: 0, failed: 0, note: '', at: new Date().toISOString(), done: false });
   ui.alert('取り込みを始めます',
-    '取りに行く範囲：' + tiles.length + 'か所（1か所につき1〜4分かかります）\n' +
+    '建物のデータ：' + got.list.length + '件（OpenStreetMap・' + String(got.at || '').slice(0, 10) + ' 時点）\n' +
     '入れる区域：' + (want ? '区域 ' + ts.map(function (t) { return t.no; }).join('・') : 'すべて（' + ts.length + '区域）') + '\n' +
     '入れない大きさ：' + (minArea ? minArea + '㎡より小さい建物' : 'なし') + '\n\n' +
-    'OKを押すと始まります。数分かかるので、そのままお待ちください。\n' +
-    '終わらなかった分は、5分ごとに自動で続きを行います。', ui.ButtonSet.OK);
+    'OKを押すと始まります。少し時間がかかるので、そのままお待ちください。', ui.ButtonSet.OK);
 
   importRun_(); // まず1回ぶん進める
 
@@ -322,7 +329,8 @@ function importStatus() {
 }
 
 function importSummary_(st) {
-  return '進み具合：' + st.idx + '／' + st.tiles.length + 'か所' + (st.done ? '（終わりました）' : '') +
+  const prog = st.src === 'file' ? st.off + '／' + st.total + '件の建物' : st.idx + '／' + st.tiles.length + 'か所';
+  return '進み具合：' + prog + (st.done ? '（終わりました）' : '') +
     '\n入れた仮の家：' + st.got + '件' +
     '\n入れなかったもの（すでに家がある・車庫など）：' + st.skipped + '件' +
     (st.small ? '\n小さすぎて入れなかった建物：' + st.small + '件' : '') +
@@ -357,6 +365,34 @@ function importRun_() {
 
   const t0 = Date.now(), now = new Date(), nowIso = now.toISOString();
   const rows = [];
+  const add = function (b) {
+    if (SKIP_BUILDING.indexOf(b.b) >= 0) { st.skipped++; return; }
+    if (st.minArea && b.area != null && b.area < st.minArea) { st.small = (st.small || 0) + 1; return; }
+    const tid = terrOfPoint_(ts, b.lat, b.lng);
+    if (!tid) return; // 区域の外は数えない
+    if (nearExisting_(grid, b.lat, b.lng)) { st.skipped++; return; }
+    const k = gridKey_(b.lat, b.lng);
+    (grid[k] = grid[k] || []).push([b.lat, b.lng]);
+    const id = 'h' + Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+    const data = {
+      id: id, terrId: tid, type: APT_BUILDING.indexOf(b.b) >= 0 ? 'apt' : 'house',
+      lat: Math.round(b.lat * 1e6) / 1e6, lng: Math.round(b.lng * 1e6) / 1e6,
+      label: b.name.slice(0, 30), units: [], prov: true,
+      createdAt: nowIso, createdBy: 'import'
+    };
+    rows.push([id, JSON.stringify(data), now, 'import']);
+    st.got++;
+  };
+  if (st.src === 'file') {
+    const got = osmBuildings_();
+    if (!got.list) { st.note = got.note; st.failed++; st.done = true; saveImportState_(st); return; }
+    while (st.off < got.list.length && Date.now() - t0 < RUN_MS) { add(got.list[st.off]); st.off++; }
+    if (rows.length) writeProvRows_(rows);
+    if (st.off >= got.list.length) st.done = true;
+    st.at = new Date().toISOString();
+    saveImportState_(st);
+    return;
+  }
   while (st.idx < st.tiles.length && Date.now() - t0 < RUN_MS) {
     const t = st.tiles[st.idx];
     const list = fetchBuildings_(t[0], t[1], t[2], t[3]);
