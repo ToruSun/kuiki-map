@@ -8,3 +8,4 @@
 #   Actions の記録（chiban/_log.txt）に「失敗」と出たら、公開ページで「<コード>_<市区町村名>_公共座標<系>_筆R_<年>.geojson」の
 #   ダウンロードURLをコピーして、その行の URL と年月を書きかえてください
 14205  2026-08  https://gsic-opendata.s3.ap-northeast-1.amazonaws.com/aigid/aigid-moj/2026/14/aigid-moj-14205/14205_%E8%97%A4%E6%B2%A2%E5%B8%82_%E5%85%AC%E5%85%B1%E5%BA%A7%E6%A8%999%E7%B3%BB_%E7%AD%86R_2026.geojson
+14213  2026-08  https://gsic-opendata.s3.ap-northeast-1.amazonaws.com/aigid/aigid-moj/2026/14/aigid-moj-14213/14213_%E5%A4%A7%E5%92%8C%E5%B8%82_%E5%85%AC%E5%85%B1%E5%BA%A7%E6%A8%999%E7%B3%BB_%E7%AD%86R_2026.geojson
