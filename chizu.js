@@ -165,13 +165,13 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
     map.createPane('basePane');
     map.getPane('basePane').style.zIndex = 200;
     Object.keys(baseLayers).forEach(k => { const l = baseLayers[k]; if (l && l.addTo && map.hasLayer(l)) map.removeLayer(l); });
-    const mk = (url, nat, extra) => L.tileLayer(url, Object.assign({ pane: 'basePane', maxZoom: 20, maxNativeZoom: nat }, extra));
+    const mk = (url, nat, extra) => L.tileLayer(url, Object.assign({ pane: 'basePane', maxZoom: 22, maxNativeZoom: nat }, extra));
     baseLayers.pale = mk(TILE_PALE, 18, { crossOrigin: 'anonymous', errorTileUrl: BLANK, attribution: GSI_ATTR });
     baseLayers.std = mk(TILE_STD, 18, { crossOrigin: 'anonymous', errorTileUrl: BLANK, attribution: GSI_ATTR });
     baseLayers.photo = mk(TILE_PHOTO, 18, { attribution: GSI_ATTR });
     baseLayers.osm = mk(TILE_OSM, 19, { errorTileUrl: BLANK, attribution: OSM_ATTR });
-    baseLayers.paleLow = mk(TILE_PALE, 16, { crossOrigin: 'anonymous', errorTileUrl: BLANK });  // 圏外で、くわしい画像がないとき見える「ぼやけた代わり」
-    baseLayers.stdLow = mk(TILE_STD, 16, { crossOrigin: 'anonymous', errorTileUrl: BLANK });
+    baseLayers.paleLow = mk(TILE_PALE, 16, { maxZoom: 20, crossOrigin: 'anonymous', errorTileUrl: BLANK });  // 圏外で、くわしい画像がないとき見える「ぼやけた代わり」
+    baseLayers.stdLow = mk(TILE_STD, 16, { maxZoom: 20, crossOrigin: 'anonymous', errorTileUrl: BLANK }); // 引きのばしすぎると画像が大きくなりすぎるので20まで
     try { new MutationObserver(syncPaneOpacity).observe(map.getPane('tilePane'), { attributes: true, attributeFilter: ['style'] }); } catch (e) { /* 線引きの濃さだけ連動しない */ }
     applyBase(wantKind());
     lmEnsureLayer();

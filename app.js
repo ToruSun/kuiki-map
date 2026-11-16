@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.151';
+var APP_JS_VER = '2026.13.152';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.152', items: [
+    ['地', '地図を、前より2段階大きくまで拡大できるようになりました（地図の画像は少しぼやけます）。家の印を付けやすくなります。']
+  ] },
   { v: '2026.13.151', items: [
     ['地', '会衆がいくつかの市町村や県にまたがっていても、住所をそれぞれの県で調べるようになりました。'],
     ['地', '地番参考図を、市町村ごとに入れられるようになりました。']
@@ -3671,7 +3674,7 @@ function drawCongArea() {
   } catch (e) { console.warn('会衆の範囲を出せませんでした', e); }
 }
 function initMap() {
-  map = L.map('map', { zoomControl: false, zoomSnap: 0.125, zoomDelta: 1, wheelPxPerZoomLevel: 120, doubleClickZoom: false }).setView(HOME_VIEW, Store.data && (Store.data.territories || []).some(t => okPoly(t.polygon)) ? 17 : HOME_ZOOM);
+  map = L.map('map', { zoomControl: false, maxZoom: 22, zoomSnap: 0.125, zoomDelta: 1, wheelPxPerZoomLevel: 120, doubleClickZoom: false }).setView(HOME_VIEW, Store.data && (Store.data.territories || []).some(t => okPoly(t.polygon)) ? 17 : HOME_ZOOM);
   map._kmRotOn = rotSupported(); // 回せる端末では、家の印などを「まっすぐ立たせる」準備をしておく（回していないときは何も変わらない）
   bindDoubleTap();
   map.on('zoomend', () => { zoomEndAt = Date.now(); });
@@ -3682,7 +3685,7 @@ function initMap() {
   map.getPane('cardPane').style.pointerEvents = 'none';
   map.on('zoom viewreset zoomend', placeOverlay);
   zoomCtl = L.control.zoom({ position: 'bottomright' }); // ＋−は、線を引く・家を追加するときだけ出す
-  const opt = { maxZoom: 20, maxNativeZoom: 18, attribution: GSI_ATTR };
+  const opt = { maxZoom: 22, maxNativeZoom: 18, attribution: GSI_ATTR };
   // 地図の画像は crossOrigin 付きで取る（保存した画像が、ブラウザの容量で「中身の見えない画像」として数MBに数えられないように）。
   // 圏外でくわしい画像がないときは、透明にして、下に敷いた「ズーム16までの画像を引きのばした地図」を見せる
   const TILE_BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
