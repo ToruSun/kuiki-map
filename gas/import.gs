@@ -16,7 +16,8 @@ const OVERPASS_URLS = [                 // Googleのサーバーから届く先�
   'https://overpass.private.coffee/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter'
 ];
-const TILE_DEG = 0.05;                  // 1回にまとめて取る大きさ（約5km四方）
+const TILE_DEG = 0.01;                  // 1回にまとめて取る大きさ（約1km四方）。建物の形も取るので、大きいと地図サーバーが時間切れ（504）になる（2026-11-16）
+const IMPORT_TRIES = 3;                 // 取れなかった範囲は、最後にもう一度（合わせて3回まで）試す
 const RUN_MS = 4.5 * 60000;             // 1回の実行で使う時間の上限（実行制限は6分）
 const IMPORT_STATE = 'IMPORT_STATE';    // 途中経過の置き場所
 let LAST_FETCH_NOTE = '';               // うまくいかなかったときの理由
@@ -162,7 +163,7 @@ function nearExisting_(grid, lat, lng) {
 function fetchBuildings_(s, w, n, e) {
   // 建物（way）は形ごと取り、広さ（小さい物置をよける）と重心を出す。relation は中心だけ（2026-11-16）
   const bb = '(' + s + ',' + w + ',' + n + ',' + e + ')';
-  const q = '[out:json][timeout:180];way["building"]' + bb + ';out geom tags qt;relation["building"]' + bb + ';out center tags qt;';
+  const q = '[out:json][timeout:90];way["building"]' + bb + ';out geom tags qt;relation["building"]' + bb + ';out center tags qt;';
   for (let i = 0; i < OVERPASS_URLS.length; i++) {
     try {
       const res = UrlFetchApp.fetch(OVERPASS_URLS[i], {
@@ -360,7 +361,11 @@ function importRun_() {
     const t = st.tiles[st.idx];
     const list = fetchBuildings_(t[0], t[1], t[2], t[3]);
     if (list === null) {
-      st.failed++;
+      // 地図サーバーが混んでいる（504 など）ことが多いので、あとでもう一度試す
+      const key = t.join(',');
+      st.tries = st.tries || {};
+      st.tries[key] = (st.tries[key] || 1) + 1;
+      if (st.tries[key] <= IMPORT_TRIES) st.tiles.push(t); else st.failed++;
       st.note = LAST_FETCH_NOTE;
       st.idx++;
       continue;
