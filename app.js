@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.146';
+var APP_JS_VER = '2026.13.147';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2832,6 +2832,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.147', items: [
+    ['地', '地図を回しているときに、2本の指で拡大・縮小すると、区域の線や土地の区切りがずれて見えたのを直しました。']
+  ] },
   { v: '2026.13.146', items: [
     ['地', 'OpenStreetMap の地図が、ぼやけた地図のまま出なかったのを直しました。']
   ] },
@@ -3414,7 +3417,7 @@ const degNorm = d => ((d % 360) + 540) % 360 - 180; // -180〜180度に
   const rUpd = L.Renderer.prototype._update;
   L.Renderer.prototype._update = function () {
     const m = this._map;
-    if (!m._kmRad) return rUpd.call(this);
+    if (!m._kmRad) { this._kmHalfVec = null; return rUpd.call(this); }
     const r = m._kmHalf(), px = L.Browser.retina ? 2 : 1;
     const pad = Math.max(0, Math.min(this.options.padding || 0, (3800 / px / (2 * r) - 1) / 2));
     const half = Math.round(r * (1 + 2 * pad)), c = m.getSize().divideBy(2);
@@ -3422,6 +3425,17 @@ const degNorm = d => ((d % 360) + 540) % 360 - 180; // -180〜180度に
     this._bounds = L.bounds(min, min.add([2 * half, 2 * half]));
     this._center = m.getCenter();
     this._zoom = m.getZoom();
+    this._kmHalfVec = m.latLngToLayerPoint(this._center).subtract(this._bounds.min); // 中心から描く面の左上まで（下の拡大の途中で使う）
+  };
+  // 拡大・縮小（ピンチ）の途中：Leaflet は「描く面＝画面の大きさ×(0.5＋余白)」として位置を出すが、
+  // 回しているときは上のとおり対角線ぶんの正方形にしているので、そのままだと区域の線・土地の区切り・家の点が
+  // ずれて見えた（指をはなすと元にもどる）。実際の面の大きさから位置を出す（2026-11-16）
+  const rTr = L.Renderer.prototype._updateTransform;
+  L.Renderer.prototype._updateTransform = function (center, zoom) {
+    if (!this._kmHalfVec || !this._map) return rTr.call(this, center, zoom);
+    const m = this._map, scale = m.getZoomScale(zoom, this._zoom);
+    const tl = this._kmHalfVec.multiplyBy(-scale).add(m.project(this._center, zoom)).subtract(m._getNewPixelOrigin(center, zoom));
+    if (L.Browser.any3d) L.DomUtil.setTransform(this._container, tl, scale); else L.DomUtil.setPosition(this._container, tl);
   };
   // 区域に合わせる：回した向きのまま、画面（上下の案内の分をのぞく）に入る大きさと中心
   const bcz = MP._getBoundsCenterZoom;
