@@ -3853,6 +3853,7 @@ function onOpen() {
     .addItem(T_('OpenStreetMap から「仮の家」を取り込む', 'Importar casas provisionales (OpenStreetMap)'), 'importProvHouses')
     .addItem(T_('OpenStreetMap の取り込みの進み具合', 'Progreso de la importación de OpenStreetMap'), 'importStatus')
     .addItem(T_('確かめていない仮の家を消す', 'Borrar casas provisionales sin confirmar'), 'wipeProvHouses')
+    .addItem(T_('地番参考図の zip を受け渡し用に分ける（毎年の入れかえ）', 'Dividir el zip del mapa catastral (actualización anual)'), 'sanSplitZipMenu')
     .addSeparator()
     .addItem(T_('区域の字を調べる（年齢データ用）', 'Buscar barrios de los territorios (datos de edad)'), 'azaLookupMenu')
     .addItem(T_('すべての区域の字を調べ直す', 'Volver a buscar todos los barrios'), 'azaRedoAllMenu')
