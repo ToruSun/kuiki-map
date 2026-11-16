@@ -21,9 +21,10 @@
 - 地番の地図（`chiban/`）は住所の場所を調べるためだけ。出典（CC BY）を消さない
 
 ## 毎年の入れかえ：藤沢市の地番参考図（4月ごろ）
-法務省の線が無い所（長後など）は、市の「固定資産（土地）地番参考図」（SHP の zip）でおぎなう。藤沢市の了解あり（電話・2026-11-16：区域マップに線を重ね、会衆の人だけが見る）。**データは公開ページ・GitHub に置かない**
-1. 本人：市のホームページ（https://www.city.fujisawa.kanagawa.jp/sisanzei/kurashi/zekin/koteshisan/chibanzu.html ）で規約に同意して zip をダウンロードし、ドライブの「区域マップ_地番参考図」に展開せずに入れる → スプレッドシートのメニュー「地番参考図の zip を受け渡し用に分ける」
-2. Claude：ドライブの `kuiki-sankouzu-parts` の `*.partNN-of-MM` を全部受け取り（1つ8MB）、順につないで zip にもどす
-3. `python3 tools/sankouzu-build.py <zip> kuiki-sankouzu.json.gz` → 同じフォルダに `kuiki-sankouzu.json.gz` として置く（古いのはゴミ箱へ。サーバーは新しいほうを使い、はじめての問い合わせで字ごとに分け直す）
-4. 地番は入れない。出典（「藤沢市 固定資産（土地）地番参考図」）は自動で凡例に出る
-
+法務省の線が無い所（長後など）は、市の「固定資産（土地）地番参考図」（SHP）でおぎなう。藤沢市の了解あり（電話・2026-11-16：区域マップに線を重ね、会衆の人だけが見る）。**データは公開ページ・GitHub に置かない**
+- Claude なしで、スプレッドシートのメニューだけでできる（gas/sankouzu-build.gs）
+  1. 本人：市のホームページ（https://www.city.fujisawa.kanagawa.jp/sisanzei/kurashi/zekin/koteshisan/chibanzu.html ）で規約に同意して zip をダウンロードし、パソコンで展開する
+  2. 本人：中の「固定資産土地.shp」「固定資産土地.dbf」の2つだけを、ドライブの「区域マップ_地番参考図」に入れる（zip のままは大きすぎて読めない）
+  3. 本人：メニュー「地番参考図から土地の区切りを作る」→ 時点（例 2027-01）→ 5分ごとに自動で続く。「地番参考図の作成の進み具合」で確かめる
+  4. できた `kuiki-sankouzu.json.gz` をサーバー（sankouzu.gs）が次の問い合わせで字ごとに分けて使う。地番は入れない。出典は凡例に出る
+- 同じことを手元でするときは `python3 tools/sankouzu-build.py <zip> kuiki-sankouzu.json.gz`（結果は Apps Script 版と同じになることを確かめてある）
