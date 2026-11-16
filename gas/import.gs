@@ -160,8 +160,9 @@ function nearExisting_(grid, lat, lng) {
 
 /** OpenStreetMap から、その四角の中の建物の中心点を取ってくる */
 function fetchBuildings_(s, w, n, e) {
-  const q = '[out:json][timeout:180];(way["building"](' + s + ',' + w + ',' + n + ',' + e + ');' +
-    'relation["building"](' + s + ',' + w + ',' + n + ',' + e + '););out center tags qt;';
+  // 建物（way）は形ごと取り、広さ（小さい物置をよける）と重心を出す。relation は中心だけ（2026-11-16）
+  const bb = '(' + s + ',' + w + ',' + n + ',' + e + ')';
+  const q = '[out:json][timeout:180];way["building"]' + bb + ';out geom tags qt;relation["building"]' + bb + ';out center tags qt;';
   for (let i = 0; i < OVERPASS_URLS.length; i++) {
     try {
       const res = UrlFetchApp.fetch(OVERPASS_URLS[i], {
@@ -178,9 +179,10 @@ function fetchBuildings_(s, w, n, e) {
       }
       const j = JSON.parse(text);
       return (j.elements || []).map(function (el) {
-        const c = el.center || el;
         const tags = el.tags || {};
-        return { lat: Number(c.lat), lng: Number(c.lon), b: String(tags.building || ''), name: String(tags.name || '') };
+        const g = Array.isArray(el.geometry) && el.geometry.length >= 3 ? osmShape_(el.geometry) : null;
+        const c = g || el.center || el;
+        return { lat: Number(c.lat), lng: Number(c.lon), area: g ? g.area : null, b: String(tags.building || ''), name: String(tags.name || '') };
       }).filter(function (x) { return isFinite(x.lat) && isFinite(x.lng); });
     } catch (err) {
       LAST_FETCH_NOTE = OVERPASS_URLS[i] + ' → ' + (err && err.message ? err.message : String(err)).slice(0, 120);
@@ -188,6 +190,22 @@ function fetchBuildings_(s, w, n, e) {
     }
   }
   return null; // 取れなかった
+}
+
+/** 建物の形（[{lat,lon},…]）の重心と広さ（㎡）。数の桁落ちを防ぐため、1点目を原点にして計算する */
+function osmShape_(geo) {
+  const lat0 = Number(geo[0].lat), lng0 = Number(geo[0].lon), n = geo.length;
+  let a2 = 0, cx = 0, cy = 0, sy = 0, sx = 0;
+  for (let k = 0; k < n; k++) {
+    const p1 = geo[k], p2 = geo[(k + 1) % n];
+    const x1 = Number(p1.lon) - lng0, y1 = Number(p1.lat) - lat0, x2 = Number(p2.lon) - lng0, y2 = Number(p2.lat) - lat0;
+    const f = x1 * y2 - x2 * y1;
+    a2 += f; cx += (x1 + x2) * f; cy += (y1 + y2) * f; sy += Number(p1.lat); sx += Number(p1.lon);
+  }
+  const lat = Math.abs(a2) > 1e-16 ? lat0 + cy / (3 * a2) : sy / n;
+  const lng = Math.abs(a2) > 1e-16 ? lng0 + cx / (3 * a2) : sx / n;
+  const area = Math.abs(a2) / 2 * 111320 * 111320 * Math.cos(lat * Math.PI / 180);
+  return { lat: lat, lon: lng, area: area };
 }
 
 /** 通信だけを試す（原因さがし用） */
@@ -250,6 +268,13 @@ function importProvHouses() {
     if (!ts.length) { ui.alert('その番号の区域が見つかりませんでした。'); return; }
     ids = ts.map(function (t) { return t.id; });
   }
+  // 小さい建物を入れない目安（国土地理院の取り込みと同じ。2026-11-16）
+  const ask2 = ui.prompt('小さい建物をよける',
+    '何㎡より小さい建物を入れないかを決めます（物置・車庫をよけるため）。\n' +
+    'ふつうは 30 くらいです。0 にすると、すべて入れます。',
+    ui.ButtonSet.OK_CANCEL);
+  if (ask2.getSelectedButton() !== ui.Button.OK) return;
+  const minArea = Math.max(0, Number(ask2.getResponseText().trim() || 30) || 0);
   // 取りに行く四角を決める（区域にかかるところだけ）
   let S = 90, N = -90, W = 180, E = -180;
   ts.forEach(function (t) { S = Math.min(S, t.s); N = Math.max(N, t.n); W = Math.min(W, t.w); E = Math.max(E, t.e); });
@@ -263,10 +288,11 @@ function importProvHouses() {
     }
   }
   if (!tiles.length) { ui.alert('取りに行く範囲を作れませんでした。'); return; }
-  saveImportState_({ tiles: tiles, idx: 0, ids: ids, got: 0, skipped: 0, failed: 0, note: '', at: new Date().toISOString(), done: false });
+  saveImportState_({ tiles: tiles, idx: 0, ids: ids, minArea: minArea, got: 0, skipped: 0, small: 0, failed: 0, note: '', at: new Date().toISOString(), done: false });
   ui.alert('取り込みを始めます',
     '取りに行く範囲：' + tiles.length + 'か所（1か所につき1〜4分かかります）\n' +
-    '入れる区域：' + (want ? '区域 ' + ts.map(function (t) { return t.no; }).join('・') : 'すべて（' + ts.length + '区域）') + '\n\n' +
+    '入れる区域：' + (want ? '区域 ' + ts.map(function (t) { return t.no; }).join('・') : 'すべて（' + ts.length + '区域）') + '\n' +
+    '入れない大きさ：' + (minArea ? minArea + '㎡より小さい建物' : 'なし') + '\n\n' +
     'OKを押すと始まります。数分かかるので、そのままお待ちください。\n' +
     '終わらなかった分は、5分ごとに自動で続きを行います。', ui.ButtonSet.OK);
 
@@ -298,6 +324,7 @@ function importSummary_(st) {
   return '進み具合：' + st.idx + '／' + st.tiles.length + 'か所' + (st.done ? '（終わりました）' : '') +
     '\n入れた仮の家：' + st.got + '件' +
     '\n入れなかったもの（すでに家がある・車庫など）：' + st.skipped + '件' +
+    (st.small ? '\n小さすぎて入れなかった建物：' + st.small + '件' : '') +
     (st.failed ? '\n取れなかった範囲：' + st.failed + 'か所（もう一度実行すると入ります）' : '') +
     (st.note ? '\n\nさいごのエラー：\n' + st.note : '') +
     '\n\n出典：© OpenStreetMap contributors（ODbL）';
@@ -340,6 +367,7 @@ function importRun_() {
     }
     list.forEach(function (b) {
       if (SKIP_BUILDING.indexOf(b.b) >= 0) { st.skipped++; return; }
+      if (st.minArea && b.area != null && b.area < st.minArea) { st.small = (st.small || 0) + 1; return; }
       const tid = terrOfPoint_(ts, b.lat, b.lng);
       if (!tid) return; // 区域の外は数えない
       if (nearExisting_(grid, b.lat, b.lng)) { st.skipped++; return; }
