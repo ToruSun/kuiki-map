@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.152';
+var APP_JS_VER = '2026.13.153';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.153', items: [
+    ['線', '区域の線を引くとき「道で囲む」を押して、ブロックを指で大まかに囲むと、まわりの道の真ん中に線が自動で引かれます。いくつかのブロックをまとめて囲むこともできます。']
+  ] },
   { v: '2026.13.152', items: [
     ['地', '地図を、前より2段階大きくまで拡大できるようになりました（地図の画像は少しぼやけます）。家の印を付けやすくなります。']
   ] },
@@ -3705,7 +3708,7 @@ function initMap() {
     if (moveHid) { moveHouseTo(e.latlng); return; } // 「この家の場所を直す」を押したあと（区域の線の中は、線の側で受け取る）
     if (pickPlace) { const f = pickPlace; pickPlace = null; f(e.latlng); return; } // 集まりの場所を地図でえらぶ
     if (window.dncPickClick && window.dncPickClick(e.latlng)) return; // 区域係が拒否の家を地図でえらんでいるとき（kyohi.js）
-    if (mode === 'draw') { if (drawTap === 'line') drawClick(e.latlng); else addAt(e.latlng, true); }
+    if (mode === 'draw') { if (window.michi && window.michi.busy()) return; if (drawTap === 'line') drawClick(e.latlng); else addAt(e.latlng, true); } // 「道で囲む」でなぞっている間は、点を足さない（michi.js）
     else if (mode === 'add') addAt(e.latlng, false);
     else if (mode === 'part') partTap(e.latlng);
     else if (mode === 'sen' && window.kyoukai) window.kyoukai.click(e.latlng);
@@ -7132,6 +7135,7 @@ function startDraw(targetId, opt) {
   if (t) setTimeout(() => fitTerr(targetId), 60);
   drawHints();
   redrawDraw();
+  if (window.michi) window.michi.sync(); // 「道で囲む」のボタンを出す（michi.js）
 }
 const samePt = (a, b) => Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
 /* 隣の区域と同じ位置にある点（共有している点） */
@@ -7347,6 +7351,7 @@ async function restartDraw() {
 }
 function endDraw() {
   const back = draw && draw.fromSen ? draw.targetId : null;
+  if (window.michi) window.michi.off();
   if (draw) { map.removeLayer(draw.line); map.removeLayer(draw.hints); map.removeLayer(draw.handles); }
   draw = null; setMode('normal');
   if (back && window.kyoukai) setTimeout(() => window.kyoukai.back(back), 0); // 「区域の線を直す」にもどる（保存のあとで）
@@ -7434,6 +7439,7 @@ function setDrawTap(v) {
   $('#drawRestart').hidden = v !== 'line' || !draw || !draw.points.length;
   if (draw) draw.handles[v === 'line' ? 'addTo' : 'remove'](map);
   $('#drawHouses').parentNode.hidden = v !== 'line';
+  if (window.michi) window.michi.sync();
   closeSheet();
   renderHouses();
 }
