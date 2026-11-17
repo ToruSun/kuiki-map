@@ -47,6 +47,13 @@
        opt：{ kinds: Set(使う種類), snap: [[緯度, 経度], …]（そろえる点）}
        返り値：{ ring: [[緯度, 経度], …], blocks: ブロックの数, parts: 離れた固まりの数 } か { err: '…' } */
     function build(ways, loopLL, opt) {
+      // 大きいブロックが集めた四角からはみ出して見つからないときは、四角を広げてもう一度
+      let r;
+      for (const mgMin of [150, 600, 1500]) { r = build1(ways, loopLL, opt, mgMin); if (!r.miss) break; }
+      delete r.miss;
+      return r;
+    }
+    function build1(ways, loopLL, opt, mgMin) {
       opt = opt || {};
       const kinds = opt.kinds || new Set([1, 2, 4, 5]);
       if (!loopLL || loopLL.length < 3) return { err: 'もう少し大きく、ぐるっと囲んでください' };
@@ -56,7 +63,7 @@
       const toLL = p => [lat0 + p[1] / R_LAT, lng0 + p[0] / (R_LNG * cos)];
       const loop = loopLL.map(p => toXY(p[0], p[1]));
       const lb = bboxOf(loop), size = Math.max(lb[2] - lb[0], lb[3] - lb[1]);
-      const mg = Math.max(150, size * 0.6); // 囲みのまわりのブロックが切れないよう、少し広めに道を集める
+      const mg = Math.max(mgMin, size * 0.6); // 囲みのまわりのブロックが切れないよう、少し広めに道を集める
       const box = [lb[0] - mg, lb[1] - mg, lb[2] + mg, lb[3] + mg];
       const llBox = [toLL([box[0], box[1]]), toLL([box[2], box[3]])]; // [[s, w], [n, e]]
 
@@ -152,7 +159,7 @@
         const xy = ring.map(i => V[i]), A = area2(xy);
         if (A > 20) faces.push({ ids: ring, xy, A, bb: bboxOf(xy) }); // 左まわり（正）が囲まれたブロック。外側（負）は使わない
       }
-      if (!faces.length) return { err: 'このあたりは、道で囲まれたブロックが見つかりません' };
+      if (!faces.length) return { err: 'このあたりは、道で囲まれたブロックが見つかりません', miss: 1 };
 
       // 5. 囲みに半分以上入るブロックをえらぶ（ブロックの中に点を並べて数える）
       const picked = [];
@@ -170,7 +177,7 @@
         // 小さく囲んだ：囲みの真ん中をふくむ、いちばん小さいブロック
         const c = loop.reduce((s, p) => [s[0] + p[0] / loop.length, s[1] + p[1] / loop.length], [0, 0]);
         const hit = faces.filter(f => inside(c[0], c[1], f.xy)).sort((m, n) => m.A - n.A)[0];
-        if (!hit) return { err: '囲んだ所のまわりに、道で囲まれたブロックが見つかりません' };
+        if (!hit) return { err: '囲んだ所のまわりに、道で囲まれたブロックが見つかりません', miss: 1 };
         picked.push(hit);
       }
 
