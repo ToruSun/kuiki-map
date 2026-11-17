@@ -454,7 +454,12 @@
       let picked = [], lands = 0;
 
       // 3. 大きいブロックに囲みが一部だけかかる：そのブロックの中を、土地の区切りで分ける
-      if (bigs.length || noRoad) {
+      // 囲みの中に、道で閉じていない所（道が途中で終わる・境だけの所）が広くあるか。あれば、そこも土地の区切りで分ける
+      let covered = 0;
+      blocks.forEach(f => { if (hitLoop(f)) covered += fracIn(f, loop) * f.A; });
+      const loopA = Math.abs(area2(loop)), open = !!(opt.land && opt.land.length) && loopA - covered > Math.max(2000, loopA * 0.1);
+      const inBlock = p => blocks.some(b => p[0] >= b.bb[0] && p[0] <= b.bb[2] && p[1] >= b.bb[1] && p[1] <= b.bb[3] && inside(p[0], p[1], b.xy));
+      if (bigs.length || noRoad || open) {
         const rGrid = new Map(), RC = 20;
         roads.forEach(s => {
           const R = EDGE_OF[s.c] || 10;
@@ -476,8 +481,10 @@
             return cosA > 0.9; // 向きが25°くらいまでそろっている
           });
         };
-        const inBig = p => noRoad ? (p[0] >= lb[0] - 200 && p[0] <= lb[2] + 200 && p[1] >= lb[1] - 200 && p[1] <= lb[3] + 200)
-          : bigs.some(f => p[0] >= f.bb[0] && p[0] <= f.bb[2] && p[1] >= f.bb[1] && p[1] <= f.bb[3] && inside(p[0], p[1], f.xy));
+        const nearLoop = p => p[0] >= lb[0] - 200 && p[0] <= lb[2] + 200 && p[1] >= lb[1] - 200 && p[1] <= lb[3] + 200;
+        const inBig = p => noRoad ? nearLoop(p)
+          : bigs.some(f => p[0] >= f.bb[0] && p[0] <= f.bb[2] && p[1] >= f.bb[1] && p[1] <= f.bb[3] && inside(p[0], p[1], f.xy))
+            || (open && nearLoop(p) && !inBlock(p));
         const landSegs = [];
         opt.land.forEach(r => {
           if (!r || r.length < 3) return;
@@ -502,7 +509,7 @@
             let par = null;
             blocks.forEach(b => { if ((!par || b.A < par.A) && p[0] >= b.bb[0] && p[0] <= b.bb[2] && p[1] >= b.bb[1] && p[1] <= b.bb[3] && inside(p[0], p[1], b.xy)) par = b; });
             if (f.thin) return; // すき間は、あとでとなりに合わせる
-            if (noRoad || (par && bigSet.has(par))) { if (fr >= 0.5) { picked.push(f); lands++; f.land = true; } }
+            if (noRoad || (par && bigSet.has(par)) || (!par && open)) { if (fr >= 0.5) { picked.push(f); lands++; f.land = true; } }
             else if (par ? pickedRoad.has(par) : fr >= 0.5) picked.push(f);
           });
           // 土地の線のずれでできた細いすき間は、えらんだ土地と線を分け合っていれば、いっしょに入れる（線が切れこまないように）
