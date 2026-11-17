@@ -1,0 +1,29 @@
+# 区域マップ：OpenStreetMap の道・線路・川の真ん中の線を、会衆の範囲の分だけ osm/roads.json にする（区域の線を引くときの「道で囲む」に使う）
+# ・「Actions」→「OSM の道」→「Run workflow」で作り直せます。毎月1日にも自動で作り直します
+# ・main 以外のブランチ（試し）に push したときは、そのブランチに入れる（main にまぜずに試せるように）
+name: OSM の道
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '47 18 1 * *'   # 毎月2日 3:47（日本時間）
+  push:
+    branches: ['**']
+    paths: [tools/osm-roads.py, .github/workflows/osm-roads.yml, config.js]
+permissions:
+  contents: write
+concurrency: { group: osm-roads, cancel-in-progress: false }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get -qq update && sudo apt-get -qq install -y osmium-tool >/dev/null
+      - name: 道を取り出す
+        run: python3 tools/osm-roads.py
+      - name: 動いたブランチに入れる
+        run: |
+          git config user.name "github-actions"; git config user.email "github-actions@users.noreply.github.com"
+          git add osm/roads.json
+          if git diff --cached --quiet; then echo "変わりなし"; exit 0; fi
+          git commit -qm "OSM の道を作り直す（© OpenStreetMap contributors / ODbL）"
+          git pull -q --rebase origin "$GITHUB_REF_NAME" && git push -q origin "HEAD:$GITHUB_REF_NAME"
