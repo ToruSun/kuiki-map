@@ -57,7 +57,10 @@
       return r;
     }
     const BIG = 10000;        // これより広い（㎡）ブロックに囲みが一部だけかかるときは、土地の区切りで分ける
-    const NEAR_ROAD = 7;      // 道の真ん中からこれより近い（m）土地の線は、道の端の線とみなして使わない
+    const NEAR_ROAD = 7;      // 土地の線の行き止まりを、ほかの線につなぐ近さ（m）
+    // 道・線路・川の真ん中から、この近さ（m）にあって向きがそろった土地の線は、道や線路の敷地の端とみなして使わない
+    // （線路・川・大きい道は敷地が広いので、遠くまで見る）。向きに関係なく、4m より近い線も使わない
+    const EDGE_OF = { 1: 16, 2: 10, 3: 6, 4: 32, 5: 25, 6: 8 }, EDGE_MAX = 32, EDGE_ANY = 4;
     /* 線分の一覧 → つながり（点・まわりの順）と面。land の線は、少しのずれ（30cm）をそろえ、行き止まりを7mまでつなぐ */
     function graph(segs) {
       const CELL = 50, grid = new Map(), TOL = 0.3;
@@ -110,32 +113,41 @@
         if (!vg.has(k)) vg.set(k, []); vg.get(k).push(id);
         return id;
       };
-      const link = (a, b) => { if (a !== b) { adj[a].add(b); adj[b].add(a); } };
+      const ek = new Map(), eKey = (a, b) => a < b ? a + ',' + b : b + ',' + a; // 道・線路の線の種類（土地の線は入れない）
+      const link = (a, b, c) => { if (a !== b) { adj[a].add(b); adj[b].add(a); if (c) ek.set(eKey(a, b), c); } };
       segs.forEach(s => {
         const pts = [s.a, ...s.cut.sort((m, n) => m[0] - n[0]).map(c => c[1]), s.b];
         let prev = idOf(pts[0], !s.land);
-        for (let k = 1; k < pts.length; k++) { const id = idOf(pts[k], !s.land); link(prev, id); prev = id; }
+        for (let k = 1; k < pts.length; k++) { const id = idOf(pts[k], !s.land); link(prev, id, s.land ? 0 : (s.c || 2)); prev = id; }
       });
-      // 行き止まりの先が、ほかの線の少し手前で切れているときは、つなぐ（道は3m・土地の線は7m まで）
+      // 行き止まりの先が、ほかの線の少し手前で切れているときは、つなぐ（道は3m・土地の線は7m まで。
+      // 土地の線の先が道・線路の敷地の端で切れているときは、道・線路の真ん中までのばす：EDGE_OF の近さまで・のびる向きのとき）
       const eGrid = new Map();
       adj.forEach((ns, a) => ns.forEach(b => { if (a < b) cellsOf(V[a], V[b], k => { let g = eGrid.get(k); if (!g) eGrid.set(k, g = []); g.push([a, b]); }); }));
       for (let a = 0; a < V.length; a++) {
         if (adj[a].size !== 1) continue;
-        const p = V[a], only = [...adj[a]][0], far = road[a] ? 3 : NEAR_ROAD;
-        let best = null, bd = far;
+        const p = V[a], only = [...adj[a]][0], far = road[a] ? 3 : EDGE_MAX;
+        const ox = p[0] - V[only][0], oy = p[1] - V[only][1], ol = Math.hypot(ox, oy) || 1; // 行き止まりの線の向き
+        let best = null, bd = Infinity;
         cellsOf([p[0] - far, p[1] - far], [p[0] + far, p[1] + far], k => (eGrid.get(k) || []).forEach(([u, w]) => {
           if (u === a || w === a || !adj[u].has(w)) return;
           const A = V[u], B = V[w], dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy;
           let t = L2 ? ((p[0] - A[0]) * dx + (p[1] - A[1]) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
           const Q = [A[0] + t * dx, A[1] + t * dy], d = Math.hypot(Q[0] - p[0], Q[1] - p[1]);
-          if (d < bd && u !== only && w !== only) { bd = d; best = { u, w, t, Q }; }
+          const c = ek.get(eKey(u, w));
+          let lim = road[a] ? 3 : NEAR_ROAD;
+          if (!road[a] && c && d > NEAR_ROAD) {
+            if (((Q[0] - p[0]) * ox + (Q[1] - p[1]) * oy) / (d * ol) < 0.5) return; // 線の先の向き（60°まで）でないと、のばさない
+            lim = EDGE_OF[c] || NEAR_ROAD;
+          }
+          if (d < lim && d < bd && u !== only && w !== only) { bd = d; best = { u, w, t, Q, c }; }
         }));
         if (!best) continue;
         let m;
         if (best.t < 0.05 || Math.hypot(V[best.u][0] - best.Q[0], V[best.u][1] - best.Q[1]) < 0.5) m = best.u;
         else if (best.t > 0.95 || Math.hypot(V[best.w][0] - best.Q[0], V[best.w][1] - best.Q[1]) < 0.5) m = best.w;
         else {
-          m = idOf(best.Q, road[best.u] && road[best.w]); adj[best.u].delete(best.w); adj[best.w].delete(best.u); link(best.u, m); link(m, best.w);
+          m = idOf(best.Q, road[best.u] && road[best.w]); adj[best.u].delete(best.w); adj[best.w].delete(best.u); link(best.u, m, best.c); link(m, best.w, best.c);
           [[best.u, m], [m, best.w]].forEach(e => cellsOf(V[e[0]], V[e[1]], k => { let g = eGrid.get(k); if (!g) eGrid.set(k, g = []); g.push(e); })); // 分けた線にも、ほかの行き止まりがつなげるように
         }
         link(a, m);
@@ -152,7 +164,10 @@
         const ring = cleanSpikes(cyc);
         if (ring.length < 3) continue;
         const xy = ring.map(i => V[i]), A = area2(xy);
-        if (A > 20) faces.push({ ids: ring, xy, A, bb: bboxOf(xy) }); // 左まわり（正）が囲まれた面。外側（負）は使わない
+        if (A > 0.5) { // 左まわり（正）が囲まれた面。外側（負）は使わない
+          let per = 0; xy.forEach((q, i) => { const r = xy[(i + 1) % xy.length]; per += Math.hypot(r[0] - q[0], r[1] - q[1]); });
+          faces.push({ ids: ring, xy, A, bb: bboxOf(xy), thin: A < 20 || 2 * A / per < 4 }); // thin：土地の線のずれでできた細いすき間
+        }
       }
       return { V, ord, N, faces };
     }
@@ -193,7 +208,7 @@
         let prev = toXY(wy.lat[0], wy.lng[0]);
         for (let k = 1; k < wy.lat.length; k++) {
           const q = toXY(wy.lat[k], wy.lng[k]);
-          if (hitBox(Math.min(prev[0], q[0]), Math.min(prev[1], q[1]), Math.max(prev[0], q[0]), Math.max(prev[1], q[1])) && (prev[0] !== q[0] || prev[1] !== q[1])) roads.push({ a: prev, b: q });
+          if (hitBox(Math.min(prev[0], q[0]), Math.min(prev[1], q[1]), Math.max(prev[0], q[0]), Math.max(prev[1], q[1])) && (prev[0] !== q[0] || prev[1] !== q[1])) roads.push({ a: prev, b: q, c: wy.c });
           prev = q;
         }
       });
@@ -218,16 +233,25 @@
       if (bigs.length || noRoad) {
         const rGrid = new Map(), RC = 20;
         roads.forEach(s => {
-          for (let x = Math.floor((Math.min(s.a[0], s.b[0]) - NEAR_ROAD) / RC); x <= Math.floor((Math.max(s.a[0], s.b[0]) + NEAR_ROAD) / RC); x++)
-            for (let y = Math.floor((Math.min(s.a[1], s.b[1]) - NEAR_ROAD) / RC); y <= Math.floor((Math.max(s.a[1], s.b[1]) + NEAR_ROAD) / RC); y++) {
+          const R = EDGE_OF[s.c] || 10;
+          for (let x = Math.floor((Math.min(s.a[0], s.b[0]) - R) / RC); x <= Math.floor((Math.max(s.a[0], s.b[0]) + R) / RC); x++)
+            for (let y = Math.floor((Math.min(s.a[1], s.b[1]) - R) / RC); y <= Math.floor((Math.max(s.a[1], s.b[1]) + R) / RC); y++) {
               const k = x + ',' + y; if (!rGrid.has(k)) rGrid.set(k, []); rGrid.get(k).push(s);
             }
         });
-        const nearRoad = p => (rGrid.get(Math.floor(p[0] / RC) + ',' + Math.floor(p[1] / RC)) || []).some(s => {
-          const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], L2 = dx * dx + dy * dy;
-          let t = L2 ? ((p[0] - s.a[0]) * dx + (p[1] - s.a[1]) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
-          return Math.hypot(s.a[0] + t * dx - p[0], s.a[1] + t * dy - p[1]) < NEAR_ROAD;
-        });
+        // 土地の線（a→b）が、道・線路の敷地の端か
+        const edgeOfRoad = (a, b) => {
+          const p = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], ux = b[0] - a[0], uy = b[1] - a[1], ul = Math.hypot(ux, uy) || 1;
+          return (rGrid.get(Math.floor(p[0] / RC) + ',' + Math.floor(p[1] / RC)) || []).some(s => {
+            const dx = s.b[0] - s.a[0], dy = s.b[1] - s.a[1], L2 = dx * dx + dy * dy;
+            let t = L2 ? ((p[0] - s.a[0]) * dx + (p[1] - s.a[1]) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+            const d = Math.hypot(s.a[0] + t * dx - p[0], s.a[1] + t * dy - p[1]);
+            if (d < EDGE_ANY) return true;
+            if (d >= (EDGE_OF[s.c] || 10)) return false;
+            const cosA = Math.abs(ux * dx + uy * dy) / (ul * (Math.sqrt(L2) || 1));
+            return cosA > 0.9; // 向きが25°くらいまでそろっている
+          });
+        };
         const inBig = p => noRoad ? (p[0] >= lb[0] - 200 && p[0] <= lb[2] + 200 && p[1] >= lb[1] - 200 && p[1] <= lb[3] + 200)
           : bigs.some(f => p[0] >= f.bb[0] && p[0] <= f.bb[2] && p[1] >= f.bb[1] && p[1] <= f.bb[3] && inside(p[0], p[1], f.xy));
         const landSegs = [];
@@ -238,7 +262,7 @@
             const q = k < r.length ? toXY(r[k][0], r[k][1]) : toXY(r[0][0], r[0][1]);
             if (prev[0] !== q[0] || prev[1] !== q[1]) {
               const m = [(prev[0] + q[0]) / 2, (prev[1] + q[1]) / 2];
-              if (inBig(m) && !nearRoad(m)) landSegs.push({ a: prev, b: q, land: true });
+              if (inBig(m) && !edgeOfRoad(prev, q)) landSegs.push({ a: prev, b: q, land: true });
             }
             prev = q;
           }
@@ -253,9 +277,24 @@
             // どの道のブロックの中か（いちばん小さいもの）
             let par = null;
             blocks.forEach(b => { if ((!par || b.A < par.A) && p[0] >= b.bb[0] && p[0] <= b.bb[2] && p[1] >= b.bb[1] && p[1] <= b.bb[3] && inside(p[0], p[1], b.xy)) par = b; });
-            if (noRoad || (par && bigSet.has(par))) { if (fr >= 0.5) { picked.push(f); lands++; } }
+            if (f.thin) return; // すき間は、あとでとなりに合わせる
+            if (noRoad || (par && bigSet.has(par))) { if (fr >= 0.5) { picked.push(f); lands++; f.land = true; } }
             else if (par ? pickedRoad.has(par) : fr >= 0.5) picked.push(f);
           });
+          // 土地の線のずれでできた細いすき間は、えらんだ土地と線を分け合っていれば、いっしょに入れる（線が切れこまないように）
+          const N2 = G.N, es2 = new Set();
+          picked.forEach(f => f.ids.forEach((a, i) => es2.add(a * N2 + f.ids[(i + 1) % f.ids.length])));
+          let more = true;
+          while (more) {
+            more = false;
+            G.faces.forEach(f => {
+              if (!f.thin || f.got || !hitLoop(f)) return;
+              const touch = f.ids.some((a, i) => es2.has(f.ids[(i + 1) % f.ids.length] * N2 + a));
+              if (!touch || fracIn(f, loop) < 0.2) return;
+              f.got = f.land = true; picked.push(f); more = true;
+              f.ids.forEach((a, i) => es2.add(a * N2 + f.ids[(i + 1) % f.ids.length]));
+            });
+          }
         } else {
           picked = [...pickedRoad]; // 土地の区切りが無い所：道のブロックだけで決める
           bigs.forEach(f => { if (fracIn(f, loop) >= 0.5) picked.push(f); });
@@ -304,7 +343,8 @@
       let ring = outer[0].c.map(i => V[i]);
 
       // 7. まっすぐな所の点を減らす（形は0.7mまで）
-      ring = simplifyClosed(ring, 0.7);
+      ring = simplifyClosed(ring, lands ? 1.5 : 0.7);
+      if (lands) { ring = dropInlets(ring, 3); ring = dropClose(ring, 3); ring = dropSpikes(ring); } // 土地の線は少しずつずれていることが多いので、3m より近い点はまとめ、行って戻るとげを消す
       let ll = ring.map(toLL);
       // 8. 隣の区域の点が近く（3m）にあれば、その点にそろえる
       if (opt.snap && opt.snap.length) {
@@ -317,7 +357,7 @@
         ll = ll.filter((p, i) => { const n = ll[(i + 1) % ll.length]; return !(p[0] === n[0] && p[1] === n[1]); });
       }
       ll = ll.map(p => [Math.round(p[0] * 1e7) / 1e7, Math.round(p[1] * 1e7) / 1e7]);
-      return { ring: ll, blocks: picked.length - lands, lands, parts: outer.length };
+      return { ring: ll, blocks: picked.filter(f => !f.land).length, lands, parts: outer.length };
     }
     // 行き止まりの道（行って戻る所）を、面の線から外す
     function cleanSpikes(cyc) {
@@ -335,6 +375,55 @@
         }
       }
       return s.length >= 3 ? s : [];
+    }
+    // 細い切れこみ・細い出っぱり（入り口の幅が w（m）より狭く、中も細いもの）を消す
+    function dropInlets(r, w) {
+      let out = r.slice(), ch = true, guard = 0;
+      const segD = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; let t = L2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy); };
+      while (ch && guard++ < 200) {
+        ch = false;
+        const n = out.length;
+        for (let i = 0; i < n && !ch; i++) {
+          let len = 0;
+          for (let k = 2; k < Math.min(40, n - 2) && !ch; k++) {
+            const j = (i + k) % n, a = out[(j - 1 + n) % n];
+            len += Math.hypot(out[j][0] - a[0], out[j][1] - a[1]);
+            // i の点と、j の点か j→j+1 の線が近い
+            const b = out[(j + 1) % n], d = Math.min(Math.hypot(out[i][0] - out[j][0], out[i][1] - out[j][1]), segD(out[i], out[j], b));
+            if (d >= w || len < 3 * w) continue;
+            const sub = []; for (let q = 0; q <= k; q++) sub.push(out[(i + q) % n]);
+            if (Math.abs(area2(sub)) > w * len / 2) continue; // 中が広いもの（本当の角）は残す
+            const keep = []; for (let q = 0; q < n; q++) { const off = (q - i + n) % n; if (off === 0 || off >= k) keep.push(out[q]); }
+            if (keep.length >= 3) { out = keep; ch = true; }
+          }
+        }
+      }
+      return out;
+    }
+    // 行って戻る所（向きが160°より大きく折り返す点）を消す
+    function dropSpikes(r) {
+      let out = r.slice(), ch = true;
+      while (ch && out.length > 3) {
+        ch = false;
+        for (let i = 0; i < out.length && out.length > 3; i++) {
+          const n = out.length, a = out[(i - 1 + n) % n], b = out[i], c = out[(i + 1) % n];
+          const ux = b[0] - a[0], uy = b[1] - a[1], vx = c[0] - b[0], vy = c[1] - b[1], lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+          if (!lu || !lv || (ux * vx + uy * vy) / (lu * lv) < -0.94) { out.splice(i, 1); ch = true; i--; }
+        }
+      }
+      return out;
+    }
+    // となりの点と d（m）より近い点を消す（小さなぎざぎざ・重なった点をなくす）
+    function dropClose(r, d) {
+      let out = r.slice(), ch = true;
+      while (ch && out.length > 3) {
+        ch = false;
+        for (let i = 0; i < out.length && out.length > 3; i++) {
+          const a = out[i], b = out[(i + 1) % out.length];
+          if (Math.hypot(a[0] - b[0], a[1] - b[1]) < d) { out.splice((i + 1) % out.length, 1); ch = true; }
+        }
+      }
+      return out;
     }
     // 閉じた線の点を減らす（ダグラス・ポイカー。tol はメートル）
     function simplifyClosed(r, tol) {
