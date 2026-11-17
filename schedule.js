@@ -1960,7 +1960,7 @@ body.duemode .terr-label:not(.duelab){display:none}
     dmRaf = requestAnimationFrame(() => { dmRaf = 0; try { paintDueMap(); } catch (e) { console.error(e); } });
   }
   window.repaintTerrLabels = repaintTerrLabels;
-  // 区域係が地図で区域をえらんでいるとき、その区域の番号の札に ✎ を付け、押すと番号と名前を直せるようにする
+  // 区域係が地図で区域をえらんでいるとき、その区域の番号の札に ✎ を付け、押すと番号と名前（と、そこから線）を直せるようにする
   // （区域をえらぶ → 札を押す → 保存、の3つの手順がいるので、不用意には変わらない。区域の線にはさわらない）
   const appMode = () => mode; // paintDueMap の中の mode（札の出し方）と区別するため
   const canEditNo = () => isAdmin() && appMode() === 'normal' && !(typeof lkLocked === 'function' && lkLocked()) && typeof openTerrForm === 'function';
