@@ -61,7 +61,9 @@
     const NEAR_ROAD = 7;      // 土地の線の行き止まりを、ほかの線につなぐ近さ（m）
     // 道・線路・川の真ん中から、この近さ（m）にあって向きがそろった土地の線は、道や線路の敷地の端とみなして使わない
     // （線路・川・大きい道は敷地が広いので、遠くまで見る）。向きに関係なく、4m より近い線も使わない
-    const EDGE_OF = { 1: 16, 2: 10, 3: 6, 4: 32, 5: 25, 6: 8 }, EDGE_MAX = 32, EDGE_ANY = 4;
+    const EDGE_OF = { 1: 16, 2: 10, 3: 6, 4: 9, 5: 9, 6: 8 }, EDGE_MAX = 16, EDGE_ANY = 4;
+    // 線路・川は敷地が広い：敷地の端の線は残し、そこに当たる土地の線を、まっすぐ線路・川の真ん中までのばして敷地を区切る（この遠さまで）
+    const CUT_KINDS = { 4: 40, 5: 30 };
     /* 線分の一覧 → つながり（点・まわりの順）と面。land の線は、少しのずれ（30cm）をそろえ、行き止まりを7mまでつなぐ */
     function graph(segs) {
       const CELL = 50, grid = new Map(), TOL = 0.3;
@@ -153,6 +155,54 @@
         }
         link(a, m);
       }
+      // 線路・川の敷地を区切る：土地の線の先（敷地の端に当たっている所）から、同じ向きに線路・川の真ん中までのばす
+      const segX = (p1, p2, p3, p4) => {
+        const d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]);
+        if (Math.abs(d) < 1e-12) return false;
+        const u = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d;
+        const v = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d;
+        return u > 1e-6 && u < 1 - 1e-6 && v > 1e-6 && v < 1 - 1e-6;
+      };
+      const nV = V.length;
+      for (let a = 0; a < nV; a++) {
+        if (road[a] || adj[a].size < 2) continue;
+        const p = V[a];
+        for (const u of [...adj[a]]) {
+          if (ek.get(eKey(u, a))) continue; // 土地の線だけ
+          const ox = p[0] - V[u][0], oy = p[1] - V[u][1], ol = Math.hypot(ox, oy);
+          if (ol < 3) continue;
+          let best = null, bd = Infinity;
+          const far = 40;
+          cellsOf([p[0] - far, p[1] - far], [p[0] + far, p[1] + far], k => (eGrid.get(k) || []).forEach(([x, w]) => {
+            const c = ek.get(eKey(x, w)); if (!c || !CUT_KINDS[c] || !adj[x].has(w)) return;
+            // 線 u→a をのばした線と、線路・川の線 x–w の交わる所
+            const A = V[x], B = V[w], dx = B[0] - A[0], dy = B[1] - A[1];
+            const den = ox * dy - oy * dx; if (Math.abs(den) < 1e-9) return;
+            const t = ((A[0] - p[0]) * dy - (A[1] - p[1]) * dx) / den, sv = ((A[0] - p[0]) * oy - (A[1] - p[1]) * ox) / den;
+            if (sv < 0 || sv > 1) return;
+            const d = t * ol;
+            if (d <= 0.5 || d > CUT_KINDS[c] || d >= bd) return;
+            const L = Math.hypot(dx, dy) || 1;
+            if (Math.abs(ox * dy - oy * dx) / (ol * L) < 0.5) return; // 線路・川と30°より浅く交わる線はのばさない
+            bd = d; best = { x, w, Q: [p[0] + ox / ol * d, p[1] + oy / ol * d], c };
+          }));
+          if (!best) continue;
+          // のばした線が、ほかの線を横切るときはやめる
+          let cross = false;
+          cellsOf(p, best.Q, k => (eGrid.get(k) || []).forEach(([x, w]) => {
+            if (cross || x === a || w === a || (x === best.x && w === best.w) || !adj[x].has(w)) return;
+            if (segX(p, best.Q, V[x], V[w])) cross = true;
+          }));
+          if (cross) continue;
+          const m = idOf(best.Q, false);
+          if (m !== best.x && m !== best.w) {
+            adj[best.x].delete(best.w); adj[best.w].delete(best.x); link(best.x, m, best.c); link(m, best.w, best.c);
+            [[best.x, m], [m, best.w]].forEach(e => cellsOf(V[e[0]], V[e[1]], k => { let g = eGrid.get(k); if (!g) eGrid.set(k, g = []); g.push(e); }));
+          }
+          link(a, m);
+          cellsOf(p, best.Q, k => { let g = eGrid.get(k); if (!g) eGrid.set(k, g = []); g.push([a, m]); });
+        }
+      }
 
       // 面を出す：どの線も、向きごとに1回ずつたどる
       const ord = adj.map((ns, v) => [...ns].sort((m, n) => Math.atan2(V[m][1] - V[v][1], V[m][0] - V[v][0]) - Math.atan2(V[n][1] - V[v][1], V[n][0] - V[v][0])));
@@ -173,8 +223,8 @@
       return { V, ord, N, faces };
     }
     /* 面のうち、囲み（loop）に入っている割合（面の中に点を並べて数える）。pt：面の中の点を1つ返す（どのブロックの中かを調べる用） */
-    /* 地番参考図などの土地の線から「道」を見つける：土地と土地のあいだの細い帯（幅 2.8〜16m）の真ん中の線
-       ・土地を1m ほどのます目にぬり、ぬられていない所（すき間）を細らせて真ん中の線にする
+    /* 地番参考図などの土地の線から「道」を見つける：土地と土地のあいだの細い帯（幅 2.8〜16m）や、細長い道の土地の真ん中の線
+       ・土地を1m ほどのます目にぬり（道の形の土地はぬらない）、ぬられていない所を細らせて真ん中の線にする
        ・広い空き地（真ん中が道の端から8m より遠い所）・OSM の道から6m 以内は使わない（OSM の道を先に使う）
        landXY：[[x, y], …] の一覧（メートル）、osm：OSM の線分 { a, b }、reg：[x0, y0, x1, y1]
        返り値：線分 { a, b } の一覧 */
@@ -183,8 +233,16 @@
       const W = Math.ceil((reg[2] - reg[0]) / r), H = Math.ceil((reg[3] - reg[1]) / r);
       if (W < 8 || H < 8) return [];
       const g = new Uint8Array(W * H); // 1：土地
-      // 土地をぬる（横の行ごとに、線と交わる所のあいだをぬる）
+      // 土地をぬる（横の行ごとに、線と交わる所のあいだをぬる）。道の形の土地（細長い・ごく小さい）はぬらない
+      // （地番参考図では、道も1つの土地として細長く描かれていることが多い。道の交わる所は小さな土地になっている）
+      const roadLike = ring => {
+        let A = 0, P = 0;
+        for (let k = 0, n = ring.length; k < n; k++) { const a = ring[k], b = ring[(k + 1) % n]; A += a[0] * b[1] - b[0] * a[1]; P += Math.hypot(b[0] - a[0], b[1] - a[1]); }
+        A = Math.abs(A) / 2;
+        return A < 40 || (2 * A / P < 6 && P * P / A > 30); // 幅（2A/P）6m より細く、長い
+      };
       landXY.forEach(ring => {
+        if (roadLike(ring)) return;
         let ymin = Infinity, ymax = -Infinity;
         ring.forEach(p => { if (p[1] < ymin) ymin = p[1]; if (p[1] > ymax) ymax = p[1]; });
         const j0 = Math.max(0, Math.floor((ymin - reg[1]) / r)), j1 = Math.min(H - 1, Math.ceil((ymax - reg[1]) / r));
@@ -456,7 +514,7 @@
             G.faces.forEach(f => {
               if (!f.thin || f.got || !hitLoop(f)) return;
               const touch = f.ids.some((a, i) => es2.has(f.ids[(i + 1) % f.ids.length] * N2 + a));
-              if (!touch || fracIn(f, loop) < 0.2) return;
+              if (!touch || fracIn(f, loop) < 0.5) return;
               f.got = f.land = true; picked.push(f); more = true;
               f.ids.forEach((a, i) => es2.add(a * N2 + f.ids[(i + 1) % f.ids.length]));
             });
@@ -709,6 +767,7 @@
       clearTimeout(slow);
       if (!draw) return;
     }
+    if (land && land.length) { toast('線を計算しています…'); await new Promise(res => setTimeout(res, 50)); if (!draw) return; } // 土地の線が多いと1秒ほどかかる
     const r = core.build(ws, loopLL, { kinds, snap, land: land && land.length ? land : null });
     if (line) { map.removeLayer(line); line = null; }
     if (r.err) { toast(r.err); return; }
