@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.159';
+var APP_JS_VER = '2026.13.160';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.160', items: [
+    ['線', '区域係は、地図で区域をえらぶと、その区域の番号の札に ✎ が付きます。札を押すと、番号と名前を直せます（区域の線は変わりません）。']
+  ] },
   { v: '2026.13.159', items: [
     ['線', '新しい区域の線を引いて保存したあと、続けて次の区域の線を引けるようになりました。終わるときは「やめる」を押します。'],
     ['線', '「道で囲む」をえらんでいたかを覚えておき、次に新しい区域の線を引くときも、そのまま「道で囲む」ではじまります。']
@@ -7418,6 +7421,7 @@ function openTerrForm({ pts = null, terr = null }) {
       <input type="text" id="fNo" maxlength="10" autocomplete="off" value="${esc(terr ? terr.no : String(maxNo + 1))}">
       <small class="hint">「53」「53-1」のように入力できます（ハイフンで枝番）。</small></label>
     <label class="field"><span>区域の名前（目印になる地名など）</span><input type="text" id="fName" maxlength="30" value="${terr ? esc(terr.name) : ''}" placeholder="例：〇〇公園の北側"></label>
+    ${terr ? `<p class="hint">番号と名前だけを直します。区域の線と家は変わりません。${terr.holder ? '貸し出し中のカードの番号も、新しい番号になります。' : ''}直したあとの「取り消す」で戻せます。</p>` : ''}
     <button class="btn primary block" id="fSave">保存する</button>
     <button class="btn block" data-close>やめる</button>`);
   $('#fSave').onclick = () => {
@@ -7427,7 +7431,8 @@ function openTerrForm({ pts = null, terr = null }) {
     if (D().territories.some(t => String(t.no) === no && t !== terr)) { toast(`区域${no}はすでにあります`); return; }
     closeSheet();
     if (terr) {
-      commit('区域の番号と名前を変えました', () => { terr.no = no; terr.name = name || `区域${no}`; });
+      const auto = !name || name === `区域${terr.no}`; // 名前が「区域5」のままなら、新しい番号に合わせる
+      commit('区域の番号と名前を変えました', () => { terr.name = auto ? `区域${no}` : name; terr.no = no; });
     } else {
       endDraw();
       commit(`区域${no}を作りました`, () => {

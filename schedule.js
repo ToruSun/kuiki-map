@@ -1936,6 +1936,8 @@ body.duemode .terr-label:not(.duelab){display:none}
 .duelab span{pointer-events:auto;cursor:pointer;display:inline-block;min-height:34px;line-height:30px;background:#fff;border:2px solid #222;border-radius:8px;padding:1px 6px;font-weight:700;font-size:15px;white-space:nowrap;color:#111}
 .duelab.cp span{min-height:0;line-height:18px;font-size:13px;padding:0 4px;border-width:1.5px;border-radius:6px}
 .duelab.ro span{pointer-events:none;cursor:default}
+.duelab.ed span{border-style:dashed;border-width:2.5px;box-shadow:0 1px 4px #0004}
+.duelab.ed span b{font-weight:400;margin-left:4px}
 .duelab.off span{border-color:var(--terr);color:var(--terr)}
 .duelab.off.grp span{border-color:#9C6BD1;color:#5B2E8C;background:#F7F2FC}
 .duelab.off.gray span{border-color:#9AA5A0;color:#7B8782}`;
@@ -1958,6 +1960,10 @@ body.duemode .terr-label:not(.duelab){display:none}
     dmRaf = requestAnimationFrame(() => { dmRaf = 0; try { paintDueMap(); } catch (e) { console.error(e); } });
   }
   window.repaintTerrLabels = repaintTerrLabels;
+  // 区域係が地図で区域をえらんでいるとき、その区域の番号の札に ✎ を付け、押すと番号と名前を直せるようにする
+  // （区域をえらぶ → 札を押す → 保存、の3つの手順がいるので、不用意には変わらない。区域の線にはさわらない）
+  const appMode = () => mode; // paintDueMap の中の mode（札の出し方）と区別するため
+  const canEditNo = () => isAdmin() && appMode() === 'normal' && !(typeof lkLocked === 'function' && lkLocked()) && typeof openTerrForm === 'function';
   /* 今の画面に出ている家の印と建物の名前の四角（地図の左上からの位置）。札をずらすときの障害物 */
   function houseObstacles() {
     const out = [];
@@ -2087,7 +2093,8 @@ body.duemode .terr-label:not(.duelab){display:none}
     const topM = tlEl && !tlEl.hidden ? tlEl.offsetHeight + 8 : 0, botM = cbEl && !cbEl.hidden ? cbEl.offsetHeight + 8 : 0;
     const unscr = pt => map.containerPointToLatLng(map._kmRad ? c0.add(rotPt(pt.subtract(c0), -map._kmRad)) : pt);
     for (const it of items) {
-      const w = cp ? 10 + 9 * it.text.length : 18 + 11 * it.text.length, h = cp ? 24 : 36;
+      const tl = it.text.length + (!on && sel && it.t.id === sel && canEditNo() ? 2 : 0); // ✎ の分も
+      const w = cp ? 10 + 9 * tl : 18 + 11 * tl, h = cp ? 24 : 36;
       const rectAt = pt => [pt.x - w / 2 - 2, pt.y - h / 2 - 2, pt.x + w / 2 + 2, pt.y + h / 2 + 2];
       let r = rectAt(it.p);
       if (obs.length && hitR(r, obs)) {
@@ -2113,9 +2120,11 @@ body.duemode .terr-label:not(.duelab){display:none}
       placed.push(r);
       const faint = !on && sel && it.t.id !== sel;
       const kind = on ? '' : it.gray ? ' gray' : it.t.group ? ' grp' : '';
-      const m = L.marker(it.ll, { icon: L.divIcon({ className: `terr-label duelab${cp ? ' cp' : ''}${on ? '' : ' ro off'}${faint ? ' faint' : ''}${kind}`, html: `<span>${esc(it.text)}</span>`, iconSize: [0, 0] }),
-        interactive: on, bubblingMouseEvents: false, keyboard: false, pane: 'labelPane' });
+      const ed = !on && sel && it.t.id === sel && canEditNo(); // 区域係がえらんでいる区域：札を押すと番号を直せる
+      const m = L.marker(it.ll, { icon: L.divIcon({ className: `terr-label duelab${cp ? ' cp' : ''}${on ? '' : ed ? ' off ed' : ' ro off'}${faint ? ' faint' : ''}${kind}`, html: `<span>${esc(it.text)}${ed ? '<b aria-label="番号を直す">✎</b>' : ''}</span>`, iconSize: [0, 0] }),
+        interactive: on || ed, bubblingMouseEvents: false, keyboard: false, pane: 'labelPane' });
       if (on) m.on('click', e => { if (typeof moveTap === 'function' && moveTap(e)) return; openKarte(it.t.id); }); // 家の場所を直しているときは、その場所に動かす
+      else if (ed) m.on('click', e => { if (typeof moveTap === 'function' && moveTap(e)) return; if (canEditNo() && terrById(it.t.id)) openTerrForm({ terr: terrById(it.t.id) }); });
       m.addTo(dueLayer);
     }
   }
