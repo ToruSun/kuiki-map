@@ -6,7 +6,7 @@ window.KUIKI_CONFIG = {
   // ① GAS の「ウェブアプリのURL」を '' の中に貼り付けます（導入の手引き 手順3）。
   //    空のままだと試作モード（その端末の中だけに保存。説明や練習に使えます）で動きます。
   //    例：apiUrl: 'https://script.google.com/macros/s/xxxxxxxx/exec'
-  apiUrl: 'https://script.google.com/macros/s/AKfycbxRMBsIgfE2M4BAQuY7LrXnpfZ_kWcra0DZMwwL4ybI7aZ4BomUnjTSAbt_psYHd1EyIQ/exec',
+  apiUrl: '', // 試し用：サーバーにつながない試作版で動かす（このブランチは main にまぜない）
 
   // ② はじめに表示する言語：'ja'（日本語）または 'es'（スペイン語）。各自が設定（歯車）で切りかえられます。
   lang: 'ja',
