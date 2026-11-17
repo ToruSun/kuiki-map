@@ -681,7 +681,8 @@
   /* ---------- 画面 ---------- */
   if (typeof window === 'undefined' || typeof L === 'undefined' || typeof startDraw !== 'function') return;
 
-  const LS_NARROW = 'kuiki_michi_narrow', LS_LAND = 'kuiki_michi_land';
+  const LS_NARROW = 'kuiki_michi_narrow', LS_LAND = 'kuiki_michi_land', LS_ON = 'kuiki_michi_on'; // LS_ON：「道で囲む」をえらんでいたか（新しい区域の線を引きはじめるとき、そのままにする）
+  let startedFor = null; // えらんでいた「道で囲む」を入れた線引き（draw）。1回の線引きで1度だけ入れる
   const landOn = () => lsG(LS_LAND) !== '0' && !!window.tochiKugiri && typeof window.tochiKugiri.ringsIn === 'function'; // はじめは入
   let usedFor = null; // 「道で囲む」で線を引いた線引き（draw）。そのあいだは、点を直しやすいよう土地の区切りを出したままにする
   let ways = null, loading = null, on = false, bound = false, stroke = null, line = null, touches = 0, quiet = 0; // quiet：なぞり終わりのすぐあとの「タップ」で点が増えないように
@@ -800,7 +801,7 @@
     if (!row || btn()) return;
     const b = document.createElement('button');
     b.className = 'btn small'; b.id = 'drawRoad'; b.hidden = true;
-    b.onclick = () => setOn(!on);
+    b.onclick = () => { setOn(!on); lsS(LS_ON, on ? '1' : '0'); }; // 押したときだけ覚える（なぞり終わって自動で切れたときは覚えない）
     row.insertBefore(b, row.firstChild);
     const fold = document.querySelector('#drawBar .fold .row');
     if (fold) {
@@ -823,7 +824,13 @@
   }
   window.michi = {
     busy: () => active() || Date.now() < quiet,               // なぞっている間は、地図のタップで点を足さない（app.js の map の click）
-    sync: () => { if (on && !active()) setOn(false); else paintBtn(); }, // 線引きの始め・終わり・タップの切りかえのとき
+    sync: () => { // 線引きの始め・終わり・タップの切りかえのとき
+      if (on && !active()) { setOn(false); return; }
+      // 新しい区域の線を引きはじめたとき：前に「道で囲む」をえらんでいたら、そのまま入れる（今ある区域の形を直すときは入れない）
+      if (!on && draw && startedFor !== draw && !draw.targetId && drawTap === 'line' && mode === 'draw' && lsG(LS_ON) === '1') { startedFor = draw; setOn(true); return; }
+      if (draw) startedFor = draw;
+      paintBtn();
+    },
     off: () => setOn(false),
     showLand: () => !!draw && (active() || usedFor === draw) && landOn(), // 「道で囲む」でなぞるとき・その線を直すときは、土地の区切りを地図に出す（tochi-kugiri.js）
     core
