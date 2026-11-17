@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.158';
+var APP_JS_VER = '2026.13.159';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,10 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.159', items: [
+    ['線', '新しい区域の線を引いて保存したあと、続けて次の区域の線を引けるようになりました。終わるときは「やめる」を押します。'],
+    ['線', '「道で囲む」をえらんでいたかを覚えておき、次に新しい区域の線を引くときも、そのまま「道で囲む」ではじまります。']
+  ] },
   { v: '2026.13.158', items: [
     ['線', '「道で囲む」で線を引いたあとも、土地の区切りを地図に出したままにしました。点を土地の境に合わせて直しやすくなります。']
   ] },
@@ -7124,11 +7128,12 @@ function openAddForm(ll, tid, editId) {
 const SNAP_PX = 22, EDGE_PX = 16;
 let drawSnapOn = true, drawNbMove = true; // drawNbMove：隣の区域と共有している点を動かしたら、隣の同じ点も一緒に動かす
 function startDraw(targetId, opt) {
+  const cont = !!(opt && opt.cont); // cont：区域を作ったあと、続けて次の区域を引く（家の印・案内のたたみ方は、そのままにする）
   showView('map');
   focusCard = null; roundTerr = null;
-  drawShowHouses = false; $('#drawHouses').checked = false;
+  if (!cont) { drawShowHouses = false; $('#drawHouses').checked = false; }
   addCount = 0; updateAddBar();
-  setDrawFold(false);
+  if (!cont) setDrawFold(false);
   const t = targetId ? terrById(targetId) : null;
   const tp = t && okPoly(t.polygon) ? t.polygon : null; // 線が壊れている区域は、引き直しにする
   draw = {
@@ -7142,7 +7147,7 @@ function startDraw(targetId, opt) {
   };
   setMode('draw');
   setDrawTap('line');
-  $('#drawTitle').textContent = t ? `区域${t.no}の形を直す` : '新しい区域の線を引く';
+  $('#drawTitle').textContent = t ? `区域${t.no}の形を直す` : cont ? '続けて、次の区域の線を引く' : '新しい区域の線を引く';
   $('#drawSnap').checked = drawSnapOn;
   $('#drawNbMove').checked = drawNbMove;
   // 今ある区域の形を直すときは、家の追加のボタンを出さず、上の案内も小さくして地図を広くする（「ひらく」で案内が出る）
@@ -7429,6 +7434,8 @@ function openTerrForm({ pts = null, terr = null }) {
         D().territories.push({ id: 't' + uid(), no, name: name || `区域${no}`, polygon: pts, holder: null, lentAt: null });
         reassign();
       });
+      // 続けて、次の区域の線を引けるようにする（終わるときは「やめる」）。今作った区域の線にもくっつけられる
+      setTimeout(() => { if (!draw && mode === 'normal') startDraw(null, { cont: true }); }, 0);
     }
   };
 }
