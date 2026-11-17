@@ -683,6 +683,7 @@
 
   const LS_NARROW = 'kuiki_michi_narrow', LS_LAND = 'kuiki_michi_land';
   const landOn = () => lsG(LS_LAND) !== '0' && !!window.tochiKugiri && typeof window.tochiKugiri.ringsIn === 'function'; // はじめは入
+  let usedFor = null; // 「道で囲む」で線を引いた線引き（draw）。そのあいだは、点を直しやすいよう土地の区切りを出したままにする
   let ways = null, loading = null, on = false, bound = false, stroke = null, line = null, touches = 0, quiet = 0; // quiet：なぞり終わりのすぐあとの「タップ」で点が増えないように
   const lsG = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const lsS = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 何もしない */ } };
@@ -784,6 +785,7 @@
     draw.origs = r.ring.map(() => null);
     draw.edit = true; draw.sel = -1;
     quiet = Date.now() + 600;
+    usedFor = draw;
     setOn(false);
     redrawDraw();
     const ns = draw.snaps.filter(Boolean).length;
@@ -823,7 +825,7 @@
     busy: () => active() || Date.now() < quiet,               // なぞっている間は、地図のタップで点を足さない（app.js の map の click）
     sync: () => { if (on && !active()) setOn(false); else paintBtn(); }, // 線引きの始め・終わり・タップの切りかえのとき
     off: () => setOn(false),
-    showLand: () => active() && landOn(), // 「道で囲む」でなぞるときは、土地の区切りを地図に出す（tochi-kugiri.js）
+    showLand: () => !!draw && (active() || usedFor === draw) && landOn(), // 「道で囲む」でなぞるとき・その線を直すときは、土地の区切りを地図に出す（tochi-kugiri.js）
     core
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup); else setup();
