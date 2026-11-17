@@ -184,7 +184,8 @@
   /* 出すかどうか：区域3個分以下（拒の印と同じ）かつズーム16以上。区域がまだ無い画面はズーム17以上 */
   function tkShow() {
     if (!map || !tkOn()) return false;
-    if ((mode === 'draw' && typeof drawTap !== 'undefined' && drawTap === 'line') || mode === 'sen' || mode === 'tok') return false;
+    const michiLand = mode === 'draw' && window.michi && window.michi.showLand && window.michi.showLand(); // 「道で囲む」で土地の区切りも使うときは、線引き中でも出す（michi.js）
+    if ((mode === 'draw' && typeof drawTap !== 'undefined' && drawTap === 'line' && !michiLand) || mode === 'sen' || mode === 'tok') return false;
     const z = map.getZoom();
     if (z < 16) return false;
     const n = typeof terrsOnScreen === 'function' ? terrsOnScreen() : Infinity;
@@ -349,9 +350,12 @@
   };
   /* カードの範囲の字を読み終えるまで待つ（印刷は一度きりの処理なので、ここだけは待ってそろえる） */
   async function tkPreload(cards) {
+    await tkLoadBoxes((cards || []).filter(c => c && c.v).map(c => tkViewBox(c.v)));
+  }
+  /* 範囲（[南, 西, 北, 東] の一覧）にかかる字を、全部読み終えるまで待つ */
+  async function tkLoadBoxes(boxes) {
     const top = await tkTop();
     if (!top) return;
-    const boxes = (cards || []).filter(c => c && c.v).map(c => tkViewBox(c.v));
     if (!boxes.length) return;
     for (const muni in top.munis) {
       const mv = top.munis[muni];
@@ -370,6 +374,16 @@
         }
       }
     }
+  }
+  /* 範囲の中の土地の線（[[緯度, 経度], …] の一覧・閉じない）。「道で囲む」（michi.js）が、道がない所の境に使う */
+  async function tkRingsIn(box) {
+    await tkLoadBoxes([box]);
+    const out = [];
+    TK.azas.forEach(list => {
+      if (!Array.isArray(list)) return;
+      for (const fd of list) if (out.length < 30000 && boxHit(fd.b, box)) out.push(fd.ring.slice(0, -1));
+    });
+    return out;
   }
   const _s12Load = window.s12Load;
   if (typeof _s12Load === 'function') {
@@ -435,6 +449,8 @@
       return Object.keys(top.munis).map(m => top.munis[m].code + ':' + (top.munis[m].asof || '')).sort().join(' ');
     },
     bad: () => TK.bad,
+    ringsIn: tkRingsIn, // 「道で囲む」（michi.js）
+    has: () => !!(TK.top && TK.top.munis && Object.keys(TK.top.munis).length), // この会衆に土地の区切りの表があるか（まだ読んでいなければ false）
     dbg: () => lastSig, // 確かめ用：今描いている内容の印（ズーム:範囲:土地の数:地図の種類）
     _t: TK_API // 確かめ用
   };
