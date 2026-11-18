@@ -706,6 +706,7 @@
     b.setAttribute('aria-pressed', String(on));
     b.textContent = on ? '道で囲む（なぞってください）' : '道で囲む';
     b.hidden = !draw || drawTap !== 'line';
+    const fb = document.getElementById('drawFit'); if (fb) fb.hidden = !draw || drawTap !== 'line' || !(window.kyoukai && window.kyoukai.fitPoints);
     ['drawNarrow', 'drawLand'].forEach(id => { const n = document.getElementById(id); if (n) n.parentNode.hidden = !draw || drawTap !== 'line'; });
     const h = document.getElementById('drawHelp');
     if (h && on) h.textContent = 'ブロックを指でぐるっと大まかになぞって囲むと、まわりの道の真ん中に線を引きます。いくつかのブロックをまとめて囲むこともできます。道がない広い所（畑など）は、土地の区切りの線で囲みます（地図は2本指で動かします）。道：© OpenStreetMap contributors';
@@ -795,6 +796,22 @@
       + (r.parts > 1 ? '。離れた所は入れていません' : ''), null, { label: '元に戻す', fn: drawUndo });
   }
 
+  function fitNow() {
+    if (!draw || !window.kyoukai || !window.kyoukai.fitPoints) return;
+    if (on) setOn(false);
+    const f = window.kyoukai.fitPoints(draw.points, draw.targetId);
+    if (f.err) { toast(f.err); return; }
+    if (f.none) { toast('となりに区域がありません'); return; }
+    if (f.same) { toast(`となりの区域とそろっています（${f.tol}m以内のずれはありません）`); return; }
+    pushHist();
+    draw.points = f.ring.map(p => p.slice());
+    draw.snaps = draw.points.map(v => sharedSnap(v, draw.targetId));
+    draw.origs = draw.points.map(() => null);
+    draw.edit = true; draw.sel = -1;
+    redrawDraw();
+    toast(`となりの区域に合わせました（角を${f.moved}か所動かし、${f.added}か所足しました・${f.tol}m以内のずれ）`, null, { label: '元に戻す', fn: drawUndo });
+  }
+
   /* ---------- ボタン ---------- */
   function setup() {
     const row = document.querySelector('#drawBar .row');
@@ -803,6 +820,12 @@
     b.className = 'btn small'; b.id = 'drawRoad'; b.hidden = true;
     b.onclick = () => { setOn(!on); lsS(LS_ON, on ? '1' : '0'); }; // 押したときだけ覚える（なぞり終わって自動で切れたときは覚えない）
     row.insertBefore(b, row.firstChild);
+    // となりに合わせる：引いている線を、となりの区域の線にそろえる（kyoukai.js の計算を使う）。続けて区域を引くときに、すぐ使えるように
+    const fb = document.createElement('button');
+    fb.className = 'btn small'; fb.id = 'drawFit'; fb.hidden = true; fb.type = 'button';
+    fb.textContent = 'となりに合わせる';
+    fb.onclick = fitNow;
+    row.insertBefore(fb, b.nextSibling);
     const fold = document.querySelector('#drawBar .fold .row');
     if (fold) {
       const lb = document.createElement('label');

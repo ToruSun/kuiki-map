@@ -904,8 +904,16 @@
   }
   addEntry();
 
+  /* 線を引いている途中の点（[緯度, 経度] の並び）を、となりの区域にそろえる（michi.js の「となりに合わせる」ボタンから）
+     tid：直している区域（新しい区域なら null）。返り値は fitRing と同じ形に tol を足したもの */
+  function fitPoints(points, tid) {
+    if (!points || points.length < 3) return { err: '先に線を引いてください（角が3つ以上）' };
+    const tol = Math.round(Math.max(2, Math.min(8, mpp() * 14)) * 10) / 10;
+    const f = fitRing({ id: tid || '__draw', polygon: points }, tol);
+    return f ? Object.assign(f, { tol }) : { none: true, tol };
+  }
   window.kyoukai = {
-    open, close, click, back, onMode,
+    open, close, click, back, onMode, fitPoints,
     _auto: { findIssues, planAuto, markAuto, fixAll, paint, state: S }, // ためしに動かすとき用
     active: () => typeof mode !== 'undefined' && mode === 'sen'
   };
