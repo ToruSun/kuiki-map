@@ -625,7 +625,10 @@
     }
     if (k === 'fitOk') {
       const f = S.fit; if (!f) return;
-      doCommit(`区域${t.no}の線を、となりの区域に合わせました`, () => { const x = terrById(t.id); if (x) { x.polygon = f.ring; reassign(); } });
+      doCommit(`区域${t.no}の線を、となりの区域に合わせました`, () => {
+        const x = terrById(t.id);
+        if (x) { x.polygon = f.ring; if (typeof teeInsert === 'function') applyTee(teeInsert(f.ring, t.id)); reassign(); } // 隣の線の途中に合わせた角は、隣にも足して共有の点にする
+      });
       setTool(null);
       return;
     }
