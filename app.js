@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.164';
+var APP_JS_VER = '2026.13.165';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.165', items: [
+    ['線', '隣の区域の線の途中（点のない所）に合わせた角は、保存のとき隣の区域にも同じ点を足して、共有の点にするようになりました（線を引いているときも、共有の点の色で出ます）。']
+  ] },
   { v: '2026.13.164', items: [
     ['線', '区域の線を引いているときに「となりに合わせる」ボタンが出るようになりました。押すと、引いている線を、となりの区域の線にそろえます（「元に戻す」でもどせます）。']
   ] },
@@ -7183,6 +7186,39 @@ function sharedSnap(v, selfId) {
   }
   return null;
 }
+/* 点 v が、隣の区域の線の途中（点のない所）に乗っているか（30cm まで）。乗っていれば { tid, k（その線の始まりの点の番号）, ll }
+   保存のとき、その点を隣の区域にも足して、共有の点にする（T字の所にすき間ができないように） */
+const TEE_M = 0.3;
+function teeAt(v, selfId, terrs) {
+  const cos = Math.cos(v[0] * Math.PI / 180), X = p => [(p[1] - v[1]) * 111320 * cos, (p[0] - v[0]) * 110540];
+  for (const t of (terrs || polyTerrs())) {
+    if (t.id === selfId || !t.polygon || t.polygon.length < 3) continue;
+    const P = t.polygon, n = P.length;
+    if (P.some(w => samePt(w, v))) continue;
+    for (let k = 0; k < n; k++) {
+      const a = X(P[k]), b = X(P[(k + 1) % n]);
+      if (Math.min(a[0], b[0]) > TEE_M || Math.max(a[0], b[0]) < -TEE_M || Math.min(a[1], b[1]) > TEE_M || Math.max(a[1], b[1]) < -TEE_M) continue;
+      const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (!L2) continue;
+      const u = (-a[0] * dx - a[1] * dy) / L2;
+      if (u <= 0.001 || u >= 0.999) continue;
+      if (Math.hypot(a[0] + u * dx, a[1] + u * dy) <= TEE_M) return { tid: t.id, k, u, ll: v.slice() };
+    }
+  }
+  return null;
+}
+/* 区域の線 pts の点のうち、隣の区域の線の途中に乗っている点を、隣の区域にも足した形にする。返り値：Map(区域id → 新しい polygon) */
+function teeInsert(pts, selfId) {
+  const out = new Map(), terrs = polyTerrs();
+  pts.forEach(v => {
+    const hit = teeAt(v, selfId, terrs.map(t => out.has(t.id) ? Object.assign({}, t, { polygon: out.get(t.id) }) : t));
+    if (!hit) return;
+    const P = (out.get(hit.tid) || terrById(hit.tid).polygon).slice();
+    P.splice(hit.k + 1, 0, hit.ll);
+    out.set(hit.tid, P);
+  });
+  return out;
+}
+const applyTee = m => m.forEach((poly, id) => { const tt = terrById(id); if (tt) tt.polygon = poly; });
 /* 隣の区域の点（くっつく場所）を小さく表示する */
 function drawHints() {
   draw.hints.clearLayers();
@@ -7296,7 +7332,7 @@ function redrawDraw() {
   draw.handles.clearLayers();
   const setLine = () => draw.line.setLatLngs(draw.points.length > 2 ? [...draw.points, draw.points[0]] : draw.points);
   p.forEach((pt, i) => {
-    const m = L.marker(pt, { icon: vertexIcon(i, i === draw.sel, !!draw.snaps[i]), zIndexOffset: 2000, keyboard: false });
+    const m = L.marker(pt, { icon: vertexIcon(i, i === draw.sel, !!draw.snaps[i] || !!teeAt(pt, draw.targetId)), zIndexOffset: 2000, keyboard: false }); // 隣の線の途中に乗っている点も、共有の点の色（保存のとき隣にも足す）
     m.addTo(draw.handles);
     liftDrag(m, {
       tap: () => { draw.sel = draw.sel === i ? -1 : i; redrawDraw(); },
@@ -7419,6 +7455,7 @@ async function finishDraw() {
     commit(`区域${t.no}の線を直しました${alsoMove ? `（隣の${names}も一緒に）` : ''}`, () => {
       t.polygon = pts;
       if (alsoMove) affected.forEach((list, id) => { const tt = terrById(id); list.forEach(([vi, p]) => { tt.polygon[vi] = p; }); });
+      applyTee(teeInsert(pts, t.id)); // 隣の線の途中に乗せた点は、隣にも足して共有の点にする
       reassign();
     });
   } else {
@@ -7455,6 +7492,7 @@ function openTerrForm({ pts = null, terr = null }) {
     } else {
       endDraw();
       commit(`区域${no}を作りました`, () => {
+        applyTee(teeInsert(pts, null)); // 隣の線の途中に乗せた点は、隣にも足して共有の点にする
         D().territories.push({ id: 't' + uid(), no, name: name || `区域${no}`, polygon: pts, holder: null, lentAt: null });
         reassign();
       });
