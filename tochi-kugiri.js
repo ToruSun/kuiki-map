@@ -185,7 +185,9 @@
   function tkShow() {
     if (!map || !tkOn()) return false;
     const michiLand = mode === 'draw' && window.michi && window.michi.showLand && window.michi.showLand(); // 「道で囲む」で土地の区切りも使うときは、線引き中でも出す（michi.js）
-    if ((mode === 'draw' && typeof drawTap !== 'undefined' && drawTap === 'line' && !michiLand) || mode === 'sen' || mode === 'tok') return false;
+    // 「区域の線を直す」（kyoukai.js・mode 'sen'）と、そこから入った「形を直す」でも出す（土地の境を見ながら線を直せるように）
+    const fromSen = mode === 'draw' && typeof draw !== 'undefined' && draw && draw.fromSen;
+    if ((mode === 'draw' && typeof drawTap !== 'undefined' && drawTap === 'line' && !michiLand && !fromSen) || mode === 'tok') return false;
     const z = map.getZoom();
     if (z < 16) return false;
     const n = typeof terrsOnScreen === 'function' ? terrsOnScreen() : Infinity;
