@@ -8,6 +8,7 @@
    ・境にするのは、ふつうの道・大きい道・線路・川。「細い道・小川も境にする」で、通路や水路も境にできる
    ・道がない広い所（1ha 以上のブロックに、囲みが一部だけかかる所）は、土地の区切り（tochi-kugiri.js の線）で分けて、囲みに半分以上入る土地をとる
    ・地番参考図などで、土地と土地のあいだの細い帯（OSM に無い道）は、その真ん中の線を道として使う
+   ・となりの区域の線も、道と同じに境にする（道がない所でも、今ある区域の線にそって囲める）
    ・隣の区域の点が近くにあれば（約3m）、その点にそろえる（すき間ができないように）
 
    データ：osm/roads.json（OpenStreetMap の道の真ん中の線。Actions「OSM の道」が作る。© OpenStreetMap contributors／ODbL）
@@ -61,7 +62,7 @@
     const NEAR_ROAD = 7;      // 土地の線の行き止まりを、ほかの線につなぐ近さ（m）
     // 道・線路・川の真ん中から、この近さ（m）にあって向きがそろった土地の線は、道や線路の敷地の端とみなして使わない
     // （線路・川・大きい道は敷地が広いので、遠くまで見る）。向きに関係なく、4m より近い線も使わない
-    const EDGE_OF = { 1: 16, 2: 10, 3: 6, 4: 9, 5: 9, 6: 8 }, EDGE_MAX = 16, EDGE_ANY = 4;
+    const EDGE_OF = { 1: 16, 2: 10, 3: 6, 4: 9, 5: 9, 6: 8, 7: 3 }, EDGE_MAX = 16, EDGE_ANY = 4; // 7：となりの区域の線
     // 線路・川は敷地が広い：敷地の端の線は残し、そこに当たる土地の線を、まっすぐ線路・川の真ん中までのばして敷地を区切る（この遠さまで）
     const CUT_KINDS = { 4: 40, 5: 30 };
     /* 線分の一覧 → つながり（点・まわりの順）と面。land の線は、少しのずれ（30cm）をそろえ、行き止まりを7mまでつなぐ */
@@ -439,6 +440,48 @@
         if (lx.length) parcelRoads(lx, roads, reg).forEach(sg => roads.push({ a: sg.a, b: sg.b, c: 2, dv: true, land: true }));
       }
 
+      // となりの区域の線も、道と同じに境にする（道がない所でも、今ある区域の線にそって囲めるように）。種類は 7
+      // ・道（OSM・見つけた道）と向きがそろって6m 以内の区域の線は使わない（区域の線は道の真ん中から少しずれていることがあるので、道を使う）
+      // ・つなぐ近さ・ずれのそろえ方は土地の線と同じ
+      const terrXY = [];
+      if (opt.terrs && opt.terrs.length) {
+        const RG = new Map(), RC = 20;
+        roads.forEach(sg => {
+          for (let x = Math.floor((Math.min(sg.a[0], sg.b[0]) - 6) / RC); x <= Math.floor((Math.max(sg.a[0], sg.b[0]) + 6) / RC); x++)
+            for (let y = Math.floor((Math.min(sg.a[1], sg.b[1]) - 6) / RC); y <= Math.floor((Math.max(sg.a[1], sg.b[1]) + 6) / RC); y++) { const k = x + ',' + y; if (!RG.has(k)) RG.set(k, []); RG.get(k).push(sg); }
+        });
+        const alongRoad = (a, b) => {
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (!L) return true;
+          const n = Math.max(1, Math.ceil(L / 8));
+          for (let q = 0; q <= n; q++) { // 線の上のどの所も、道から6m 以内で、向きがそろっている
+            const p = [a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n];
+            const ok = (RG.get(Math.floor(p[0] / RC) + ',' + Math.floor(p[1] / RC)) || []).some(sg => {
+              const dx = sg.b[0] - sg.a[0], dy = sg.b[1] - sg.a[1], L2 = dx * dx + dy * dy;
+              let t = L2 ? ((p[0] - sg.a[0]) * dx + (p[1] - sg.a[1]) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+              if (Math.hypot(sg.a[0] + t * dx - p[0], sg.a[1] + t * dy - p[1]) > 6) return false;
+              return Math.abs((b[0] - a[0]) * dx + (b[1] - a[1]) * dy) / (L * (Math.sqrt(L2) || 1)) > 0.9;
+            });
+            if (!ok) return false;
+          }
+          return true;
+        };
+        const add = [];
+        opt.terrs.forEach(r => {
+          if (!r || r.length < 3) return;
+          const q = r.map(p => toXY(p[0], p[1]));
+          terrXY.push({ xy: q, bb: bboxOf(q) });
+          for (let k = 0; k < q.length; k++) {
+            const a = q[k], b = q[(k + 1) % q.length];
+            if (a[0] === b[0] && a[1] === b[1]) continue;
+            if (!hitBox(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]))) continue;
+            if (!alongRoad(a, b)) add.push({ a, b, c: 7, dv: true, land: true });
+          }
+        });
+        add.forEach(sg => roads.push(sg));
+      }
+      // 今ある区域の中の面は、えらばない（区域が重ならないように）
+      const inTerr = f => { const p = f.pt || f.xy[0]; return terrXY.some(o => p[0] >= o.bb[0] && p[0] <= o.bb[2] && p[1] >= o.bb[1] && p[1] <= o.bb[3] && inside(p[0], p[1], o.xy)); };
+
       // 2. 道だけでブロックを出す
       let G = roads.length >= 3 ? graph(fresh(roads)) : { faces: [] };
       const blocks = G.faces;
@@ -447,7 +490,7 @@
         if (!hitLoop(f)) return;
         const fr = fracIn(f, loop);
         if (opt.land && f.A > BIG && fr > 0.15 && fr < 0.85) bigs.push(f);
-        else if (fr >= 0.5) pickedRoad.add(f);
+        else if (fr >= 0.5 && !inTerr(f)) pickedRoad.add(f);
       });
       // 道がまったくない所：土地の区切りだけで分ける（四角全体を1つの大きいブロックとみなす）
       const noRoad = !blocks.length && opt.land && opt.land.length;
@@ -509,8 +552,8 @@
             let par = null;
             blocks.forEach(b => { if ((!par || b.A < par.A) && p[0] >= b.bb[0] && p[0] <= b.bb[2] && p[1] >= b.bb[1] && p[1] <= b.bb[3] && inside(p[0], p[1], b.xy)) par = b; });
             if (f.thin) return; // すき間は、あとでとなりに合わせる
-            if (noRoad || (par && bigSet.has(par)) || (!par && open)) { if (fr >= 0.5) { picked.push(f); lands++; f.land = true; } }
-            else if (par ? pickedRoad.has(par) : fr >= 0.5) picked.push(f);
+            if (noRoad || (par && bigSet.has(par)) || (!par && open)) { if (fr >= 0.5 && !inTerr(f)) { picked.push(f); lands++; f.land = true; } }
+            else if ((par ? pickedRoad.has(par) : fr >= 0.5) && !inTerr(f)) picked.push(f);
           });
           // 土地の線のずれでできた細いすき間は、えらんだ土地と線を分け合っていれば、いっしょに入れる（線が切れこまないように）
           const N2 = G.N, es2 = new Set();
@@ -521,14 +564,14 @@
             G.faces.forEach(f => {
               if (!f.thin || f.got || !hitLoop(f)) return;
               const touch = f.ids.some((a, i) => es2.has(f.ids[(i + 1) % f.ids.length] * N2 + a));
-              if (!touch || fracIn(f, loop) < 0.5) return;
+              if (!touch || fracIn(f, loop) < 0.5 || inTerr(f)) return;
               f.got = f.land = true; picked.push(f); more = true;
               f.ids.forEach((a, i) => es2.add(a * N2 + f.ids[(i + 1) % f.ids.length]));
             });
           }
         } else {
           picked = [...pickedRoad]; // 土地の区切りが無い所：道のブロックだけで決める
-          bigs.forEach(f => { if (fracIn(f, loop) >= 0.5) picked.push(f); });
+          bigs.forEach(f => { if (fracIn(f, loop) >= 0.5 && !inTerr(f)) picked.push(f); });
         }
       } else picked = [...pickedRoad];
 
@@ -537,7 +580,7 @@
       if (!picked.length) {
         // 小さく囲んだ：囲みの真ん中をふくむ、いちばん小さい面
         const c = loop.reduce((s, p) => [s[0] + p[0] / loop.length, s[1] + p[1] / loop.length], [0, 0]);
-        const hit = faces.filter(f => inside(c[0], c[1], f.xy)).sort((m, n) => m.A - n.A)[0];
+        const hit = faces.filter(f => inside(c[0], c[1], f.xy) && (fracIn(f, loop), !inTerr(f))).sort((m, n) => m.A - n.A)[0];
         if (!hit) return { err: '囲んだ所のまわりに、道で囲まれたブロックが見つかりません', miss: 1 };
         picked.push(hit);
       }
@@ -574,8 +617,8 @@
       let ring = outer[0].c.map(i => V[i]);
 
       // 7. まっすぐな所の点を減らす（形は0.7mまで）
-      ring = simplifyClosed(ring, lands || opt.land ? 1.5 : 0.7); // 土地の線を使うときは、少しゆるめる（土地の線・見つけた道は少しずつずれている）
-      if (lands) { ring = dropInlets(ring, 3); ring = dropClose(ring, 3); ring = dropSpikes(ring); } // 土地の線は少しずつずれていることが多いので、3m より近い点はまとめ、行って戻るとげを消す
+      ring = simplifyClosed(ring, lands || opt.land || (opt.terrs && opt.terrs.length) ? 1.5 : 0.7); // 土地の線を使うときは、少しゆるめる（土地の線・見つけた道は少しずつずれている）
+      if (lands || (opt.terrs && opt.terrs.length)) { ring = dropInlets(ring, 3); ring = dropClose(ring, 3); ring = dropSpikes(ring); } // 土地の線は少しずつずれていることが多いので、3m より近い点はまとめ、行って戻るとげを消す
       let ll = ring.map(toLL);
       // 8. 隣の区域の点が近く（3m）にあれば、その点にそろえる
       if (opt.snap && opt.snap.length) {
@@ -681,7 +724,7 @@
   /* ---------- 画面 ---------- */
   if (typeof window === 'undefined' || typeof L === 'undefined' || typeof startDraw !== 'function') return;
 
-  const LS_NARROW = 'kuiki_michi_narrow', LS_LAND = 'kuiki_michi_land', LS_ON = 'kuiki_michi_on'; // LS_ON：「道で囲む」をえらんでいたか（新しい区域の線を引きはじめるとき、そのままにする）
+  const LS_NARROW = 'kuiki_michi_narrow', LS_LAND = 'kuiki_michi_land', LS_ON = 'kuiki_michi_on', LS_TERR = 'kuiki_michi_terr'; // LS_TERR：となりの区域の線も境にする（はじめは入） // LS_ON：「道で囲む」をえらんでいたか（新しい区域の線を引きはじめるとき、そのままにする）
   let startedFor = null; // えらんでいた「道で囲む」を入れた線引き（draw）。1回の線引きで1度だけ入れる
   const landOn = () => lsG(LS_LAND) !== '0' && !!window.tochiKugiri && typeof window.tochiKugiri.ringsIn === 'function'; // はじめは入
   let usedFor = null; // 「道で囲む」で線を引いた線引き（draw）。そのあいだは、点を直しやすいよう土地の区切りを出したままにする
@@ -707,7 +750,7 @@
     b.textContent = on ? '道で囲む（なぞってください）' : '道で囲む';
     b.hidden = !draw || drawTap !== 'line';
     const fb = document.getElementById('drawFit'); if (fb) fb.hidden = !draw || drawTap !== 'line' || !(window.kyoukai && window.kyoukai.fitPoints);
-    ['drawNarrow', 'drawLand'].forEach(id => { const n = document.getElementById(id); if (n) n.parentNode.hidden = !draw || drawTap !== 'line'; });
+    ['drawNarrow', 'drawLand', 'drawTerrB'].forEach(id => { const n = document.getElementById(id); if (n) n.parentNode.hidden = !draw || drawTap !== 'line'; });
     const h = document.getElementById('drawHelp');
     if (h && on) h.textContent = 'ブロックを指でぐるっと大まかになぞって囲むと、まわりの道の真ん中に線を引きます。いくつかのブロックをまとめて囲むこともできます。道がない広い所（畑など）は、土地の区切りの線で囲みます（地図は2本指で動かします）。道：© OpenStreetMap contributors';
   }
@@ -778,7 +821,13 @@
       if (!draw) return;
     }
     if (land && land.length) { toast('線を計算しています…'); await new Promise(res => setTimeout(res, 50)); if (!draw) return; } // 土地の線が多いと1秒ほどかかる
-    const r = core.build(ws, loopLL, { kinds, snap, land: land && land.length ? land : null });
+    let terrs = null;
+    if (lsG(LS_TERR) !== '0') {
+      const la = loopLL.map(p => p[0]), ln = loopLL.map(p => p[1]), pd = 0.003;
+      const bx = [Math.min(...la) - pd, Math.min(...ln) - pd * 1.25, Math.max(...la) + pd, Math.max(...ln) + pd * 1.25];
+      terrs = polyTerrs().filter(t => t.id !== draw.targetId && t.polygon.some(v => v[0] >= bx[0] && v[0] <= bx[2] && v[1] >= bx[1] && v[1] <= bx[3]) || (t.id !== draw.targetId && inPoly((bx[0] + bx[2]) / 2, (bx[1] + bx[3]) / 2, t.polygon))).map(t => t.polygon);
+    }
+    const r = core.build(ws, loopLL, { kinds, snap, land: land && land.length ? land : null, terrs });
     if (line) { map.removeLayer(line); line = null; }
     if (r.err) { toast(r.err); return; }
     pushHist();
@@ -842,6 +891,13 @@
       const cb2 = lb2.querySelector('input');
       cb2.checked = lsG(LS_LAND) !== '0';
       cb2.onchange = () => { lsS(LS_LAND, cb2.checked ? '1' : '0'); if (typeof window.renderTochiKugiri === 'function') window.renderTochiKugiri(); };
+      const lb3 = document.createElement('label');
+      lb3.className = 'check'; lb3.hidden = true;
+      lb3.innerHTML = '<input type="checkbox" id="drawTerrB">「道で囲む」で、となりの区域の線も、道と同じに境にする';
+      fold.appendChild(lb3);
+      const cb3 = lb3.querySelector('input');
+      cb3.checked = lsG(LS_TERR) !== '0';
+      cb3.onchange = () => lsS(LS_TERR, cb3.checked ? '1' : '0');
     }
     paintBtn();
   }
