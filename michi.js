@@ -752,7 +752,7 @@
     const fb = document.getElementById('drawFit'); if (fb) fb.hidden = !draw || drawTap !== 'line' || !(window.kyoukai && window.kyoukai.fitPoints);
     ['drawNarrow', 'drawLand'].forEach(id => { const n = document.getElementById(id); if (n) n.parentNode.hidden = !draw || drawTap !== 'line'; });
     const h = document.getElementById('drawHelp');
-    if (h && on) h.textContent = 'ブロックを指でぐるっと大まかになぞって囲むと、まわりの道の真ん中に線を引きます。いくつかのブロックをまとめて囲むこともできます。道がない広い所（畑など）は、土地の区切りの線で囲みます（地図は2本指で動かします）。道：© OpenStreetMap contributors';
+    if (h && on) h.textContent = 'ブロックを指でぐるっと大まかになぞって囲むと、まわりの道の真ん中に線を引きます。いくつかのブロックをまとめて囲むこともできます。道がない広い所（畑など）は、土地の区切りの線で囲みます（地図は2本指で動かします。パソコンでは、右ボタンかスペースキーを押しながら引くと動かせます）。道：© OpenStreetMap contributors';
   }
   function setOn(v) {
     on = !!v && !!draw;
@@ -771,14 +771,41 @@
     if (bound || !map) return;
     bound = true;
     const el = map.getContainer();
+    // パソコン：マウスの右ボタン、またはスペースキーを押しながら引くと、地図を動かす（左ボタンはなぞる）
+    let pan = null, space = false;
+    const typing = () => { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable); };
+    document.addEventListener('keydown', e => {
+      if (e.code !== 'Space' || !active() || typing()) return;
+      e.preventDefault(); // ページが動いたり、ボタンが押されたりしないように
+      if (!space) { space = true; el.style.cursor = 'grab'; }
+    }, true);
+    document.addEventListener('keyup', e => {
+      if (e.code !== 'Space' || !space) return;
+      e.preventDefault();
+      space = false; if (!pan) el.style.cursor = '';
+    }, true);
+    window.addEventListener('blur', () => { space = false; if (!pan) el.style.cursor = ''; });
+    el.addEventListener('contextmenu', e => { if (active()) { e.preventDefault(); e.stopPropagation(); } }, true); // 右ボタンのメニュー・道順を出さない
     el.addEventListener('pointerdown', e => {
       touches++;
       if (!active()) return;
+      if (e.pointerType === 'mouse' && (e.button === 2 || space)) { // 地図を動かす
+        e.preventDefault(); e.stopPropagation();
+        pan = { id: e.pointerId, ll: map.mouseEventToLatLng(e) };
+        el.style.cursor = 'grabbing';
+        try { el.setPointerCapture(e.pointerId); } catch (x) { /* 何もしない */ }
+        return;
+      }
       if (touches > 1 || !e.isPrimary) { cancel(); map.dragging.enable(); return; } // 2本指：地図を動かす
       stroke = [map.mouseEventToLatLng(e)]; stroke.px = [[e.clientX, e.clientY]];
       try { el.setPointerCapture(e.pointerId); } catch (x) { /* 何もしない */ }
     });
     el.addEventListener('pointermove', e => {
+      if (pan && e.pointerId === pan.id) { // つかんだ所が、いつもマウスの下に来るように動かす（地図を回していても合う）
+        const cur = map.mouseEventToLatLng(e), d = map.project(pan.ll).subtract(map.project(cur));
+        if (Math.abs(d.x) + Math.abs(d.y) >= 1) map.panBy(d, { animate: false });
+        return;
+      }
       if (!stroke || !active()) return;
       const last = stroke.px[stroke.px.length - 1];
       if (Math.hypot(e.clientX - last[0], e.clientY - last[1]) < 4) return;
@@ -786,8 +813,9 @@
       if (!line) line = L.polyline([], { color: '#1D4ED8', weight: 4, dashArray: '2 8', interactive: false }).addTo(map);
       line.setLatLngs(stroke);
     });
-    const up = () => {
+    const up = e => {
       touches = Math.max(0, touches - 1);
+      if (pan && e && e.pointerId === pan.id) { pan = null; el.style.cursor = space ? 'grab' : ''; quiet = Date.now() + 400; return; }
       if (!active()) return;
       if (touches === 0) map.dragging.disable();
       if (!stroke) return;
