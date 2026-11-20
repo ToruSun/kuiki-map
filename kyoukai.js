@@ -13,6 +13,7 @@
    データ：D().territories の polygon（[緯度, 経度] の並び）を直す。家の区域は reassign() で決め直す
    計算：polygon-clipping（vendor）を使う。共有している点は、元の点の値をそのまま使う（隣と同じ点のままにする）
 
+   入口：地図の上の「区域の線」ボタン（区域係だけ）・係の画面の「区域」・番号の札（✎）
    index.html：<script src="chui.js"></script> などのあとに <script src="kyoukai.js"></script>
    ========================================================= */
 (function () {
@@ -377,7 +378,7 @@
       title.textContent = '区域の線を直す';
       if (S.tool === 'check') { paintCheckBar(title, hint, body); return; }
       hint.textContent = '直したい区域をタップしてください。';
-      body.innerHTML = `<div class="senrow">${btn('checkAll', '全部の区域のすき間・重なりを調べる', 'small')}${undoBtn}</div>`;
+      body.innerHTML = `<div class="senrow">${btn('newTerr', '＋ 新しい区域の線を引く', 'small primary')}${btn('checkAll', '全部の区域のすき間・重なりを調べる', 'small')}${undoBtn}</div>`;
       return;
     }
     title.textContent = `区域${t.no}`;
@@ -562,6 +563,7 @@
   }
   /* setMode から呼ばれる（ほかの画面に移ったときも、ここで片づける） */
   function onMode(m) {
+    syncMapEntry(); // 地図の上の「区域の線」ボタン（区域係だけ）
     const bar = $('#senBar');
     if (bar) bar.hidden = m !== 'sen';
     if (m !== 'sen' && lay && typeof map !== 'undefined' && map) { lay.clearLayers(); lay.remove(); }
@@ -589,6 +591,7 @@
   async function act(k, ds) {
     const t = S.tid ? terrById(S.tid) : null;
     if (k === 'undo') { undoLast(); return; }
+    if (k === 'newTerr') { close(); startDraw(null); return; } // 新しい区域の線を引く（地図の見ている所のまま）
     if (k === 'cancel') { setTool(null); return; }
     if (k === 'checkAll' || k === 'check') {
       if (!pc() && !await ensurePc()) return;
@@ -894,6 +897,32 @@
     S.issues = findIssues(S.scope); markAuto(); S.ii = -1;
     paint();
   }
+
+  /* ---------- 地図の上の「区域の線」ボタン（区域係だけ） ----------
+     押すと、新しい区域の線を引く・区域の線を直す・すき間と重なりを調べる、からえらぶ */
+  function addMapEntry() {
+    const tools = $('#mapTools');
+    if (!tools || $('#btnSen')) return;
+    const b = document.createElement('button');
+    b.className = 'btn'; b.id = 'btnSen'; b.type = 'button'; b.hidden = true;
+    b.textContent = '区域の線';
+    b.onclick = openMenu;
+    tools.appendChild(b);
+    syncMapEntry();
+  }
+  function syncMapEntry() { const b = $('#btnSen'); if (b) b.hidden = !isAdmin(); }
+  function openMenu() {
+    if (!isAdmin()) return;
+    setSheet(headHtml(null, '区域の線', '') + `
+      <button class="btn primary block" id="smNew">＋ 新しい区域の線を引く</button>
+      <button class="btn block" id="smFix">区域の線を直す（形・となりに合わせる・分ける・1つにする）</button>
+      <button class="btn block" id="smCheck">全部の区域のすき間・重なりを調べる</button>
+      <button class="btn block" data-close>やめる</button>`);
+    $('#smNew').onclick = () => { closeSheet(); startDraw(null); };
+    $('#smFix').onclick = () => { closeSheet(); open(null, { keepView: true }); };
+    $('#smCheck').onclick = () => { closeSheet(); open(null, { keepView: true }); act('checkAll', {}); };
+  }
+  addMapEntry();
 
   /* ---------- 係の画面の「区域」に、入口のボタンを足す ---------- */
   function addEntry() {
