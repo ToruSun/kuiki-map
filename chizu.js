@@ -189,8 +189,14 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
     baseLayers[name].addTo(map);
     syncPaneOpacity();
     document.body.classList.toggle('kind-std', name === 'std');
+    const ds = document.getElementById('drawBase'); if (ds) ds.value = K.want; // 線を引く画面の「地図」の選び（圏外で OSM の代わりを出していても、選んだものを見せる）
     stdPrefetchSoon(3000);
   }
+  /* 線を引く画面の「地図」：線を引いているあいだも、地図の種類を切りかえる */
+  document.addEventListener('change', e => {
+    if (!e.target || e.target.id !== 'drawBase') return;
+    if (KINDS.indexOf(e.target.value) >= 0) window.setBase(e.target.value);
+  });
   /* OSM を選んでいる人：圏外になったら国土地理院の地図に、電波がもどったら OSM にもどす（選んだものは変えない） */
   window.addEventListener('offline', () => { if (K.want === 'osm' && baseName === 'osm') applyBase('osm'); });
   window.addEventListener('online', () => { if (K.want === 'osm' && baseName !== 'osm') applyBase('osm'); });

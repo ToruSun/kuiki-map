@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="app-version" content="2026.13.172"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
+<meta name="app-version" content="2026.13.173"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp https://tile.openstreetmap.org; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cyberjapandata.gsi.go.jp https://msearch.gsi.go.jp; media-src 'self'; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><!-- 読み込み先の制限（改善案C1）：スクリプトは自分のサイトのファイルだけ。宛先は自分のサイト・GAS・国土地理院・Googleフォントだけ（地図の画像は OpenStreetMap も）。版の確かめが最初の1,024バイトを読むので、app-version より下に置く -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>区域マップ</title>
@@ -1710,6 +1710,7 @@ body.renshu #btnUpd{display:none!important}
         <div class="fold">
           <p class="muted" id="drawHelp"></p>
           <div class="row">
+            <label class="check">地図 <select id="drawBase" aria-label="地図の種類"><option value="pale">見やすい地図</option><option value="std">地名の多い地図</option><option value="osm">OSM</option><option value="photo">写真</option></select></label><!-- 線を引いているあいだも地図の種類を切りかえる（chizu.js） -->
             <label class="btn small">古いカード（写真・PDF）を重ねる<input type="file" accept="image/*,application/pdf,.pdf" id="ovFile" hidden></label>
             <label class="check"><input type="checkbox" id="drawHouses">家の印を表示</label>
             <label class="check"><input type="checkbox" id="drawSnap" checked>隣の区域の点・線にくっつける</label>
