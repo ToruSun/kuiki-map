@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.170';
+var APP_JS_VER = '2026.13.171';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.171', items: [
+    ['係', '区域係が地図で区域をえらぶと、番号の枠に ⓘ が付き、押すとその区域のカルテが開くようになりました（番号・名前と線は、カルテのボタンから直せます）。']
+  ] },
   { v: '2026.13.170', items: [
     ['線', 'パソコンで「道で囲む」をしているとき、マウスの右ボタンか、スペースキーを押しながら引くと、地図を動かせるようになりました。']
   ] },
