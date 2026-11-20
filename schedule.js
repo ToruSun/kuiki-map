@@ -1960,8 +1960,8 @@ body.duemode .terr-label:not(.duelab){display:none}
     dmRaf = requestAnimationFrame(() => { dmRaf = 0; try { paintDueMap(); } catch (e) { console.error(e); } });
   }
   window.repaintTerrLabels = repaintTerrLabels;
-  // 区域係が地図で区域をえらんでいるとき、その区域の番号の札に ✎ を付け、押すと番号と名前（と、そこから線）を直せるようにする
-  // （区域をえらぶ → 札を押す → 保存、の3つの手順がいるので、不用意には変わらない。区域の線にはさわらない）
+  // 区域係が地図で区域をえらんでいるとき、その区域の番号の札に ⓘ を付け、押すとその区域のカルテを開く（期限の表示のときと同じ）
+  // カルテの「番号・名前」「線を直す」から直す（区域をえらぶ → 札を押す → ボタン → 保存、の手順がいるので、不用意には変わらない）
   const appMode = () => mode; // paintDueMap の中の mode（札の出し方）と区別するため
   const canEditNo = () => isAdmin() && appMode() === 'normal' && !(typeof lkLocked === 'function' && lkLocked()) && typeof openTerrForm === 'function';
   /* 今の画面に出ている家の印と建物の名前の四角（地図の左上からの位置）。札をずらすときの障害物 */
@@ -2093,7 +2093,7 @@ body.duemode .terr-label:not(.duelab){display:none}
     const topM = tlEl && !tlEl.hidden ? tlEl.offsetHeight + 8 : 0, botM = cbEl && !cbEl.hidden ? cbEl.offsetHeight + 8 : 0;
     const unscr = pt => map.containerPointToLatLng(map._kmRad ? c0.add(rotPt(pt.subtract(c0), -map._kmRad)) : pt);
     for (const it of items) {
-      const tl = it.text.length + (!on && sel && it.t.id === sel && canEditNo() ? 2 : 0); // ✎ の分も
+      const tl = it.text.length + (!on && sel && it.t.id === sel && canEditNo() ? 2 : 0); // ⓘ の分も
       const w = cp ? 10 + 9 * tl : 18 + 11 * tl, h = cp ? 24 : 36;
       const rectAt = pt => [pt.x - w / 2 - 2, pt.y - h / 2 - 2, pt.x + w / 2 + 2, pt.y + h / 2 + 2];
       let r = rectAt(it.p);
@@ -2120,11 +2120,11 @@ body.duemode .terr-label:not(.duelab){display:none}
       placed.push(r);
       const faint = !on && sel && it.t.id !== sel;
       const kind = on ? '' : it.gray ? ' gray' : it.t.group ? ' grp' : '';
-      const ed = !on && sel && it.t.id === sel && canEditNo(); // 区域係がえらんでいる区域：札を押すと番号を直せる
-      const m = L.marker(it.ll, { icon: L.divIcon({ className: `terr-label duelab${cp ? ' cp' : ''}${on ? '' : ed ? ' off ed' : ' ro off'}${faint ? ' faint' : ''}${kind}`, html: `<span>${esc(it.text)}${ed ? '<b aria-label="番号を直す">✎</b>' : ''}</span>`, iconSize: [0, 0] }),
+      const ed = !on && sel && it.t.id === sel && canEditNo(); // 区域係がえらんでいる区域：札を押すとカルテ
+      const m = L.marker(it.ll, { icon: L.divIcon({ className: `terr-label duelab${cp ? ' cp' : ''}${on ? '' : ed ? ' off ed' : ' ro off'}${faint ? ' faint' : ''}${kind}`, html: `<span>${esc(it.text)}${ed ? '<b aria-label="カルテを開く">ⓘ</b>' : ''}</span>`, iconSize: [0, 0] }),
         interactive: on || ed, bubblingMouseEvents: false, keyboard: false, pane: 'labelPane' });
       if (on) m.on('click', e => { if (typeof moveTap === 'function' && moveTap(e)) return; openKarte(it.t.id); }); // 家の場所を直しているときは、その場所に動かす
-      else if (ed) m.on('click', e => { if (typeof moveTap === 'function' && moveTap(e)) return; if (canEditNo() && terrById(it.t.id)) openTerrForm({ terr: terrById(it.t.id) }); });
+      else if (ed) m.on('click', e => { if (typeof moveTap === 'function' && moveTap(e)) return; if (canEditNo() && terrById(it.t.id)) openKarte(it.t.id); });
       m.addTo(dueLayer);
     }
   }
