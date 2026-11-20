@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.173';
+var APP_JS_VER = '2026.13.174';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.174', items: [
+    ['線', '線の点を押してえらぶと、その点のすぐ横に赤い「×」が出るようになりました。押すと、その点を消せます（「1つ戻す」で戻せます）。']
+  ] },
   { v: '2026.13.173', items: [
     ['線', '区域の線を引いているあいだも、「ひらく」の「地図」で、地図の種類（見やすい地図・地名の多い地図・OSM・写真）を切りかえられるようになりました。']
   ] },
@@ -7388,6 +7391,7 @@ function redrawDraw() {
       }
     });
   }
+  if (draw.sel >= 0 && p[draw.sel]) addDelBtn(p[draw.sel]); // えらんだ点のすぐ横に「×」（押すと、その点を消す）
   $('#drawCount').textContent = n;
   $('#drawDelPt').hidden = draw.sel < 0;
   $('#drawRestart').hidden = !n;
@@ -7425,6 +7429,24 @@ function liftDrag(m, h) {
     el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   });
   L.DomEvent.disableClickPropagation(el); // 点をさわったときに、地図のタップ（点を足す）にならないように
+}
+/* えらんだ点の横の「×」：ふだんは右上。画面の右の端・上の端に近いときは、内側（左・下）に出す。
+   点・間の「＋」と押しまちがえないよう、点から少し離す */
+function addDelBtn(pt) {
+  const S = 36, OFF = 34; // ボタンの大きさ・点の中心からの離れ（px）
+  let dx = OFF, dy = -OFF;
+  try {
+    const c = map.latLngToContainerPoint(pt), sz = map.getSize();
+    if (c.x + dx + S / 2 > sz.x - 6) dx = -OFF;
+    if (c.y + dy - S / 2 < 6) dy = OFF;
+  } catch (e) { /* 右上のまま */ }
+  const m = L.marker(pt, {
+    icon: L.divIcon({ className: '', html: '<button type="button" class="dvdel" aria-label="この点を消す" title="この点を消す">×</button>', iconSize: [S, S], iconAnchor: [S / 2 - dx, S / 2 - dy] }),
+    zIndexOffset: 3000, keyboard: false, bubblingMouseEvents: false
+  });
+  m.on('add', () => { const el = m.getElement(); if (el) ['pointerdown', 'mousedown', 'touchstart'].forEach(t => el.addEventListener(t, e => e.stopPropagation())); }); // 「道で囲む」のなぞりや、地図のタップにしない
+  m.on('click', e => { if (e.originalEvent) L.DomEvent.stop(e.originalEvent); deleteSelectedPoint(); });
+  m.addTo(draw.handles);
 }
 function deleteSelectedPoint() {
   if (!draw || draw.sel < 0) return;

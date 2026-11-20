@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="app-version" content="2026.13.173"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
+<meta name="app-version" content="2026.13.174"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp https://tile.openstreetmap.org; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cyberjapandata.gsi.go.jp https://msearch.gsi.go.jp; media-src 'self'; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><!-- 読み込み先の制限（改善案C1）：スクリプトは自分のサイトのファイルだけ。宛先は自分のサイト・GAS・国土地理院・Googleフォントだけ（地図の画像は OpenStreetMap も）。版の確かめが最初の1,024バイトを読むので、app-version より下に置く -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>区域マップ</title>
@@ -449,6 +449,7 @@ body.focusmode header.top,body.focusmode nav.tabs{display:none}
 .cardbar .barhead p{font-size:15px;line-height:1.35}
 .cardbar.mini .progress{margin-bottom:0}
 .dv{width:26px;height:26px;border-radius:50%;background:#fff;border:4px solid var(--draw);box-shadow:0 1px 3px #0006}
+.dvdel{width:36px;height:36px;border-radius:50%;background:#B42318;color:#fff;border:2px solid #fff;box-shadow:0 1px 4px #0007;font-size:22px;font-weight:700;line-height:1;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
 .dv.first{width:26px;height:26px;border-width:6px}
 .dv.snapped{border-color:var(--terr);background:#DDF1EA}
 .dv.sel{background:var(--draw);border-color:#fff;box-shadow:0 0 0 4px var(--draw),0 1px 3px #0006}
