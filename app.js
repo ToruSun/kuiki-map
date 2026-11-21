@@ -2845,7 +2845,7 @@ function terrStats(t, sinceMs) {
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
   { v: '2026.13.178', items: [
-    ['係', '区域カード（S-12）の印刷で、地図に OSM（建物や店の名前がくわしい地図）をえらべるようになりました。OpenStreetMap の決まりで、一度に8区域までです。']
+    ['係', '区域カード（S-12）の印刷で、地図に OSM（建物や店の名前がくわしい地図）をえらべるようになりました。']
   ] },
   { v: '2026.13.177', items: [
     ['係', '歯車の設定の「区域係だけ」で、地図の上の「期限：入／切」ボタンも、出すか出さないかをえらべるようになりました。']

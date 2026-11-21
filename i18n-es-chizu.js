@@ -13,7 +13,6 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "個人の区域としてもらいます。": "Se recibe como territorio personal.",
 "見やすい地図": "Mapa claro",
 "地名の多い地図": "Mapa con más nombres",
-"OSM（OpenStreetMap）は建物や店の名前がくわしい地図です。配信の決まりで、一度に8区域まで印刷できます。電波のあるときだけ使えます。": "OSM (OpenStreetMap) muestra con detalle los nombres de edificios y tiendas. Por sus normas de uso, se pueden imprimir hasta 8 territorios a la vez. Solo funciona con conexión.",
 "OSM の地図は、電波のあるときだけ印刷できます": "El mapa OSM solo se puede imprimir con conexión",
 "建物や店の名前がくわしい": "Más detalle de edificios y tiendas",
 "地図の種類": "Tipo de mapa",

@@ -138,7 +138,7 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   const TILE_CACHE = 'kuiki-tiles-v1';                      // sw.js と同じ入れ物
   // OpenStreetMap：建物や店の名前がくわしい。配信の決まりで、まとめての保存（先読み）はしない＝電波のあるときだけ。
   // 圏外では、保存してある国土地理院の地図（見やすい地図）に自動で切りかえる。紙の予備（毎週の PDF）は国土地理院のまま。
-  // S-12 の印刷でも OSM をえらべるが、まとめて取らないように一度に S12_OSM_MAX 区域まで
+  // S-12 の印刷でも OSM をえらべる（係が必要な区域をえらんで印刷する）
   const TILE_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
   const KINDS = ['pale', 'std', 'osm', 'photo'];
@@ -247,7 +247,6 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   }
   /* ---- S-12 の印刷の画面：地図の種類と、目印を入れるかをえらぶ ---- */
   const S12X = { kind: null, lm: true, cur: { kind: 'pale', lm: true } };
-  const S12_OSM_MAX = 8;   // OSM の地図で一度に印刷する区域の数（OpenStreetMap の配信の決まり：まとめて取らない）
   function patchS12Sheet() {
     if (!document.getElementById('s12Back') || document.getElementById('s12kindBox')) return;
     const first = document.querySelector('#sheet [data-s12size]'); if (!first) return;
@@ -257,14 +256,12 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
         <button type="button" data-s12kind="pale" aria-pressed="${kind === 'pale'}">見やすい地図</button>
         <button type="button" data-s12kind="std" aria-pressed="${kind === 'std'}">地名の多い地図</button>
         <button type="button" data-s12kind="osm" aria-pressed="${kind === 'osm'}">OSM</button></div>
-      <p class="hint" id="s12OsmHint"${kind === 'osm' ? '' : ' hidden'}>OSM（OpenStreetMap）は建物や店の名前がくわしい地図です。配信の決まりで、一度に${S12_OSM_MAX}区域まで印刷できます。電波のあるときだけ使えます。</p>
       <label class="check"><input type="checkbox" id="s12Lm"${S12X.lm ? ' checked' : ''}>目印を入れる</label></div>`);
   }
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-s12kind]'); if (!b) return;
     S12X.kind = b.dataset.s12kind;
     $$('#s12kindBox [data-s12kind]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-    const h = document.getElementById('s12OsmHint'); if (h) h.hidden = S12X.kind !== 'osm';
   });
   document.addEventListener('change', e => { if (e.target && e.target.id === 's12Lm') S12X.lm = e.target.checked; });
 
@@ -279,15 +276,9 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   /* ---- S-12：標準地図の画像・目印・出典 ---- */
   const _printS12 = window.printS12;
   if (typeof _printS12 === 'function') {
-    window.printS12 = function (ids) {
+    window.printS12 = function () {
       const kind = S12X.kind || adminKind();
-      if (kind === 'osm') {
-        if (offline()) { toast('OSM の地図は、電波のあるときだけ印刷できます'); return Promise.resolve(); }
-        if (Array.isArray(ids) && ids.length > S12_OSM_MAX) {
-          toast(`OSM の地図は、一度に${S12_OSM_MAX}区域までです（今は${ids.length}区域）。区域をしぼるか、ほかの地図をえらんでください`);
-          return Promise.resolve();
-        }
-      }
+      if (kind === 'osm' && offline()) { toast('OSM の地図は、電波のあるときだけ印刷できます'); return Promise.resolve(); }
       S12X.cur = { kind, lm: S12X.lm };
       return _printS12.apply(this, arguments);
     };
