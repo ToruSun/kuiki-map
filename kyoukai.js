@@ -907,10 +907,17 @@
     b.className = 'btn'; b.id = 'btnSen'; b.type = 'button'; b.hidden = true;
     b.textContent = '区域の線';
     b.onclick = openMenu;
-    tools.appendChild(b);
+    const dm = $('#dmCtl'); // 「期限：入／切」（右に寄せてある）より前に置く
+    if (dm && dm.parentNode === tools) tools.insertBefore(b, dm); else tools.appendChild(b);
     syncMapEntry();
   }
-  function syncMapEntry() { const b = $('#btnSen'); if (b) b.hidden = !isAdmin(); }
+  // 区域係だけに出す。データを読む前（起動のとき）は分からないので、区域の線を描き直すたびに合わせる（schedule.js の paintDueMap から）
+  function syncMapEntry() {
+    const b = $('#btnSen'); if (!b) return;
+    let ok = false;
+    try { ok = !!Store.data && isAdmin() && !(typeof lkLocked === 'function' && lkLocked()); } catch (e) { ok = false; }
+    b.hidden = !ok;
+  }
   function openMenu() {
     if (!isAdmin()) return;
     setSheet(headHtml(null, '区域の線', '') + `
@@ -945,7 +952,7 @@
     return f ? Object.assign(f, { tol }) : { none: true, tol };
   }
   window.kyoukai = {
-    open, close, click, back, onMode, fitPoints,
+    open, close, click, back, onMode, fitPoints, syncMapEntry,
     _auto: { findIssues, planAuto, markAuto, fixAll, paint, state: S }, // ためしに動かすとき用
     active: () => typeof mode !== 'undefined' && mode === 'sen'
   };

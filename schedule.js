@@ -2035,6 +2035,7 @@ body.duemode .terr-label:not(.duelab){display:none}
     document.body.classList.add('duemode'); // ふつうの区域の札（app.js）の代わりに、ここで札を出す
     const ctl = document.getElementById('dmCtl');
     ctl.hidden = !show;
+    if (window.kyoukai && window.kyoukai.syncMapEntry) window.kyoukai.syncMapEntry(); // 地図の上の「区域の線」（区域係だけ）も合わせる
     const ts = polyTerrs().filter(t => on ? !t.dummy : true);
     const mode = dmLabelMode(ts, on);
     // 操作の枠：中身が変わったときだけ作り直す（開いている凡例が、地図を動かすたびに閉じないように）
