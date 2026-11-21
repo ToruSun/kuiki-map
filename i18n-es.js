@@ -2185,6 +2185,7 @@ window.KUIKI_I18N.es = {
 "A6（S-12と同じ・A4に4枚）": "A6 (igual que S-12 · 4 por hoja A4)",
 "短辺とじ（短い辺で綴じる）": "Encuadernado por el lado corto",
 "A5（A4に2枚・地図が大きい）": "A5 (2 por hoja A4 · mapa más grande)",
+"A4（1枚に1区域・縦横は自動）": "A4 (1 territorio por hoja · orientación automática)",
 "長辺とじ（長い辺で綴じる）": "Encuadernado por el lado largo",
 "事": "Of",
 "学": "Esc",

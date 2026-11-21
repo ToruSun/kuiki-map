@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.178';
+var APP_JS_VER = '2026.13.179';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.179', items: [
+    ['係', '区域カード（S-12）の印刷の「カードの大きさ」に、A4（1枚に1区域）を足しました。区域の形に合わせて、縦か横を自動でえらびます。']
+  ] },
   { v: '2026.13.178', items: [
     ['係', '区域カード（S-12）の印刷で、地図に OSM（建物や店の名前がくわしい地図）をえらべるようになりました。']
   ] },
@@ -15471,8 +15474,24 @@ function openS13Edit(tid, editId) {
 const S12_TILE = 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png';
 const S12_SIZE = {
   a6: { label: 'A6（S-12と同じ・A4に4枚）', page: 'A4 landscape', per: 4, mapW: 137, mapH: 72, kMin: 3.2, backCols: 2, font: 7.5, order: [1, 0, 3, 2], bind: '短辺とじ（短い辺で綴じる）' },
-  a5: { label: 'A5（A4に2枚・地図が大きい）', page: 'A4 portrait', per: 2, mapW: 196, mapH: 108, kMin: 2.6, backCols: 3, font: 9, order: [0, 1], bind: '長辺とじ（長い辺で綴じる）' }
+  a5: { label: 'A5（A4に2枚・地図が大きい）', page: 'A4 portrait', per: 2, mapW: 196, mapH: 108, kMin: 2.6, backCols: 3, font: 9, order: [0, 1], bind: '長辺とじ（長い辺で綴じる）' },
+  a4: { label: 'A4（1枚に1区域・縦横は自動）', page: 'A4 portrait', per: 1, mapW: 192, mapH: 246, kMin: 2.4, backCols: 3, font: 9, order: [0], bind: '長辺とじ（長い辺で綴じる）', auto: true }
 };
+/* A4：区域の形に合わせて、縦（P）か横（L）をえらぶ。紙はいつもA4縦で、横の区域はカードをまわして入れる
+   （1回の印刷に縦と横のページがまざると、ブラウザによって向きがそろわないため）。
+   両面印刷は「長辺とじ」だけでそろうように、横の区域の裏は表と逆にまわす */
+const S12_A4 = {
+  P: { mapW: 192, mapH: 246, backCols: 3 },
+  L: { mapW: 278, mapH: 160, backCols: 4 }
+};
+function s12A4Orient(pts) {
+  if (!pts.length) return 'P';
+  const xy = pts.map(p => s12Px(p[0], p[1], 18));
+  const w = Math.max(1, Math.max(...xy.map(p => p[0])) - Math.min(...xy.map(p => p[0])));
+  const h = Math.max(1, Math.max(...xy.map(p => p[1])) - Math.min(...xy.map(p => p[1])));
+  const fit = o => Math.min(S12_A4[o].mapW / w, S12_A4[o].mapH / h);
+  return fit('L') > fit('P') ? 'L' : 'P';
+}
 const S12_KCH = { lang: '外', office: '社', shop: '店', biz: '事', factory: '工', school: '学', gov: '役', police: '警', fire: '消' };
 const S12_TILES = new Map(); // 地図の画像（一度受け取ったものは、この画面を開いているあいだ使い回す）
 let s12Opt = { size: 'a6', back: true, sel: null };
@@ -15530,16 +15549,18 @@ function s12Tile(url) {
   return p;
 }
 /* 1区域ぶんの材料 */
-function s12Prep(t, S, byT) {
+function s12Prep(t, S0, byT) {
+  let S = S0, o = '';
   // 特別区域は、その条件に合う家。ふつうの区域は、特別区域で回る家（全部の部屋が特別区域）を地図に出さない（2回訪ねないように）
   let hs = isSpecial(t) ? housesOf(t.id) : (byT.get(t.id) || []), spOut = 0;
   if (!isSpecial(t)) hs = hs.filter(h => { const all = targets(h).length && targets(h).every(u => coveredBySpecial(h, u)); if (all) spOut++; return !all; });
   const poly = okPoly(t.polygon) ? t.polygon : null;
   const pts = poly || hs.map(h => [h.lat, h.lng]);
+  if (S0.auto) { o = s12A4Orient(pts); S = Object.assign({}, S0, S12_A4[o]); }
   const v = pts.length ? s12View(pts, S.mapW, S.mapH, S.kMin) : null;
   const apts = hs.filter(h => h.type === 'apt').sort((a, b) => b.lat - a.lat || a.lng - b.lng); // 北から順に番号
   const latC = pts.length ? pts.reduce((s, p) => s + p[0], 0) / pts.length : 26;
-  return { t, hs, poly, v, apts, latC, spOut, tiles: v ? s12Tiles(v) : [], nav: s12NavUrl(t, poly, hs), qrMm: S.mapW > 150 ? 17 : 14 };
+  return { t, hs, poly, v, apts, latC, spOut, S, o, tiles: v ? s12Tiles(v) : [], nav: s12NavUrl(t, poly, hs), qrMm: S.mapW > 150 ? 17 : 14 };
 }
 /* QRで開く道順：区域の線があれば、区域の中で線からいちばん遠い点（区域の札と同じ点。L字の区域でも外に出ない）。
    線のないふつうの区域は、家の平均にいちばん近い家。家が散らばる特別区域（線なし）は、1つの行き先に決められないので出さない */
@@ -15779,7 +15800,17 @@ function s12FitBacks(cards, S, sz) {
   box.remove();
   return { size: res, over };
 }
-function s12SheetsHtml(fronts, backs, S, sz) {
+function s12SheetsHtml(fronts, backs, S, sz, cards) {
+  if (S.auto) {
+    let out = '';
+    fronts.forEach((f, i) => {
+      const o = (cards && cards[i] && cards[i].o) || 'P';
+      const one = (h, rot) => `<div class="s12sheet a4 a4${o}">${o === 'L' ? `<div class="s12rot ${rot}">${h}</div>` : h}</div>`;
+      out += one(f, 'f');
+      if (backs) out += one(backs[i], 'b');
+    });
+    return out;
+  }
   const blank = '<div class="s12card blank"></div>';
   const marks = '<i class="cm v t"></i><i class="cm v b"></i><i class="cm h l"></i><i class="cm h r"></i>';
   let out = '';
@@ -15827,14 +15858,20 @@ async function printS12Run(ids, sz, back) {
   const fronts = cards.map(c => s12FrontHtml(c, tileUrl, stamp));
   let backs = null, over = [];
   if (back) {
-    const fit = s12FitBacks(cards, S, sz);
-    backs = cards.map(c => s12BackHtml(c, S, fit.size.get(c.t.id) || S.font));
-    over = fit.over.map(id => (terrById(id) || {}).no).filter(Boolean);
+    const size = new Map();
+    const groups = S.auto ? ['P', 'L'].map(o => [cards.filter(c => c.o === o), 'a4 a4' + o]) : [[cards, sz]];
+    groups.forEach(([cs, cls]) => {
+      if (!cs.length) return;
+      const fit = s12FitBacks(cs, cs[0].S, cls);
+      fit.size.forEach((v, k) => size.set(k, v));
+      over = over.concat(fit.over.map(id => (terrById(id) || {}).no).filter(Boolean));
+    });
+    backs = cards.map(c => s12BackHtml(c, c.S, size.get(c.t.id) || S.font));
   }
-  printDoc(`<div class="s12doc">${s12SheetsHtml(fronts, backs, S, sz)}</div>`, false, `@page{size:${S.page};margin:0}`);
+  printDoc(`<div class="s12doc">${s12SheetsHtml(fronts, backs, S, sz, cards)}</div>`, false, `@page{size:${S.page};margin:0}`);
   const warn = [];
   if (bad) warn.push(`地図の画像${bad}枚を受け取れませんでした。地図が欠けていたら、もう一度印刷してください`);
-  if (over.length) warn.push(`区域${over.join('・')}は、裏面に部屋が入りきりませんでした。大きさをA5にしてください`);
+  if (over.length) warn.push(`区域${over.join('・')}は、裏面に部屋が入りきりませんでした。` + (sz === 'a6' ? '大きさをA5かA4にしてください' : sz === 'a5' ? '大きさをA4にしてください' : '文字がいちばん小さくなっています'));
   if (warn.length) setTimeout(() => toast(warn.join('。')), 3800);
 }
 function openS12() {
