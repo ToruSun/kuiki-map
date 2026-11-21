@@ -915,14 +915,14 @@
   function syncMapEntry() {
     const b = $('#btnSen'); if (!b) return;
     let ok = false;
-    try { ok = !!Store.data && isAdmin() && !(typeof lkLocked === 'function' && lkLocked()); } catch (e) { ok = false; }
+    try { ok = !!Store.data && isAdmin() && !(typeof lkLocked === 'function' && lkLocked()) && !(typeof UI !== 'undefined' && UI.senBtn === 'off'); } catch (e) { ok = false; } // UI.senBtn：歯車の設定「区域係だけ」で出さないにできる
     b.hidden = !ok;
   }
   function openMenu() {
     if (!isAdmin()) return;
     setSheet(headHtml(null, '区域の線', '') + `
       <button class="btn primary block" id="smNew">＋ 新しい区域の線を引く</button>
-      <button class="btn block" id="smFix">区域の線を直す（形・となりに合わせる・分ける・1つにする）</button>
+      <button class="btn block" id="smFix">区域の線を直す</button>
       <button class="btn block" id="smCheck">全部の区域のすき間・重なりを調べる</button>
       <button class="btn block" data-close>やめる</button>`);
     $('#smNew').onclick = () => { closeSheet(); startDraw(null); };

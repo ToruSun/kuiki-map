@@ -172,14 +172,14 @@
     // 使う機能：奉仕時間・（タイマー）・再訪問だけを、「機能をふやす」の中に入れる
     const featH = kids.find(el => h3(el) === '使う機能');
     if (featH) {
-      const keep = [], drop = [];
-      let inKeep = true, on = false;
+      const keep = [], drop = [], adm = []; // adm：「区域係だけ」の見出しと設定（かんたんでも、たたまずに出す）
+      let inKeep = true, inAdm = false, on = false;
       for (const el of kids) {
         if (el === featH) { on = true; continue; }
         if (!on) continue;
         if (el.id === 'uiReset') break;
-        if (el.tagName === 'H3') { inKeep = false; drop.push(el); continue; }
-        (inKeep ? keep : drop).push(el);
+        if (el.tagName === 'H3') { inKeep = false; inAdm = h3(el) === '区域係だけ'; (inAdm ? adm : drop).push(el); continue; }
+        (inKeep ? keep : inAdm ? adm : drop).push(el);
       }
       drop.forEach(e => e.remove());
       const det = document.createElement('details');
@@ -188,6 +188,7 @@
       det.innerHTML = '<summary>機能をふやす</summary>';
       keep.forEach(e => det.appendChild(e));
       featH.replaceWith(det);
+      adm.reduce((prev, e) => { prev.after(e); return e; }, det);
       det.addEventListener('toggle', () => { kOpen = det.open; });
     }
   }
