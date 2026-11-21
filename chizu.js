@@ -137,7 +137,8 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   const TILE_STD = 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png';
   const TILE_CACHE = 'kuiki-tiles-v1';                      // sw.js と同じ入れ物
   // OpenStreetMap：建物や店の名前がくわしい。配信の決まりで、まとめての保存（先読み）はしない＝電波のあるときだけ。
-  // 圏外では、保存してある国土地理院の地図（見やすい地図）に自動で切りかえる。紙の予備・S-12 は国土地理院のまま
+  // 圏外では、保存してある国土地理院の地図（見やすい地図）に自動で切りかえる。紙の予備（毎週の PDF）は国土地理院のまま。
+  // S-12 の印刷でも OSM をえらべる（係が必要な区域をえらんで印刷する）
   const TILE_OSM = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
   const KINDS = ['pale', 'std', 'osm', 'photo'];
@@ -253,7 +254,8 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
     first.parentNode.insertAdjacentHTML('afterend', `<div id="s12kindBox"><p class="q">地図</p>
       <div class="seg" role="group" aria-label="地図の種類">
         <button type="button" data-s12kind="pale" aria-pressed="${kind === 'pale'}">見やすい地図</button>
-        <button type="button" data-s12kind="std" aria-pressed="${kind === 'std'}">地名の多い地図</button></div>
+        <button type="button" data-s12kind="std" aria-pressed="${kind === 'std'}">地名の多い地図</button>
+        <button type="button" data-s12kind="osm" aria-pressed="${kind === 'osm'}">OSM</button></div>
       <label class="check"><input type="checkbox" id="s12Lm"${S12X.lm ? ' checked' : ''}>目印を入れる</label></div>`);
   }
   document.addEventListener('click', e => {
@@ -275,12 +277,14 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
   const _printS12 = window.printS12;
   if (typeof _printS12 === 'function') {
     window.printS12 = function () {
-      S12X.cur = { kind: S12X.kind || adminKind(), lm: S12X.lm };
+      const kind = S12X.kind || adminKind();
+      if (kind === 'osm' && offline()) { toast('OSM の地図は、電波のあるときだけ印刷できます'); return Promise.resolve(); }
+      S12X.cur = { kind, lm: S12X.lm };
       return _printS12.apply(this, arguments);
     };
   }
   window.s12Tiles = function (v) {
-    const tpl = S12X.cur.kind === 'std' ? TILE_STD : S12_TILE;
+    const tpl = S12X.cur.kind === 'std' ? TILE_STD : S12X.cur.kind === 'osm' ? TILE_OSM : S12_TILE;
     const out = [];
     for (let tx = Math.floor(v.x / 256); tx <= Math.floor((v.x + v.w) / 256); tx++) {
       for (let ty = Math.floor(v.y / 256); ty <= Math.floor((v.y + v.h) / 256); ty++) {
@@ -295,6 +299,7 @@ body.simple .lmnear,body.simple .topen .tname small.lmnear{font-size:16px}
       let s = _s12MapSvg.apply(this, arguments);
       try {
         if (S12X.cur.kind === 'std') s = s.replace('出典：国土地理院（淡色地図）', '出典：国土地理院（標準地図）');
+        if (S12X.cur.kind === 'osm') s = s.replace('出典：国土地理院（淡色地図）', '© OpenStreetMap contributors');
         if (S12X.cur.lm && c && c.v) s = s12Landmarks(s, c);
       } catch (e) { console.error(e); }
       return s;
