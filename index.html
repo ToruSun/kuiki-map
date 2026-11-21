@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="app-version" content="2026.13.178"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
+<meta name="app-version" content="2026.13.179"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp https://tile.openstreetmap.org; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cyberjapandata.gsi.go.jp https://msearch.gsi.go.jp https://tile.openstreetmap.org; media-src 'self'; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><!-- 読み込み先の制限（改善案C1）：スクリプトは自分のサイトのファイルだけ。宛先は自分のサイト・GAS・国土地理院・Googleフォントだけ（地図の画像は OpenStreetMap も。S-12 の印刷で OSM の画像を受け取るので connect-src にも）。版の確かめが最初の1,024バイトを読むので、app-version より下に置く -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>区域マップ</title>
@@ -636,32 +636,37 @@ body.strong .pin.st-plain{border-width:4px}
 .s12sheet .cm{position:absolute;background:#000}
 .s12sheet .cm.v{width:.2mm;height:5mm;left:148.5mm}.s12sheet .cm.v.t{top:0}.s12sheet .cm.v.b{bottom:0}
 .s12sheet.a5 .cm.v{display:none}
+.s12sheet.a4{width:210mm;height:296.5mm;grid-template-columns:210mm;grid-template-rows:296.5mm}.s12sheet.a4 .cm{display:none}
+.s12rot{position:absolute;left:0;top:0;width:296.5mm;height:210mm;display:grid;transform-origin:0 0}
+.s12rot.f{transform:translate(210mm,0) rotate(90deg)}.s12rot.b{transform:translate(0,296.5mm) rotate(-90deg)}
+.s12measure.a4P{width:210mm}.s12measure.a4L{width:296.5mm}
 .s12sheet .cm.h{height:.2mm;width:5mm;top:104.75mm}.s12sheet.a5 .cm.h{top:148.25mm}
 .s12sheet .cm.h.l{left:0}.s12sheet .cm.h.r{right:0}
 .s12card{box-sizing:border-box;padding:5mm 5.75mm 3.5mm;display:flex;flex-direction:column;overflow:hidden;font-size:7.5pt;line-height:1.3;color:#000}
-.a5 .s12card{padding:7mm 7mm 5mm;font-size:9pt}
+.a5 .s12card,.a4 .s12card{padding:7mm 7mm 5mm;font-size:9pt}
+.a4 .s12card{padding:8mm 9mm 6mm}
 .s12card p{margin:0}
 .s12ttl{text-align:center;font-weight:700;font-size:10pt;letter-spacing:.12em;margin:0 0 1mm!important}
-.a5 .s12ttl{font-size:12.5pt}
+.a5 .s12ttl,.a4 .s12ttl{font-size:12.5pt}
 .s12row{display:flex;align-items:flex-end;gap:1.5mm;margin:0 0 1.5mm;font-weight:700;font-size:8.5pt}
-.a5 .s12row{font-size:10.5pt}
+.a5 .s12row,.a4 .s12row{font-size:10.5pt}
 .s12row .ln{flex:1;border-bottom:.25mm dotted #000;font-weight:400;padding:0 1mm;min-height:1.1em;white-space:nowrap;overflow:hidden}
 .s12row .ln.no{flex:0 0 24mm;text-align:center;font-weight:700;font-size:10.5pt}
 .s12map{flex:none;border:.25mm solid #000;overflow:hidden;background:#F4F4F2}
-.a6 .s12map{width:137mm;height:72mm}.a5 .s12map{width:196mm;height:108mm}
+.a6 .s12map{width:137mm;height:72mm}.a5 .s12map{width:196mm;height:108mm}.a4P .s12map{width:192mm;height:246mm}.a4L .s12map{width:278mm;height:160mm}
 .s12svg{display:block;width:100%;height:100%;font-family:inherit}
 .s12none{display:flex;align-items:center;justify-content:center;height:100%;color:#333}
 .s12ft{display:flex;justify-content:space-between;align-items:center;gap:2mm;margin:.9mm 0 0!important;font-size:6.2pt;white-space:nowrap}
-.a5 .s12ft{font-size:7.8pt}
+.a5 .s12ft,.a4 .s12ft{font-size:7.8pt}
 .s12ft svg{width:2.5mm;height:2.5mm;vertical-align:-.45mm;margin:0 .3mm 0 .8mm}
 .s12ft .lg{overflow:hidden}
 .s12note{margin:.5mm 0 0!important;font-size:6.2pt;font-weight:700}
-.a5 .s12note{font-size:7.8pt}
+.a5 .s12note,.a4 .s12note{font-size:7.8pt}
 .s12bh{display:flex;align-items:baseline;gap:2.5mm;border-bottom:.3mm solid #000;padding:0 0 .8mm;margin:0 0 1.5mm!important;font-size:9.5pt}
-.a5 .s12bh{font-size:11pt}
+.a5 .s12bh,.a4 .s12bh{font-size:11pt}
 .s12bh .r{margin-left:auto;font-size:.75em}
 .s12apts{overflow:hidden;column-fill:auto;column-gap:3mm;line-height:1.35}
-.a6 .s12apts{height:81mm}.a5 .s12apts{height:120mm}
+.a6 .s12apts{height:81mm}.a5 .s12apts{height:120mm}.a4P .s12apts{height:258mm}.a4L .s12apts{height:172mm}
 .s12apts .ab{margin:0 0 1.4mm}
 .s12apts .an{font-weight:700;break-after:avoid;page-break-after:avoid;margin:0 0 .4mm!important}
 .s12apts .an i{display:inline-block;min-width:1.3em;padding:0 .3em;margin-right:.4em;background:#263238;color:#fff;border-radius:.3em;text-align:center;font-style:normal}
