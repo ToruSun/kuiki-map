@@ -2031,7 +2031,7 @@ body.duemode .terr-label:not(.duelab){display:none}
     if (!dueLayer) dueLayer = L.layerGroup().addTo(map);
     dueLayer.clearLayers();
     // show：「期限：入／切」のボタンを出すか（係だけ）。番号の札は全員に出す
-    const show = isAdmin() && !lkLocked(), on = show && dmState.on;
+    const show = isAdmin() && !lkLocked() && !(typeof UI !== 'undefined' && UI.dueBtn === 'off'), on = show && dmState.on; // UI.dueBtn：歯車の設定「区域係だけ」で出さないにできる（出さないときは色分けもしない）
     document.body.classList.add('duemode'); // ふつうの区域の札（app.js）の代わりに、ここで札を出す
     const ctl = document.getElementById('dmCtl');
     ctl.hidden = !show;

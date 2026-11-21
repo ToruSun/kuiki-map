@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.176';
+var APP_JS_VER = '2026.13.177';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.177', items: [
+    ['係', '歯車の設定の「区域係だけ」で、地図の上の「期限：入／切」ボタンも、出すか出さないかをえらべるようになりました。']
+  ] },
   { v: '2026.13.176', items: [
     ['係', '歯車の設定の「区域係だけ」で、地図の上の「区域の線」ボタンを出すか出さないかをえらべるようになりました。「区域の線」のメニューの「区域の線を直す」を短くしました。']
   ] },
@@ -10686,7 +10689,7 @@ function nameZoomSlider(key) {
     <p class="nzends"><span>← 縮めても出す</span><span>拡大したときだけ →</span></p></div>`;
 }
 const ICONS = ['区', '家', '図', '心', '🏠', '🗺️', '📖', '🚪', '✅', '⭐', '🚶', '☀️'];
-const UI_DEFAULT = { fTime: 'off', fTimer: 'on', hello: 'on', fFollow: 'off', todayOn: 'off', cProg: 'off', cReco: 'off', cSlot: 'on', aptName: 'off', fcName: 'off', nameScope: 'sel', aptZoom: 0, fcZoom: 0, calList: 'upcoming', terrColor: 'theme', terrWidth: 'normal', mapRot: 'on', mode: 'simple', size: 'normal', pct: 0, icon: '区', iconText: '', appName: '区域マップ', splash: 'on', splashSec: 1.8, guide: 'auto', font: 'ud', theme: 'standard', custom: '', contrast: 'normal', density: 'normal', hints: 'show', start: 'home', pin: 'normal', base: 'pale', senBtn: 'on' };
+const UI_DEFAULT = { fTime: 'off', fTimer: 'on', hello: 'on', fFollow: 'off', todayOn: 'off', cProg: 'off', cReco: 'off', cSlot: 'on', aptName: 'off', fcName: 'off', nameScope: 'sel', aptZoom: 0, fcZoom: 0, calList: 'upcoming', terrColor: 'theme', terrWidth: 'normal', mapRot: 'on', mode: 'simple', size: 'normal', pct: 0, icon: '区', iconText: '', appName: '区域マップ', splash: 'on', splashSec: 1.8, guide: 'auto', font: 'ud', theme: 'standard', custom: '', contrast: 'normal', density: 'normal', hints: 'show', start: 'home', pin: 'normal', base: 'pale', senBtn: 'on', dueBtn: 'on' };
 /* [濃い色（上の帯・主なボタン）, アクセント（線・区域番号など）, うすい色（選んでいる背景）, 名前] */
 const THEMES = {
   standard: ['#17324D', '#0E7C66', '#E5F2EE', '標準'],
@@ -11047,7 +11050,8 @@ function openUiSheet() {
         ${UI.fcName === 'on' ? nameZoomSlider('fcZoom') : ''}</div>
       ${UI.aptName === 'on' || UI.fcName === 'on' ? `<div class="featrow"><p><b>名前を出す範囲</b><small>「全体」にすると、区域をえらんでいるときも、ほかの区域の建物の名前が薄く出ます</small></p>${seg('nameScope', [['sel', 'えらんだ区域だけ'], ['all', '地図に見えている全体']], UI.nameScope || 'sel')}</div>` : ''}
       ${isAdmin() ? `<h3 class="sub">区域係だけ</h3>
-      <div class="featrow"><p><b>地図の上の「区域の線」ボタン</b><small>新しい区域の線を引く・区域の線を直す・すき間と重なりを調べる、の入口です（出さなくても、係の画面の「区域」とカルテから入れます）</small></p>${seg('senBtn', [['on', '出す'], ['off', '出さない']], UI.senBtn || 'on')}</div>` : ''}
+      <div class="featrow"><p><b>地図の上の「区域の線」ボタン</b><small>新しい区域の線を引く・区域の線を直す・すき間と重なりを調べる、の入口です（出さなくても、係の画面の「区域」とカルテから入れます）</small></p>${seg('senBtn', [['on', '出す'], ['off', '出さない']], UI.senBtn || 'on')}</div>
+      <div class="featrow"><p><b>地図の上の「期限：入／切」ボタン</b><small>区域を返す期限で色分けして、番号の枠からカルテを開けます（出さないときは、色分けもしません）</small></p>${seg('dueBtn', [['on', '出す'], ['off', '出さない']], UI.dueBtn || 'on')}</div>` : ''}
       <h3 class="sub">奉仕の予定</h3>
       <div class="featrow"><p><b>予定の一覧</b><small>ホームの「奉仕の予定」で、カレンダーの下の一覧に出す予定</small></p>${seg('calList', [['upcoming', '今日から'], ['all', 'その月すべて']], UI.calList || 'upcoming')}</div>
       <h3 class="sub">家の画面に出すもの</h3>
@@ -11149,6 +11153,7 @@ function openUiSheet() {
       uiSave(); applyUi();
       if (k === 'base') setBase(v);
       if (k === 'senBtn' && window.kyoukai && window.kyoukai.syncMapEntry) window.kyoukai.syncMapEntry(); // 地図の上の「区域の線」
+      if (k === 'dueBtn') renderTerrs(); // 地図の上の「期限：入／切」と色分け
       if (k === 'cProg' || k === 'cReco') renderAll();
       if (k === 'terrColor' || k === 'terrWidth') renderTerrs();
       if (k === 'mapRot') applyRotSetting();
