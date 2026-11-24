@@ -32,6 +32,14 @@
 .gb-tabs button.on{border-color:var(--brand-ink);background:#E3ECF6;font-weight:700}
 .gb-key{width:100%;font:15px/1.4 ui-monospace,monospace;padding:10px;border:2px solid var(--brand-ink);border-radius:10px;background:#F5F8FC;word-break:break-all}
 .gb-src{font-size:14px;color:var(--ink2);margin:2px 0}
+.gb-mapbar{position:absolute;left:10px;right:10px;bottom:22px;z-index:700;background:var(--paper);border:3px solid var(--brand-ink);border-radius:var(--r);padding:10px 12px;box-shadow:0 4px 14px #0005}
+.gb-mapbar .t{font-size:15px;line-height:1.4;margin:0 36px 8px 0}
+.gb-mapbar .t b{font-size:16px}
+.gb-mapbar .acts{display:flex;flex-wrap:wrap;gap:6px}
+.gb-mapbar .acts .btn{flex:1 1 auto;min-height:48px}
+.gb-mapbar .x{position:absolute;top:6px;right:6px;width:40px;height:40px;border-radius:50%;border:2px solid var(--line);background:#fff;font-size:20px;line-height:1;cursor:pointer}
+.gb-pin-h{background:var(--brand-ink,#1d3a5a);color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
+.gb-pin-b{background:#9A5B12;color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
 `;
   document.head.appendChild(css);
 
@@ -86,13 +94,26 @@
     return { b, h: null, how: 'make' };
   }
 
-  async function load() {
-    try { st.data = await api('gb_list', {}, { timeout: 45000 }); }
-    catch (e) { st.data = null; toast(e && e.code === 'unknown_action' ? 'サーバーがまだ新しくなっていません' : '読み込めませんでした。あとでもう一度ためしてください'); }
+  async function load(quiet) {
+    try { st.data = await api('gb_list', {}, { timeout: 45000 }); return true; }
+    catch (e) {
+      if (!quiet || !st.data) { st.data = null; toast(e && e.code === 'unknown_action' ? 'サーバーがまだ新しくなっていません' : '読み込めませんでした。あとでもう一度ためしてください'); }
+      return false;
+    }
+  }
+  /* うしろで読み直す。一覧の画面のままなら、変わったときだけ描き直す（見ていた所はそのまま） */
+  async function refresh() {
+    const before = JSON.stringify(st.data);
+    if (!await load(true)) return;
+    if (JSON.stringify(st.data) === before) return;
+    if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); }
   }
 
+  /* 一覧の画面：前に読んだものをすぐ出し、うしろで読み直す */
   async function open() {
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
+    mapOff();
+    if (st.data) { render(); refresh(); return; }
     setSheet(headHtml(null, '外の一覧とつなぐ', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
     render();
@@ -131,7 +152,8 @@
       <button type="button" class="btn block" data-close>閉じる</button>`);
     const S = $('#sheet');
     $$('[data-gbt]', S).forEach(x => x.onclick = () => { st.tab = x.dataset.gbt; sheetKeep = true; render(); });
-    $$('[data-gb]', S).forEach(x => x.onclick = () => openBld(x.dataset.gb));
+    $$('[data-gb]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openBld(x.dataset.gb); });
+    if (st.restore != null) { S.scrollTop = st.restore; st.restore = null; }
     const qi = $('#gbQ');
     let tm = null;
     qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { st.q = qi.value; sheetKeep = true; render(); const n = $('#gbQ'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
@@ -212,13 +234,94 @@
     };
   }
 
-  async function link(items, msg) {
-    try {
-      const r = await api('gb_link', { items }, { timeout: 60000 });
-      toast(r.bad && r.bad.length ? `${r.n}棟を結びました（${r.bad.length}棟は結べませんでした）` : msg);
-      if (r.made && r.made.length && typeof flush === 'function') flush(true); // サーバーで作ったアパートを読みにいく
-    } catch (e) { toast('結べませんでした。あとでもう一度ためしてください'); }
-    await load(); sheetKeep = true; render();
+  /* 結ぶ・外す。新しく置くとき以外は、手元の一覧をすぐ直して先へ進み、サーバーへはうしろで送る
+     next：手元を直したあとにすること（なければ一覧の画面） */
+  async function link(items, msg, next) {
+    const go = next || (() => { st.restore = st.back; sheetKeep = true; render(); });
+    if (items.some(it => it.make)) {
+      try {
+        const r = await api('gb_link', { items }, { timeout: 60000 });
+        toast(r.bad && r.bad.length ? `${r.n}棟を結びました（${r.bad.length}棟は結べませんでした）` : msg);
+        if (r.made && r.made.length && typeof flush === 'function') flush(true); // サーバーで作ったアパートを読みにいく
+      } catch (e) { toast('結べませんでした。あとでもう一度ためしてください'); }
+      await load(true); go(); return;
+    }
+    items.forEach(it => {
+      const b = (st.data.blds || []).find(x => x.id === it.id);
+      if (b) Object.assign(b, { hid: it.skip ? '' : (it.hid || ''), skip: !!it.skip, tmp: !!(it.tmp && it.hid && !it.skip) });
+    });
+    toast(msg);
+    go();
+    api('gb_link', { items }, { timeout: 60000 })
+      .then(r => { if (r.bad && r.bad.length) { toast(`${r.bad.length}棟は結べませんでした`); refresh(); } })
+      .catch(() => { toast('結べませんでした。あとでもう一度ためしてください'); refresh(); });
+  }
+
+  /* ---------- 地図で見る：結んだ家（または候補）と、一覧の位置に印をつけ、下に戻るボタンを出す ---------- */
+  let mapLayer = null, mapBar = null;
+  function mapOff() {
+    if (mapLayer) { try { map.removeLayer(mapLayer); } catch (e) { /* もう無い */ } mapLayer = null; }
+    if (mapBar) { mapBar.remove(); mapBar = null; }
+  }
+  const nextTmp = after => (st.data.blds || []).find(x => x.id !== after && stOf(x) === 'tmp');
+  function showOnMap(b, h) {
+    if (typeof L === 'undefined' || typeof map === 'undefined' || !h || h.lat == null) return;
+    mapOff();
+    if (document.getElementById('sheet') && !$('#sheet').hidden) closeSheet();
+    showView('map');
+    const isCur = b.hid === h.id, tmp = isCur && stOf(b) === 'tmp';
+    const hp = [h.lat, h.lng], bp = hasPos(b) ? [b.lat, b.lng] : null;
+    const m = bp ? Math.round(dist(b.lat, b.lng, h.lat, h.lng)) : null;
+    const tip = (cls, t) => ({ permanent: true, direction: 'top', offset: [0, -14], className: cls, opacity: 1 });
+    mapLayer = L.layerGroup();
+    if (bp && m > 3) {
+      L.polyline([bp, hp], { color: '#9A5B12', weight: 3, dashArray: '6 6', interactive: false }).addTo(mapLayer);
+      L.circleMarker(bp, { radius: 10, color: '#9A5B12', weight: 3, dashArray: '4 4', fillColor: '#FFF4E5', fillOpacity: .7 })
+        .bindTooltip('一覧の位置', tip('gb-pin-b')).addTo(mapLayer);
+    }
+    L.circleMarker(hp, { radius: 20, color: '#1d3a5a', weight: 5, fillColor: '#5B8DEF', fillOpacity: .18 })
+      .bindTooltip(esc(isCur ? '結んだ家' : '候補') + '：' + esc(h.label || '名前のない家'), tip('gb-pin-h')).addTo(mapLayer);
+    mapLayer.addTo(map);
+    // 地図の画面に切りかえた直後は大きさが決まっていないので、少し待って寄せ、もう一度寄せ直す（下の帯にかくれないよう余白をとる）
+    const fit = () => {
+      try { map.invalidateSize(); } catch (e) { /* そのまま */ }
+      if (bp && m > 15) map.fitBounds(L.latLngBounds([bp, hp]), { paddingTopLeft: [50, 150], paddingBottomRight: [50, 230], maxZoom: 19 });
+      else map.setView(hp, 19);
+    };
+    setTimeout(fit, 200);
+    setTimeout(fit, 700);
+    const host = document.getElementById('map').parentElement;
+    mapBar = document.createElement('div');
+    mapBar.className = 'gb-mapbar';
+    mapBar.innerHTML = `<button type="button" class="x" data-a="x" aria-label="閉じる">×</button>
+      <p class="t">一覧：<b>${esc(b.name || '（名前なし）')}</b><br>${isCur ? (tmp ? '仮で結んだ家' : '結んだ家') : '候補'}：<b>${esc(h.label || '名前のない家')}</b>${m != null ? `（一覧の位置から ${m}m）` : ''}</p>
+      <div class="acts">
+        ${tmp ? '<button type="button" class="btn primary" data-a="ok">これでよい</button>' : ''}
+        ${!isCur ? '<button type="button" class="btn primary" data-a="link">ここに結ぶ</button>' : ''}
+        ${h.type === 'apt' && typeof openBuilding === 'function' ? '<button type="button" class="btn" data-a="room">部屋</button>' : ''}
+        <button type="button" class="btn" data-a="bld">ほかを選ぶ</button>
+        <button type="button" class="btn" data-a="list">一覧へ</button>
+      </div>`;
+    host.appendChild(mapBar);
+    mapBar.onclick = async e => {
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      const act = a.dataset.a;
+      if (act === 'x') { mapOff(); return; }
+      if (act === 'room') { openBuilding(h.id); return; }
+      if (act === 'bld') { mapOff(); openBld(b.id); return; }
+      if (act === 'list') { mapOff(); st.restore = st.back; open(); return; }
+      if (act === 'ok') {
+        const n = nextTmp(b.id);
+        await link([{ id: b.id, hid: b.hid }], n ? '仮を外しました。次の建物です' : '仮を外しました。仮の建物はもうありません', () => {
+          if (n && houseById(n.hid)) showOnMap(n, houseById(n.hid)); else { mapOff(); open(); }
+        });
+        return;
+      }
+      if (act === 'link') {
+        if (h.type !== 'apt' && !await ask('この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。よろしいですか？', { ok: '結ぶ' })) return;
+        await link([{ id: b.id, hid: h.id }], '結びました。次の取り込みで記録が入ります', () => showOnMap((st.data.blds || []).find(x => x.id === b.id) || b, h));
+      }
+    };
   }
 
   function openBld(id) {
@@ -231,8 +334,9 @@
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}${hasPos(b) ? '' : '・場所が分かりません（一覧のリンクか住所を確かめてください）'}</p>
       ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
         <button type="button" class="btn primary block" id="gbOkTmp">これでよい（仮を外す）</button>
+        <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る（一覧の位置と並べて）</button>` : ''}
+      ${s === 'ok' && cur ? `<div class="notice">結んだ家：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）</div>
         <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る</button>` : ''}
-      ${s === 'ok' && cur ? `<div class="notice">結んだ家：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）</div>` : ''}
       ${s === 'lost' ? '<div class="notice warn">結んだ家が、もうアプリにありません。結び直してください。</div>' : ''}
       ${s === 'skip' ? '<div class="notice">取り込まない建物です。</div>' : ''}
       ${s === 'gone' ? '<div class="notice">今の一覧にはありません（前に入れた記録は残っています）。</div>' : ''}
@@ -251,15 +355,10 @@
       if (h && h.type !== 'apt' && !await ask('この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。よろしいですか？', { ok: '結ぶ' })) return;
       await link([{ id: b.id, hid: x.dataset.gbl }], '結びました。次の取り込みで記録が入ります');
     });
-    $$('[data-gbmap]', S).forEach(x => x.onclick = () => {
-      const h = houseById(x.dataset.gbmap); if (!h) return;
-      closeSheet(); showView('map');
-      setTimeout(() => { map.setView([h.lat, h.lng], 18); if (h.type === 'apt' && typeof openBuilding === 'function') openBuilding(h.id); }, 150);
-    });
+    $$('[data-gbmap]', S).forEach(x => x.onclick = () => showOnMap(b, houseById(x.dataset.gbmap)));
     if ($('#gbOkTmp')) $('#gbOkTmp').onclick = async () => {
-      await link([{ id: b.id, hid: b.hid }], '仮を外しました');
-      const next = (st.data.blds || []).find(x => stOf(x) === 'tmp'); // 続けて次の仮へ
-      if (next) openBld(next.id);
+      const n = nextTmp(b.id); // 続けて次の仮へ
+      await link([{ id: b.id, hid: b.hid }], n ? '仮を外しました。次の建物です' : '仮を外しました', n ? () => openBld(n.id) : null);
     };
     if ($('#gbMake')) $('#gbMake').onclick = async () => {
       if (!await ask(`「${b.name}」の場所に、新しいアパートを置いて結びます。近くに同じ建物があるときは、そちらを結んでください。よろしいですか？`, { ok: '置いて結ぶ' })) return;
@@ -272,7 +371,7 @@
     if ($('#gbUnlink')) $('#gbUnlink').onclick = async () => {
       await link([{ id: b.id, hid: '' }], '結びつきを外しました（入れた記録は残っています）');
     };
-    $('#gbBack').onclick = () => render();
+    $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
   }
 
   window.gaibu = { open };
