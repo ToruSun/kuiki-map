@@ -14,7 +14,7 @@
      結びつけた家がアパートでなければ、アパートにする（仮の家の印は外す）
    ・オートロック：送られた建物が lock なら、アパートに印をつける（外さない）
    ・データ：シート「gaibu」（id＝元~建物。同期の記録 journal には乗せない。係の画面だけが gb_list で読む）
-       { src, k, label, name, addr, lat, lng, lock, n: 部屋数, nv: 記録数, hid: 家id, skip, gone, at: 最後に届いた日時, res: 最後の結果 }
+       { src, k, label, name, addr, lat, lng, lock, n: 部屋数, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果 }
 
    送る形（action: 'gb_sync'。token の代わりに key）：
      { key, src: '元（英数字12字まで）', label: '一覧の名前', dry: true で確かめだけ,
@@ -226,7 +226,7 @@ function gbSyncCore_(src, label, blds, dry) {
       const o = out[i];
       ups.push([id, {
         src: src, k: b.k, label: label, name: b.name, addr: b.addr, lat: b.lat, lng: b.lng, lock: b.lock,
-        n: b.rooms.length, nv: nv, hid: d.hid || '', skip: !!d.skip, at: nowIso,
+        n: b.rooms.length, nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso,
         res: { st: o.st, add: o.add, upd: o.upd, del: o.del, dup: o.dup }
       }]);
     });
@@ -292,7 +292,7 @@ function gbList_() {
   return { ok: true, key: { has: !!sp[GB_KEY_PROP], at: sp[GB_KEY_AT] || '' }, srcs: srcs, blds: blds };
 }
 
-/* items: [{ id: '元~建物', hid: '家id' または '', skip: true|false, make: true（建物の場所に新しいアパートを置く）, terrId }]（まとめて送れる）
+/* items: [{ id: '元~建物', hid: '家id' または '', skip: true|false, make: true（建物の場所に新しいアパートを置く）, terrId, tmp: true（仮で結ぶ。あとで係が確かめる） }]（まとめて送れる）
    make：家はサーバーで作る（画面で作ると、サーバーに届くまで結べないため）。区域は画面が場所から決めて送る */
 function gbLink_(user, items) {
   if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
@@ -312,7 +312,7 @@ function gbLink_(user, items) {
       mk.push(h);
       made.push(hid);
     } else if (hid && (!ID_RE.test(hid) || !findRow_('houses', hid))) { bad.push(id); return; }
-    ups.push([id, Object.assign({}, cur.data, { hid: it.skip ? '' : hid, skip: !!it.skip })]);
+    ups.push([id, Object.assign({}, cur.data, { hid: it.skip ? '' : hid, skip: !!it.skip, tmp: !!(it.tmp && hid && !it.skip) })]);
   });
   if (mk.length) {
     const res = applyChanges_(user, { houses: { up: mk } }, {});
