@@ -56,6 +56,7 @@
       ${item('dncXl', '拒', '拒否だけ（エクセル・CSVの住所の一覧）', '住所から場所を調べて、拒否として入れます', 'one')}
       ${item('apt', '集', 'アパートだけ（アパートの一覧）', 'アパートの一覧から、建物と階ごとの部屋を登録します')}
       ${item('xlsx', '表', '区域と家（エクセル）', 'シートごとの住所の一覧から、区域の線と家の印をつくります', 'one')}
+      ${window.gaibu ? item('gaibu', '外', '外の一覧とつなぐ', 'ほかで使っている一覧の訪問の記録を、何度でも取り込みます（移行のあいだ）') : ''}
       <details class="tk-more"><summary>まとめて新しくする</summary>
         ${item('all', '⟳', '区域の線と拒否・注意をまとめて新しくする', '全区域のKMLをえらびます。今の区域の線と拒否を置きかえます（全部置きかえ）', 'multi')}
       </details>
@@ -80,6 +81,7 @@
     if (k === 'del') { openDelLines(); return; }
     if (k === 'apt') { closeSheet(); $('#adAptImp').click(); return; }
     if (k === 'special') { openSpecialSheet(null); return; }
+    if (k === 'gaibu') { if (window.gaibu) window.gaibu.open(); return; }
   }
 
   /* ---------- 区域の線を消す（家・拒否・記録は残す） ---------- */

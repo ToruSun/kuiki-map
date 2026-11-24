@@ -13,7 +13,7 @@
    ・サーバー（GAS）とのやりとり・版の確認には、手を出さない
    ・招待コード（?t=）の入ったURLは保存しない（URLの ? から後ろを消して保存する）
    ========================================================= */
-const APP_CACHE = 'kuiki-app-v179'; // v179：2026.13.179（S-12 の印刷に A4・縦横は自動）
+const APP_CACHE = 'kuiki-app-v180'; // v180：2026.13.180（外の一覧とつなぐ）
 // v176：2026.13.176（「区域の線」ボタンを出すかを設定で）
 // v175：2026.13.175（「区域の線」ボタンが開いたときに出ないのを直す）
 // v174：2026.13.174（えらんだ点の横の「×」）
@@ -67,7 +67,7 @@ const AREA_KEY = 'https://kuiki.invalid/area';
 let AREA = undefined; // [南, 西, 北, 東]。undefined＝まだ読んでいない、null＝区域がない
 const NET_WAIT_MS = 6000;
 // 圏外用に控える、アプリのファイル（新しくファイルを足したら、ここに名前を足す）
-const APP_NAMES = ['config', 'schedule', 'kantan', 'tsuzuki', 'kangaeru', 'chizu', 'apt-import', 'apt-wizard', 'apt-heya', 'naoshi', 'kyohi', 'chui', 'kml-koushin', 'help', 'douga', 'kyoukai', 'torikomi', 'tokubetsu', 'nozoku', 'i18n', 'i18n-es', 'i18n-es-chizu', 'i18n-es-kyoukai', 'i18n-es-tokubetsu', 'guruchu', 'i18n-es-guruchu', 'meibo', 'i18n-es-meibo', 'i18n-es-shikai', 'i18n-es-tenken', 'i18n-es-kaizen', 'i18n-es-osusume', 'houkoku', 'iken', 'i18n-es-houkoku', 'joukyou-graph', 'i18n-es-joukyou', 'i18n-es-shinai', 'app', 'chizu-okuru', 'heya-wake', 'app-head', 'kimari', 'gaikokugo', 'tochi-kugiri', 'michi'];
+const APP_NAMES = ['config', 'schedule', 'kantan', 'tsuzuki', 'kangaeru', 'chizu', 'apt-import', 'apt-wizard', 'apt-heya', 'naoshi', 'kyohi', 'chui', 'kml-koushin', 'help', 'douga', 'kyoukai', 'torikomi', 'gaibu', 'tokubetsu', 'nozoku', 'i18n', 'i18n-es', 'i18n-es-chizu', 'i18n-es-kyoukai', 'i18n-es-tokubetsu', 'guruchu', 'i18n-es-guruchu', 'meibo', 'i18n-es-meibo', 'i18n-es-shikai', 'i18n-es-tenken', 'i18n-es-kaizen', 'i18n-es-osusume', 'houkoku', 'iken', 'i18n-es-houkoku', 'joukyou-graph', 'i18n-es-joukyou', 'i18n-es-shinai', 'app', 'chizu-okuru', 'heya-wake', 'app-head', 'kimari', 'gaikokugo', 'tochi-kugiri', 'michi'];
 const APP_FILES = new RegExp('/(' + APP_NAMES.join('|') + ')\\.js$');
 
 /* 新しい版を入れるとき（install）：画面のファイルを先に取って、新しい控えに入れておく（M2・2026.13.102）。

@@ -159,6 +159,13 @@ function doPost(e) {
     return json_(req.action === 'home_claim' ? homeClaim_(req) : joinApi_(req));
   }
 
+  // 外の一覧からの取り込み（gaibu.gs）：招待コードではなく、取り込みの鍵で受け付ける。鍵でできるのはこれだけ
+  if (req.action === 'gb_sync') {
+    if (typeof gbSync_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
+    if (!rateOk_(req.action)) return json_({ ok: false, error: 'slow' });
+    try { return json_(gbSync_(req)); } catch (err) { console.error(err && err.stack ? err.stack : err); return json_({ ok: false, error: 'server' }); }
+  }
+
   const user = findUser_(req.token);
   if (!user) return json_({ ok: false, error: 'auth' });
   if (typeof robotBlocked_ === 'function' && robotBlocked_(user, req)) return json_({ ok: false, error: 'robot' });
@@ -194,6 +201,11 @@ function doPost(e) {
     if (req.action === 'ops' || req.action === 'ops_check' || req.action === 'ops_ck' || req.action === 'ops_log') {
       if (user.role !== 'admin') return json_({ ok: false, error: 'admin' });
       return json_(opsApi_(user, req));
+    }
+    // 区域係：外の一覧の取り込み（gaibu.gs）の建物の結びつき・鍵
+    if (String(req.action || '').indexOf('gb_') === 0) {
+      if (typeof gbApi_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
+      return json_(gbApi_(user, req));
     }
     // 区域係：エクセルの取り込みで、住所から位置を調べる（ブラウザから国土地理院に直接聞けないときだけ使う）
     if (req.action === 'geocode') {
@@ -870,7 +882,7 @@ function deviceLabel_(v) {
    数えるのは一時保存（CacheService）。ロックを使わないので、同時に来たときは少しずれるが、連打を止めるには十分。
    join_scan（共通リンクの申し込み）は、説明会で十数人が一斉に QR を読んでも断らないよう30回（点検③P7）。
    申し込み中の端末の数は、別に PENDING_MAX（30台）で止めている */
-const RATE_PER_MIN = { join_scan: 30, join_hint: 30, join_status: 900, home_claim: 20 };
+const RATE_PER_MIN = { join_scan: 30, join_hint: 30, join_status: 900, home_claim: 20, gb_sync: 30 };
 function rateOk_(action) {
   const max = RATE_PER_MIN[action];
   if (!max) return true;
@@ -1888,7 +1900,7 @@ function applyChanges_(user, ch, opt) {
     });
   }
 
-  const ctx = { user: user, admin: admin, mgr: mgr, mgrOnly: mgr && !admin, me: me, settings: settings, cols: {}, re: !!(opt && opt.re) };
+  const ctx = { user: user, admin: admin, mgr: mgr, mgrOnly: mgr && !admin, me: me, settings: settings, cols: {}, re: !!(opt && opt.re), gb: !!(opt && opt.gb) }; // gb：外の一覧の取り込み（gaibu.gs）から
   // 端末の時計のずれ（点検②V19）：送信に付いた端末の今の時刻（ct）と、サーバーの時刻が10分以上ちがえば、
   // 新しい訪問記録の日時をそのずれの分だけ直す（ct を送らない古い画面は、今までどおり）
   const ct = Number(opt && opt.ct);
@@ -3218,11 +3230,12 @@ function ruleVisit_(ctx, old, v) {
   if (v.age) o.age = str_(v.age, 20).replace(/[<>"'&]/g, '');
   if (v.result === 'met' && v.interest) o.interest = str_(v.interest, 20).replace(/[<>"'&]/g, '');
   if (v.src && (RECO_SRC_RE.test(String(v.src)) || CARD_SRC_RE.test(String(v.src)) || RECO_CARD_SRC_RE.test(String(v.src)))) o.src = String(v.src);
+  if (ctx.gb && v.src === 'imp') o.src = 'imp'; // 外の一覧から取り込んだ記録の印（gaibu.gs だけがつけられる）
   const hd = houseData_(ctx, o.houseId);
   if (!hd && !ctx.admin) return null; // 消された家への記録は受け付けない（電波のない所でつけた記録が、あとで届いたとき・点検②V6）
   if (hd && hd.terrId) {
     o.t = str_(hd.terrId, 40);
-    if (typeof outOfCard_ === 'function' && outOfCard_(ctx, o.t, o.houseId + '|' + o.unit)) o.oc = 1;
+    if (!ctx.gb && typeof outOfCard_ === 'function' && outOfCard_(ctx, o.t, o.houseId + '|' + o.unit)) o.oc = 1; // 取り込みの記録はカードと関係がない
   }
   return o;
 }
