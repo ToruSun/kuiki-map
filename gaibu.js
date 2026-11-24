@@ -9,6 +9,7 @@
        候補：場所の近い家（アパートを先に）と、名前が同じ家。「候補が1つの建物をまとめて結ぶ」もできる
        新しく置く：建物の場所に、新しいアパートを置いて結ぶ（サーバーで作る）
        取り込まない：前に入れた記録も、次の取り込みで消える
+       仮で結ぶ：残りを全部まとめて結ぶ（近くのアパート → 近くの仮の家 → なければ新しく置く）。あとで「仮」のタブで確かめる
    ・入れた記録は「取り込み」（記録した人）。一覧を直せば、次の取り込みでアプリの記録も直る
 
    index.html：torikomi.js の次に <script src="gaibu.js"></script>
@@ -39,8 +40,9 @@
   const dist = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, x = (d - b) * r * Math.cos((a + c) / 2 * r), y = (c - a) * r; return Math.sqrt(x * x + y * y) * R; };
   const hasPos = b => b && b.lat != null && b.lng != null && isFinite(b.lat) && isFinite(b.lng);
   const day = iso => { const t = Date.parse(iso); if (!isFinite(t)) return ''; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const stOf = b => b.skip ? 'skip' : b.gone ? 'gone' : b.hid ? (houseById(b.hid) ? 'ok' : 'lost') : 'wait';
-  const ST_LABEL = { ok: '結んだ', wait: 'まだ', skip: '取り込まない', gone: '一覧にない', lost: '家がない' };
+  const stOf = b => b.skip ? 'skip' : b.gone ? 'gone' : b.hid ? (houseById(b.hid) ? (b.tmp ? 'tmp' : 'ok') : 'lost') : 'wait';
+  const ST_LABEL = { ok: '結んだ', tmp: '仮', wait: 'まだ', skip: '取り込まない', gone: '一覧にない', lost: '家がない' };
+  const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
 
   /* 候補：場所の近い家（60m 以内。アパートを先に）と、名前が同じ家（場所が分からないとき・遠くても） */
   function candidates(b) {
@@ -66,6 +68,24 @@
     return null;
   }
 
+  /* 仮で結ぶ相手：近くのアパート（名前が同じものを先に）→ 近くの仮の家 → なければ新しく置く。場所が分からない建物は残す */
+  function kariOf(b) {
+    if (!hasPos(b)) return null;
+    const nb = norm(b.name);
+    let apt = null, prov = null;
+    D().houses.forEach(h => {
+      if (!h || h.lat == null) return;
+      const m = dist(b.lat, b.lng, h.lat, h.lng);
+      if (h.type === 'apt' && m <= KARI_APT_M) {
+        const same = nb && norm(h.label) === nb;
+        if (!apt || (same && !apt.same) || (same === apt.same && m < apt.m)) apt = { h, m, same };
+      } else if (h.type !== 'apt' && h.prov && m <= KARI_PROV_M && (!prov || m < prov.m)) prov = { h, m };
+    });
+    if (apt) return { b, h: apt.h, how: 'apt', m: apt.m };
+    if (prov) return { b, h: prov.h, how: 'prov', m: prov.m };
+    return { b, h: null, how: 'make' };
+  }
+
   async function load() {
     try { st.data = await api('gb_list', {}, { timeout: 45000 }); }
     catch (e) { st.data = null; toast(e && e.code === 'unknown_action' ? 'サーバーがまだ新しくなっていません' : '読み込めませんでした。あとでもう一度ためしてください'); }
@@ -82,7 +102,7 @@
     const d = st.data;
     if (!d) { setSheet(headHtml(null, '外の一覧とつなぐ', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
-    const cnt = { wait: 0, ok: 0, skip: 0, gone: 0, lost: 0 };
+    const cnt = { wait: 0, ok: 0, tmp: 0, skip: 0, gone: 0, lost: 0 };
     blds.forEach(b => { cnt[stOf(b)]++; });
     const sure = blds.filter(b => stOf(b) === 'wait').map(b => ({ b, h: sureMatch(b) })).filter(x => x.h);
     const q = norm(st.q);
@@ -97,7 +117,8 @@
       <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
       ${(d.srcs || []).length ? `<h3 class="sub">届いた一覧</h3>${d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(s => `<p class="gb-src">${esc(s.label || s.src)}：${s.n}棟・${esc(day(s.at))}</p>`).join('')}` : '<p class="hint">まだ一覧が届いていません。取り込み用のプログラムで「今すぐ取り込む」をためしてください。</p>'}
       ${sure.length ? `<button type="button" class="btn primary block" id="gbSure">候補が1つの建物をまとめて結ぶ（${sure.length}棟）</button>` : ''}
-      <div class="gb-tabs">${tab('wait', `まだ ${cnt.wait + cnt.lost}`)}${tab('ok', `結んだ ${cnt.ok}`)}${tab('skip', `取り込まない ${cnt.skip}`)}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}${tab('all', 'すべて')}</div>
+      ${cnt.wait ? `<button type="button" class="btn block" id="gbKari">残り ${cnt.wait}棟を全部、仮で結ぶ</button>` : ''}
+      <div class="gb-tabs">${tab('wait', `まだ ${cnt.wait + cnt.lost}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ok', `結んだ ${cnt.ok}`)}${tab('skip', `取り込まない ${cnt.skip}`)}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}${tab('all', 'すべて')}</div>
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="建物名・住所でさがす" aria-label="建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
       <div>${shown.map(b => {
         const s = stOf(b), h = b.hid ? houseById(b.hid) : null, r = b.res || {};
@@ -105,7 +126,7 @@
         return `<button type="button" class="gb-row" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(b.name || '（名前なし）')}${b.lock ? '　🔒' : ''}</b>
           <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${last}</small>
           <small>${h ? `→ ${esc(h.label || '名前のない家')}${h.terrId && terrById(h.terrId) ? `（区域${esc(terrById(h.terrId).no)}）` : ''}` : esc(b.addr || '')}</small></span>
-          <span class="gb-st ${s === 'ok' ? 'ok' : s === 'wait' || s === 'lost' ? 'wait' : ''}">${ST_LABEL[s]}</span></button>`;
+          <span class="gb-st ${s === 'ok' ? 'ok' : s === 'wait' || s === 'lost' || s === 'tmp' ? 'wait' : ''}">${ST_LABEL[s]}</span></button>`;
       }).join('') || '<div class="empty">ありません</div>'}</div>
       <button type="button" class="btn block" data-close>閉じる</button>`);
     const S = $('#sheet');
@@ -121,6 +142,7 @@
       await load(); sheetKeep = true; render();
     };
     if ($('#gbSure')) $('#gbSure').onclick = () => confirmSure(sure);
+    if ($('#gbKari')) $('#gbKari').onclick = () => confirmKari(blds.filter(b => stOf(b) === 'wait'));
   }
 
   async function makeKey() {
@@ -154,6 +176,42 @@
     };
   }
 
+  function confirmKari(list) {
+    const plan = list.map(kariOf), go = plan.filter(Boolean);
+    const n = { apt: 0, prov: 0, make: 0 };
+    go.forEach(x => { n[x.how]++; });
+    const none = plan.length - go.length;
+    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + `
+      <p>まだ結んでいない建物を、まとめて仮で結びます。次の取り込みで、地図に記録が出ます。</p>
+      <ul>
+        <li>近く（${KARI_APT_M}m 以内）のアパートに結ぶ：<b>${n.apt}棟</b>（名前が同じものを先に）</li>
+        <li>近く（${KARI_PROV_M}m 以内）の仮の家に結ぶ（アパートになります）：<b>${n.prov}棟</b></li>
+        <li>建物の場所に新しいアパートを置いて結ぶ：<b>${n.make}棟</b></li>
+        ${none ? `<li>場所が分からないので、まだ のまま：<b>${none}棟</b></li>` : ''}
+      </ul>
+      <p class="hint">あとで「仮」のタブで1棟ずつ確かめ、「これでよい」か、ほかの家に結び直してください。結び直すと、記録もそちらに移ります。ふつうの家（戸建て）は、アパートに変えません。</p>
+      <button type="button" class="btn primary block" id="gbKariGo"${go.length ? '' : ' disabled'}>${go.length}棟を仮で結ぶ</button>
+      <button type="button" class="btn block" id="gbKariBack">もどる</button>`);
+    $('#gbKariBack').onclick = () => render();
+    $('#gbKariGo').onclick = async () => {
+      $('#gbKariGo').disabled = true;
+      const items = go.map(x => x.h ? { id: x.b.id, hid: x.h.id, tmp: true }
+        : { id: x.b.id, make: true, tmp: true, terrId: typeof terrOf === 'function' ? terrOf(x.b.lat, x.b.lng) : null });
+      let ok = 0, bad = 0, made = 0;
+      for (let i = 0; i < items.length; i += 100) {
+        toast(`仮で結んでいます… ${i}／${items.length}`);
+        try {
+          const r = await api('gb_link', { items: items.slice(i, i + 100) }, { timeout: 120000 });
+          ok += r.n || 0; bad += (r.bad || []).length; made += (r.made || []).length;
+        } catch (e) { bad += Math.min(100, items.length - i); }
+      }
+      if (made && typeof flush === 'function') flush(true); // サーバーで作ったアパートを読みにいく
+      toast(`${ok}棟を仮で結びました${bad ? `（${bad}棟は結べませんでした）` : ''}。次の取り込みで記録が入ります`);
+      st.tab = 'tmp';
+      await load(); sheetKeep = true; render();
+    };
+  }
+
   async function link(items, msg) {
     try {
       const r = await api('gb_link', { items }, { timeout: 60000 });
@@ -171,6 +229,9 @@
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}${hasPos(b) ? '' : '・場所が分かりません（一覧のリンクか住所を確かめてください）'}</p>
+      ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
+        <button type="button" class="btn primary block" id="gbOkTmp">これでよい（仮を外す）</button>
+        <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る</button>` : ''}
       ${s === 'ok' && cur ? `<div class="notice">結んだ家：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）</div>` : ''}
       ${s === 'lost' ? '<div class="notice warn">結んだ家が、もうアプリにありません。結び直してください。</div>' : ''}
       ${s === 'skip' ? '<div class="notice">取り込まない建物です。</div>' : ''}
@@ -195,6 +256,11 @@
       closeSheet(); showView('map');
       setTimeout(() => { map.setView([h.lat, h.lng], 18); if (h.type === 'apt' && typeof openBuilding === 'function') openBuilding(h.id); }, 150);
     });
+    if ($('#gbOkTmp')) $('#gbOkTmp').onclick = async () => {
+      await link([{ id: b.id, hid: b.hid }], '仮を外しました');
+      const next = (st.data.blds || []).find(x => stOf(x) === 'tmp'); // 続けて次の仮へ
+      if (next) openBld(next.id);
+    };
     if ($('#gbMake')) $('#gbMake').onclick = async () => {
       if (!await ask(`「${b.name}」の場所に、新しいアパートを置いて結びます。近くに同じ建物があるときは、そちらを結んでください。よろしいですか？`, { ok: '置いて結ぶ' })) return;
       await link([{ id: b.id, make: true, terrId: typeof terrOf === 'function' ? terrOf(b.lat, b.lng) : null }], '新しいアパートを置いて結びました。次の取り込みで部屋と記録が入ります');
