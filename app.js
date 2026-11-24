@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.179';
+var APP_JS_VER = '2026.13.180';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2133,7 +2133,7 @@ const houseById = id => HID.get(id) || D().houses.find(h => h.id === id);
 const userById = id => D().users.find(u => u.id === id);
 /* 名前を隠す（係の画面の「名前をかくす」）：schedule.js が unameMask を入れる。入っていないときは、ふつうの名前 */
 let unameMask = null;
-const uname = id => (unameMask && unameMask(id)) || (userById(id) || { name: '不明' }).name;
+const uname = id => (unameMask && unameMask(id)) || (userById(id) || { name: id === 'imp' ? '取り込み' : '不明' }).name; // imp：外の一覧から取り込んだ記録（gaibu.js）
 /* スペイン語などの画面で、文の中の人の名前・グループ名を訳さずに残すため、登録されている名前を i18n.js にわたす（改善案C4）。
    人は名簿の名前と S-13 の紙の記録の名前（「グループ奉仕（山田）」のような紙の名前は、かっこの中の名前）。日本語の画面では使われない */
 if (window.KI && KI.nameSource) KI.nameSource(() => {
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.180', items: [
+    ['係', '「区域の線・取り込み」に「外の一覧とつなぐ」ができました。ほかで使っているアパートなどの訪問の記録の一覧を、移行のあいだ何度でも取り込めます（一覧を読んで送るプログラムは会衆ごとに用意します）。取り込んだ記録は「取り込み」と出ます。']
+  ] },
   { v: '2026.13.179', items: [
     ['係', '区域カード（S-12）の印刷の「カードの大きさ」に、A4（1枚に1区域）を足しました。区域の形に合わせて、縦か横を自動でえらびます。']
   ] },
