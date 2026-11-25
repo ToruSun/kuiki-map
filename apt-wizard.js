@@ -163,6 +163,7 @@
     };
     s.ac0 = s.ac; s.bn0 = s.bn;
     if (edit) s.g1 = !h.units.length || h.units.some(u => u === '1階' || /^\D*?1\d{2}$/.test(u) || /^\D*?1-\d+$/.test(u) || /^1[A-Za-z]$/.test(u));
+    if (edit && h.units.every(u => FRAME.test(u))) s.mode = 'room'; // 部屋がまだ無い建物（取り込みで「集」になったもの・階の枠だけ）は、はじめから「部屋番号まで入れる」
     paint(s);
   }
 
