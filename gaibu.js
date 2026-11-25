@@ -170,17 +170,36 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
      調べ方：地番の地図（法務省）→ 国土地理院（番地まで合ったときだけ。町や丁目の代表点は使わない）
      一覧のリンクの位置がある建物は、地番の地図と 80m 以上はなれていれば b.far に残す（画面で知らせるだけ） */
   let cbRunning = null;
+  /* 進み具合：一覧の画面・仮で結ぶの画面の #gbProg に出す */
+  function setProg(t) {
+    st.prog = t;
+    const el = document.getElementById('gbProg');
+    if (el) { el.textContent = t; el.hidden = !t; }
+  }
   function chibanPass() {
     if (cbRunning) return cbRunning;
     if (typeof window.chibanFind !== 'function' || typeof window.chibanAddr !== 'function' || !st.data) return Promise.resolve(0);
     cbRunning = (async () => {
       const todo = (st.data.blds || []).filter(b => !b.gone && !b.cbDone && (b.laddr || b.addr) && !(b.fix && b.fix.lat != null));
+      if (!todo.length) return 0;
       const save = [], gsi = [];
+      let found = 0;
+      const flushSave = async () => { // 見つかった位置は、少しずつサーバーへ（途中で閉じても、そこまでは残る）
+        const part = save.splice(0, save.length);
+        if (!part.length) return;
+        prep();
+        try { await api('gb_pos', { items: part }, { timeout: 60000 }); } catch (e) { part.forEach(x => { const b = (st.data.blds || []).find(y => y.id === x.id); if (b) b.cbDone = false; }); }
+      };
       const keep = (b, pos, from) => {
         b.fix = { lat: Math.round(pos.lat * 1e6) / 1e6, lng: Math.round(pos.lng * 1e6) / 1e6, from };
         save.push({ id: b.id, lat: b.fix.lat, lng: b.fix.lng, from });
+        found++;
       };
+      const tail = '（閉じてもかまいません。次に開いたとき、続きから調べます）';
+      let i = 0;
       for (const b of todo) {
+        setProg(`住所から位置を調べています… ${++i}／${todo.length}${found ? `・分かった ${found}棟` : ''}${tail}`);
+        if (save.length >= 20) await flushSave();
         b.cbDone = true;
         const es = [b.laddr, b.addr].filter(Boolean).map(a => { try { return window.chibanAddr(a); } catch (e) { return null; } }).filter(Boolean);
         let r = null;
@@ -193,17 +212,14 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (gsi.length && typeof xlGeocode === 'function' && typeof xlPick === 'function') {
         const qs = [...new Set(gsi.flatMap(x => x.es.map(e => e.q)).filter(Boolean))];
         let res = new Map();
-        try { res = await xlGeocode(qs, () => {}); } catch (e) { res = new Map(); }
+        try { res = await xlGeocode(qs, d => setProg(`国土地理院に聞いています… ${d}／${qs.length}${found ? `・分かった ${found}棟` : ''}${tail}`)); } catch (e) { res = new Map(); }
         gsi.forEach(({ b, es }) => {
           for (const e of es) { const p = xlPick(e, res.get(e.q)); if (p && p.good) { keep(b, p, 'addr'); break; } }
         });
       }
-      if (save.length) {
-        prep();
-        for (let i = 0; i < save.length; i += 100) { try { await api('gb_pos', { items: save.slice(i, i + 100) }, { timeout: 60000 }); } catch (e) { /* 次に開いたとき、また調べる */ } }
-      }
-      return save.length;
-    })().finally(() => { cbRunning = null; });
+      await flushSave();
+      return found;
+    })().finally(() => { cbRunning = null; setProg(''); });
     return cbRunning;
   }
 
@@ -253,6 +269,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const sure = blds.filter(b => stOf(b) === 'wait').map(b => ({ b, h: sureMatch(b) })).filter(x => x.h);
     const tab = (k, t) => `<button type="button" data-gbt="${k}" class="${st.tab === k ? 'on' : ''}">${t}</button>`;
     setSheet(headHtml(null, '外の一覧とつなぐ', `建物 ${blds.length}棟`) + `
+      <p class="notice" id="gbProg"${st.prog ? '' : ' hidden'}>${esc(st.prog || '')}</p>
       <p class="hint">ほかで使っている一覧（アパート・オートロックの訪問の記録など）を、取り込み用のプログラムが読んで送ります。
         一覧の建物をアプリのアパートに<b>結ぶ</b>と、次の取り込みからその建物の記録が入ります。一覧を直すと、次の取り込みでアプリの記録も直ります（アプリで入れた記録はそのまま）。</p>
       <h3 class="sub">取り込みの鍵</h3>
@@ -333,7 +350,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
 
   async function confirmKari(list) {
-    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="hint">住所から位置を調べています…</p>');
+    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="notice" id="gbProg">住所から位置を調べています…</p><p class="hint">調べ終わると、結ぶ建物の数が出ます。</p>');
     await chibanPass().catch(() => 0);
     list = list.map(b => (st.data.blds || []).find(x => x.id === b.id) || b);
     const plan = kariPlan(list), go = plan.filter(x => x.how === 'apt' || x.how === 'prov' || x.how === 'make');
@@ -358,7 +375,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         : { id: x.b.id, make: true, tmp: true, terrId: typeof terrOf === 'function' ? terrOf(x.b.lat, x.b.lng) : null });
       let ok = 0, bad = 0, made = 0;
       for (let i = 0; i < items.length; i += 100) {
-        toast(`仮で結んでいます… ${i}／${items.length}`);
+        toast(`仮で結んでいます… ${i}／${items.length}（終わるまで、アプリを閉じずにお待ちください）`);
         try {
           const r = await api('gb_link', { items: items.slice(i, i + 100) }, { timeout: 120000 });
           ok += r.n || 0; bad += (r.bad || []).length; made += (r.made || []).length;
@@ -379,7 +396,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     st.tab = 'wait'; sheetKeep = true; render();
     let bad = 0;
     for (let i = 0; i < list.length; i += 100) {
-      toast(`外しています… ${i}／${list.length}`);
+      toast(`外しています… ${i}／${list.length}（終わるまで、アプリを閉じずにお待ちください）`);
       try { const r = await api('gb_link', { items: list.slice(i, i + 100).map(b => ({ id: b.id, hid: '' })) }, { timeout: 120000 }); bad += (r.bad || []).length; }
       catch (e) { bad += Math.min(100, list.length - i); }
     }
@@ -392,6 +409,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   async function link(items, msg, next) {
     const go = next || (() => { st.restore = st.back; sheetKeep = true; render(); });
     if (items.some(it => it.make || it.apply)) { // 新しく置く・家を一覧に合わせる：サーバーの返事を待って、家を読み直す
+      toast('結んでいます…（少し待ってください）');
       try {
         const r = await api('gb_link', { items }, { timeout: 60000 });
         toast(r.bad && r.bad.length ? `${r.n}棟を結びました（${r.bad.length}棟は結べませんでした）` : msg);
