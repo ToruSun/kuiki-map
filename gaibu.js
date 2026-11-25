@@ -15,7 +15,8 @@
    ・家や「集」の画面（区域係だけ）：結んでいる一覧の建物を出し、これでよい・外す・ほかの一覧の建物を選んで結ぶ（window.gaibuNotice）
    ・一覧の位置：直した位置（fix：地番の地図・係が地図で置いた）＞ 一覧から届いた位置（リンク・住所）。
        一覧から届いた位置でも、名前のちがう建物がほぼ同じ所にあるとき（リンクの写しまちがい・住所が町の代表点になったもの）は使わない
-       地番の地図（kyohi.js の chibanFind。法務省の地図）で住所が見つかれば、その位置を覚える（gb_pos）
+       使える位置がない建物は、住所（一覧のリンクに入っていた住所 → 一覧の住所）で位置を調べて覚える（gb_pos）：
+       地番の地図（kyohi.js の chibanFind。法務省の地図）→ 国土地理院（app.js の xlGeocode。番地まで合ったときだけ）
    ・位置を地図で直す：十字に建物を合わせて「ここにする」（Google マップの位置は写さない。見て確かめるだけ）
    ・Google マップで見る：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
 
@@ -162,25 +163,40 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       else { b.lat = null; b.lng = null; b.pf = b.llat != null ? 'dup' : ''; }
     });
   }
-  const PF_LABEL = { chiban: '地番の地図で調べた位置', hand: '地図で直した位置', list: '一覧のリンク・住所の位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
+  const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（番地まで合った）', hand: '地図で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
 
-  /* 地番の地図で、一覧の住所の位置を調べて覚える（使える位置がない建物だけ。この端末の中で調べる）。
-     一覧の位置があっても、地番の地図と 80m 以上はなれていたら b.far に残す（画面で知らせるだけ） */
+  /* 使える位置がない建物の位置を、住所で調べて覚える（この端末から。結果は gb_pos でサーバーに覚えさせる）
+     住所：一覧のリンクに入っていた住所（laddr）→ 一覧の住所（addr）
+     調べ方：地番の地図（法務省）→ 国土地理院（番地まで合ったときだけ。町や丁目の代表点は使わない）
+     一覧のリンクの位置がある建物は、地番の地図と 80m 以上はなれていれば b.far に残す（画面で知らせるだけ） */
   let cbRunning = null;
   function chibanPass() {
     if (cbRunning) return cbRunning;
     if (typeof window.chibanFind !== 'function' || typeof window.chibanAddr !== 'function' || !st.data) return Promise.resolve(0);
     cbRunning = (async () => {
-      const todo = (st.data.blds || []).filter(b => !b.gone && !b.cbDone && b.addr && !(b.fix && b.fix.lat != null));
-      const save = [];
+      const todo = (st.data.blds || []).filter(b => !b.gone && !b.cbDone && (b.laddr || b.addr) && !(b.fix && b.fix.lat != null));
+      const save = [], gsi = [];
+      const keep = (b, pos, from) => {
+        b.fix = { lat: Math.round(pos.lat * 1e6) / 1e6, lng: Math.round(pos.lng * 1e6) / 1e6, from };
+        save.push({ id: b.id, lat: b.fix.lat, lng: b.fix.lng, from });
+      };
       for (const b of todo) {
         b.cbDone = true;
+        const es = [b.laddr, b.addr].filter(Boolean).map(a => { try { return window.chibanAddr(a); } catch (e) { return null; } }).filter(Boolean);
         let r = null;
-        try { const e = window.chibanAddr(b.addr); r = e ? await window.chibanFind(e) : null; } catch (e) { r = null; }
-        if (!r || !r.pos) continue;
-        if (b.pf === 'list') { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); continue; }
-        b.fix = { lat: Math.round(r.pos.lat * 1e6) / 1e6, lng: Math.round(r.pos.lng * 1e6) / 1e6, from: 'chiban' };
-        save.push({ id: b.id, lat: b.fix.lat, lng: b.fix.lng, from: 'chiban' });
+        for (const e of es) { try { r = await window.chibanFind(e); } catch (err) { r = null; } if (r && r.pos) break; }
+        if (b.pf === 'list') { if (r && r.pos) { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); } continue; }
+        if (r && r.pos) { keep(b, r.pos, 'chiban'); continue; }
+        if (es.length) gsi.push({ b, es });
+      }
+      // 国土地理院：まとめて聞き、番地まで合ったときだけ使う
+      if (gsi.length && typeof xlGeocode === 'function' && typeof xlPick === 'function') {
+        const qs = [...new Set(gsi.flatMap(x => x.es.map(e => e.q)).filter(Boolean))];
+        let res = new Map();
+        try { res = await xlGeocode(qs, () => {}); } catch (e) { res = new Map(); }
+        gsi.forEach(({ b, es }) => {
+          for (const e of es) { const p = xlPick(e, res.get(e.q)); if (p && p.good) { keep(b, p, 'addr'); break; } }
+        });
       }
       if (save.length) {
         prep();
@@ -214,7 +230,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* 一覧の画面を開いたあと、地番の地図で位置を調べる。見つかったら知らせて描き直す */
   async function cbAfter() {
     const n = await chibanPass().catch(() => 0);
-    if (n) { toast(`地番の地図で、${n}棟の位置が分かりました`); if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); } }
+    if (n) { toast(`住所から、${n}棟の位置が分かりました`); if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); } }
   }
 
   /* 一覧の画面：前に読んだものをすぐ出し、うしろで読み直す */
@@ -317,7 +333,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
 
   async function confirmKari(list) {
-    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="hint">地番の地図で位置を調べています…</p>');
+    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="hint">住所から位置を調べています…</p>');
     await chibanPass().catch(() => 0);
     list = list.map(b => (st.data.blds || []).find(x => x.id === b.id) || b);
     const plan = kariPlan(list), go = plan.filter(x => x.how === 'apt' || x.how === 'prov' || x.how === 'make');
@@ -474,6 +490,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}　${gmapBtn(b)}</p>
+      ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
       <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
       <button type="button" class="btn${hasPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
       ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
