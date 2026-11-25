@@ -16,12 +16,13 @@
    ・オートロック：送られた建物が lock なら、アパートに印をつける（外さない）
    ・データ：シート「gaibu」（id＝元~建物。同期の記録 journal には乗せない。係の画面だけが gb_list で読む）
        { src, k, label, name, addr, lat, lng, lock, n: 部屋数, rooms: 部屋番号, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果,
-         fix: { lat, lng, from: 'chiban'（地番の地図）|'hand'（係が地図で置いた） } }
+         laddr: 一覧のリンクに入っていた住所（位置が入っていないリンクのとき。画面が住所で位置を調べるのに使う）,
+         fix: { lat, lng, from: 'chiban'（地番の地図）|'addr'（住所で番地まで合った）|'hand'（係が地図で置いた） } }
        lat・lng は一覧から届いた位置（取り込みのたびに入れかわる）。fix は画面で直した位置で、取り込みでは変えない（gb_pos）
 
    送る形（action: 'gb_sync'。token の代わりに key）：
      { key, src: '元（英数字12字まで）', label: '一覧の名前', dry: true で確かめだけ,
-       blds: [{ k: '建物（英数字・._- 40字まで）', name, addr, lat, lng, lock,
+       blds: [{ k: '建物（英数字・._- 40字まで）', name, addr, laddr: '一覧のリンクに入っていた住所', lat, lng, lock,
                 rooms: [{ r: '101', v: [['2024-05-01', 'm' または 'a'], …] }] }] }
    返事：{ ok, n: { blds, linked, wait, skip, add, upd, del, same, dup, rej }, blds: [{ k, st, add, upd, del, dup }] }
      st：linked（入れた）・new（まだ結びついていない）・skip（取り込まない）・nohouse（結んだ家がもうない）
@@ -87,6 +88,7 @@ function gbClean_(b) {
   });
   return {
     k: String(b.k), name: str_(b.name, 40).replace(/[<>"'&]/g, ''), addr: str_(b.addr, 80).replace(/[<>"'&]/g, ''),
+    laddr: str_(b.laddr, 120).replace(/[<>"'&]/g, ''),
     lat: pos ? lat : null, lng: pos ? lng : null, lock: b.lock === true, rooms: rooms
   };
 }
@@ -228,7 +230,7 @@ function gbSyncCore_(src, label, blds, dry) {
       const nv = b.rooms.reduce(function (a, rm) { return a + rm.v.length; }, 0);
       const o = out[i];
       ups.push([id, {
-        src: src, k: b.k, label: label, name: b.name, addr: b.addr, lat: b.lat, lng: b.lng, lock: b.lock,
+        src: src, k: b.k, label: label, name: b.name, addr: b.addr, laddr: b.laddr, lat: b.lat, lng: b.lng, lock: b.lock,
         n: b.rooms.length, rooms: b.rooms.map(function (rm) { return rm.r; }), nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso, fix: d.fix || null,
         res: { st: o.st, add: o.add, upd: o.upd, del: o.del, dup: o.dup }
       }]);
@@ -351,7 +353,7 @@ function gbLink_(user, items) {
   return { ok: true, n: ups.length, bad: bad, made: made, applied: applied };
 }
 
-/* 一覧の建物の位置を直す。items: [{ id, lat, lng, from: 'chiban'|'hand' }] または [{ id, clear: true }]（一覧の位置にもどす）
+/* 一覧の建物の位置を直す。items: [{ id, lat, lng, from: 'chiban'|'addr'|'hand' }] または [{ id, clear: true }]（一覧の位置にもどす）
    取り込みでは変えない。新しく置くときは、この位置に置く */
 function gbPos_(user, items) {
   if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
@@ -360,7 +362,7 @@ function gbPos_(user, items) {
     const id = String(it && it.id || ''), cur = gm.get(id);
     if (!cur || !cur.data) { bad.push(id); return; }
     if (it.clear) { ups.push([id, Object.assign({}, cur.data, { fix: null })]); return; }
-    const lat = gbNum_(it.lat), lng = gbNum_(it.lng), from = it.from === 'chiban' ? 'chiban' : it.from === 'hand' ? 'hand' : '';
+    const lat = gbNum_(it.lat), lng = gbNum_(it.lng), from = ['chiban', 'addr', 'hand'].indexOf(it.from) >= 0 ? it.from : '';
     if (lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180 || !from) { bad.push(id); return; }
     ups.push([id, Object.assign({}, cur.data, { fix: { lat: lat, lng: lng, from: from, at: nowIso_() } })]);
   });
