@@ -220,4 +220,8 @@ window.KUIKI_I18N.es = Object.assign(window.KUIKI_I18N.es || {}, {
 "訪問しない印のある家は、区域係だけが消せます。削除の申請をしてください": "Las casas con marca «Omitida» solo las puede borrar el encargado. Solicite el borrado.",
 "訪問しない印のある部屋は、区域係だけが消せます": "Las unidades con marca «Omitida» solo las puede borrar el encargado.",
 "拒否は、場所だけの印として残します。": "La marca «No visitar» se conservará como marca de lugar.",
+"後ろにつける": "Poner después",
+"次へ（建物と部屋を入れる）": "Siguiente (edificio y departamentos)",
+"保存して、部屋の画面へ": "Guardar e ir a los departamentos",
+"建物名・オートロック・エレベーター・部屋番号は、次の画面で入れます（付近の候補からもえらべます）。": "El nombre del edificio, la entrada con llave, el ascensor y los números de departamento se ponen en la siguiente pantalla (también puede elegir de los edificios cercanos).",
 });
