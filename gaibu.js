@@ -60,6 +60,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const day = iso => { const t = Date.parse(iso); if (!isFinite(t)) return ''; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const stOf = b => b.skip ? 'skip' : b.gone ? 'gone' : b.hid ? (houseById(b.hid) ? (b.tmp ? 'tmp' : 'ok') : 'lost') : 'wait';
   const ST_LABEL = { ok: '結んだ', tmp: '仮', wait: 'まだ', skip: '取り込まない', gone: '一覧にない', lost: '家がない' };
+  /* 検索欄：日本語を変換しているあいだは検索しない（確定してから）。描き直すのは結果だけで、検索欄はそのまま残す
+     （欄ごと描き直すと、iPhone の日本語入力で1字しか入らなくなる） */
+  function bindSearch(input, onSearch) {
+    let composing = false, tm = null;
+    const go = () => { clearTimeout(tm); tm = setTimeout(() => onSearch(input.value), 250); };
+    input.addEventListener('compositionstart', () => { composing = true; clearTimeout(tm); });
+    input.addEventListener('compositionend', () => { composing = false; go(); });
+    input.addEventListener('input', e => { if (composing || e.isComposing) return; go(); });
+  }
   const pullNow = () => { try { return typeof window.refresh === 'function' ? window.refresh(true) : null; } catch (e) { return null; } }; // app.js の「最新の変更を取りに行く」
   const fmtM = m => !isFinite(m) ? '場所不明' : m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
   /* Google マップの検索を開く（建物名＋住所。住所に市町村がなければ、会衆の県・市をつける） */
@@ -147,9 +156,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const cnt = { wait: 0, ok: 0, tmp: 0, skip: 0, gone: 0, lost: 0 };
     blds.forEach(b => { cnt[stOf(b)]++; });
     const sure = blds.filter(b => stOf(b) === 'wait').map(b => ({ b, h: sureMatch(b) })).filter(x => x.h);
-    const q = norm(st.q);
-    const shown = blds.filter(b => (st.tab === 'all' || stOf(b) === st.tab || (st.tab === 'wait' && stOf(b) === 'lost')) && (!q || norm(b.name).includes(q) || norm(b.addr).includes(q)))
-      .sort((a, b) => String(a.label).localeCompare(String(b.label)) || String(a.name).localeCompare(String(b.name), 'ja'));
     const tab = (k, t) => `<button type="button" data-gbt="${k}" class="${st.tab === k ? 'on' : ''}">${t}</button>`;
     setSheet(headHtml(null, '外の一覧とつなぐ', `建物 ${blds.length}棟`) + `
       <p class="hint">ほかで使っている一覧（アパート・オートロックの訪問の記録など）を、取り込み用のプログラムが読んで送ります。
@@ -162,22 +168,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${cnt.wait ? `<button type="button" class="btn block" id="gbKari">残り ${cnt.wait}棟を全部、仮で結ぶ</button>` : ''}
       <div class="gb-tabs">${tab('wait', `まだ ${cnt.wait + cnt.lost}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ok', `結んだ ${cnt.ok}`)}${tab('skip', `取り込まない ${cnt.skip}`)}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}${tab('all', 'すべて')}</div>
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="建物名・住所でさがす" aria-label="建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
-      <div>${shown.map(b => {
-        const s = stOf(b), h = b.hid ? houseById(b.hid) : null, r = b.res || {};
-        const last = s === 'ok' && (r.add || r.upd || r.del || r.dup) ? `・前回 +${r.add || 0}${r.upd ? `・直し${r.upd}` : ''}${r.del ? `・−${r.del}` : ''}${r.dup ? `・重なり${r.dup}` : ''}` : '';
-        return `<button type="button" class="gb-row" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(b.name || '（名前なし）')}${b.lock ? '　🔒' : ''}</b>
-          <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${last}</small>
-          <small>${h ? `→ ${esc(h.label || '名前のない家')}${h.terrId && terrById(h.terrId) ? `（区域${esc(terrById(h.terrId).no)}）` : ''}` : esc(b.addr || '')}</small></span>
-          <span class="gb-st ${s === 'ok' ? 'ok' : s === 'wait' || s === 'lost' || s === 'tmp' ? 'wait' : ''}">${ST_LABEL[s]}</span></button>`;
-      }).join('') || '<div class="empty">ありません</div>'}</div>
+      <div id="gbRows">${listRows()}</div>
       <button type="button" class="btn block" data-close>閉じる</button>`);
     const S = $('#sheet');
     $$('[data-gbt]', S).forEach(x => x.onclick = () => { st.tab = x.dataset.gbt; sheetKeep = true; render(); });
-    $$('[data-gb]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openBld(x.dataset.gb); });
+    bindRows();
     if (st.restore != null) { S.scrollTop = st.restore; st.restore = null; }
-    const qi = $('#gbQ');
-    let tm = null;
-    qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { st.q = qi.value; sheetKeep = true; render(); const n = $('#gbQ'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
+    bindSearch($('#gbQ'), v => { st.q = v; const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } });
     $('#gbKey').onclick = makeKey;
     if ($('#gbKeyDel')) $('#gbKeyDel').onclick = async () => {
       if (!await ask('取り込みの鍵を止めます。取り込み用のプログラムからは送れなくなります（入れた記録は残ります）。よろしいですか？', { ok: '止める' })) return;
@@ -186,6 +183,25 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     };
     if ($('#gbSure')) $('#gbSure').onclick = () => confirmSure(sure);
     if ($('#gbKari')) $('#gbKari').onclick = () => confirmKari(blds.filter(b => stOf(b) === 'wait'));
+  }
+
+  /* 一覧の画面の建物の行（タブと検索で しぼる） */
+  function listRows() {
+    const q = norm(st.q);
+    const shown = (st.data.blds || []).filter(b => (st.tab === 'all' || stOf(b) === st.tab || (st.tab === 'wait' && stOf(b) === 'lost')) && (!q || norm(b.name).includes(q) || norm(b.addr).includes(q)))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label)) || String(a.name).localeCompare(String(b.name), 'ja'));
+    return shown.map(b => {
+      const s = stOf(b), h = b.hid ? houseById(b.hid) : null, r = b.res || {};
+      const last = s === 'ok' && (r.add || r.upd || r.del || r.dup) ? `・前回 +${r.add || 0}${r.upd ? `・直し${r.upd}` : ''}${r.del ? `・−${r.del}` : ''}${r.dup ? `・重なり${r.dup}` : ''}` : '';
+      return `<button type="button" class="gb-row" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(b.name || '（名前なし）')}${b.lock ? '　🔒' : ''}</b>
+        <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${last}</small>
+        <small>${h ? `→ ${esc(h.label || '名前のない家')}${h.terrId && terrById(h.terrId) ? `（区域${esc(terrById(h.terrId).no)}）` : ''}` : esc(b.addr || '')}</small></span>
+        <span class="gb-st ${s === 'ok' ? 'ok' : s === 'wait' || s === 'lost' || s === 'tmp' ? 'wait' : ''}">${ST_LABEL[s]}</span></button>`;
+    }).join('') || '<div class="empty">ありません</div>';
+  }
+  function bindRows() {
+    const S = $('#sheet');
+    $$('#gbRows [data-gb]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openBld(x.dataset.gb); });
   }
 
   async function makeKey() {
@@ -447,29 +463,35 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
      選ぶと、その建物をこの家に結び、前に結んでいた建物は「まだ」にもどす（「今の建物も残す」なら残す） */
   function pickFor(h, q, keep) {
     const cur = (st.data.blds || []).filter(b => b.hid === h.id && !b.skip);
+    setSheet(headHtml(terrById(h.terrId), cur.length ? '一覧の建物を切り替える' : '一覧の建物を選ぶ', esc(h.label || '名前のない家')) + `
+      ${cur.length ? `<p class="gb-src">今：<b>${esc(cur.map(b => b.name || '（名前なし）').join('、'))}</b></p>` : ''}
+      <p class="hint">この${h.type === 'apt' ? '集合住宅' : '家'}の、一覧の建物を選んでください。近い順です（名前が同じものを先に）。</p>
+      ${cur.length ? `<label class="check"><input type="checkbox" id="gbKeep"${keep ? ' checked' : ''}>今の建物も残す（同じ建物が2つの一覧に載っているとき）</label>` : ''}
+      <input type="search" id="gbPq" value="${esc(q)}" placeholder="建物名・住所・一覧の名前でさがす" aria-label="一覧の建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
+      <div id="gbPRows">${pickRows(h, q)}</div>
+      <button type="button" class="btn block" id="gbPBack">もどる</button>`);
+    const S = $('#sheet');
+    $('#gbPBack').onclick = backTo(h);
+    const qi = $('#gbPq');
+    const keepOn = () => !!($('#gbKeep') && $('#gbKeep').checked);
+    const bind = () => {
+      $$('#gbPRows [data-gbp]', S).forEach(x => x.onclick = () => chooseFor(h, (st.data.blds || []).find(y => y.id === x.dataset.gbp), keepOn()));
+      $$('#gbPRows [data-gbpm]', S).forEach(x => x.onclick = () => showCompare(h, (st.data.blds || []).find(y => y.id === x.dataset.gbpm), qi.value, keepOn()));
+    };
+    bind();
+    bindSearch(qi, v => { const el = $('#gbPRows'); if (el) { el.innerHTML = pickRows(h, v); bind(); } });
+  }
+  /* 選ぶ画面の行：近い順（名前が同じものを先に）。名前・住所・一覧の名前でしぼる */
+  function pickRows(h, q) {
     const nq = norm(q), nh = norm(h.label);
     const rows = (st.data.blds || []).filter(b => !b.gone)
       .map(b => ({ b, m: hasPos(b) && h.lat != null ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity, same: !!nh && norm(b.name) === nh }))
       .filter(x => !nq || norm(x.b.name).includes(nq) || norm(x.b.addr).includes(nq) || norm(x.b.label).includes(nq))
       .sort((x, y) => (y.same - x.same) || (x.m - y.m)).slice(0, 40);
     const now = b => b.hid === h.id ? 'この家に結んでいます' : b.hid ? `→ ${esc((houseById(b.hid) || {}).label || 'ほかの家')}に結んでいます${stOf(b) === 'tmp' ? '（仮）' : ''}` : b.skip ? '取り込まない' : 'まだ結んでいません';
-    setSheet(headHtml(terrById(h.terrId), cur.length ? '一覧の建物を切り替える' : '一覧の建物を選ぶ', esc(h.label || '名前のない家')) + `
-      ${cur.length ? `<p class="gb-src">今：<b>${esc(cur.map(b => b.name || '（名前なし）').join('、'))}</b></p>` : ''}
-      <p class="hint">この${h.type === 'apt' ? '集合住宅' : '家'}の、一覧の建物を選んでください。${nq ? '' : '近い順です。'}</p>
-      ${cur.length ? `<label class="check"><input type="checkbox" id="gbKeep"${keep ? ' checked' : ''}>今の建物も残す（同じ建物が2つの一覧に載っているとき）</label>` : ''}
-      <input type="search" id="gbPq" value="${esc(q)}" placeholder="建物名・住所・一覧の名前でさがす" aria-label="一覧の建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
-      <div>${rows.map(x => `<div class="gb-row" style="cursor:default;flex-wrap:wrap"><span class="tx" style="flex:1 1 100%"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
-          <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
-          <span style="margin-left:auto;display:flex;gap:6px">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn small" data-gbpm="${esc(x.b.id)}">地図</button>` : ''}${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></span></div>`).join('') || '<div class="empty">ありません</div>'}</div>
-      <button type="button" class="btn block" id="gbPBack">もどる</button>`);
-    const S = $('#sheet');
-    $('#gbPBack').onclick = backTo(h);
-    const qi = $('#gbPq');
-    let tm = null;
-    const keepOn = () => !!($('#gbKeep') && $('#gbKeep').checked);
-    qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { pickFor(h, qi.value, keepOn()); const n = $('#gbPq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
-    $$('[data-gbp]', S).forEach(x => x.onclick = () => chooseFor(h, (st.data.blds || []).find(y => y.id === x.dataset.gbp), keepOn()));
-    $$('[data-gbpm]', S).forEach(x => x.onclick = () => showCompare(h, (st.data.blds || []).find(y => y.id === x.dataset.gbpm), qi.value, keepOn()));
+    return rows.map(x => `<div class="gb-row" style="cursor:default;flex-wrap:wrap"><span class="tx" style="flex:1 1 100%"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
+        <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
+        <span style="margin-left:auto;display:flex;gap:6px">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn small" data-gbpm="${esc(x.b.id)}">地図</button>` : ''}${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></span></div>`).join('') || '<div class="empty">ありません</div>';
   }
 
   /* この家を、一覧の建物 b に切り替えて確定する。家の名前・部屋・オートロックは、すぐ一覧に合わせる（apply） */
