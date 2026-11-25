@@ -9,6 +9,7 @@
    ・送られた建物とアプリの家の結びつきは、区域係が画面で決める（gb_list・gb_link）。結びついた建物の記録だけを入れる
    ・入れる記録：記録した人は「取り込み」（by: 'imp'）、印 src: 'imp'。id は 元・建物・部屋・日 から決まる（何回送っても同じ id）
      送られるたびに、その建物の取り込みの記録を、送られた内容に合わせる（足す・直す・消す）。アプリで入れた記録には手をふれない
+     結んでいない建物（外した・取り込まない）の、前に入れた記録は消す。結び直せば、また入る
      同じ家・同じ部屋・同じ日（日本時間）に、アプリで入れた記録があれば、取り込みの分は入れない（二重にしない）
    ・部屋：アパートにない部屋を足す（部屋は消さない）。「1階」などの階の枠しかないアパートは、記録のない枠を部屋番号に置きかえる
      結びつけた家がアパートでなければ、アパートにする（仮の家の印は外す）
@@ -144,8 +145,9 @@ function gbSyncCore_(src, label, blds, dry) {
     }
     out.push(o);
   });
+  // 結んでいない（外した・取り込まない）建物の、前に入れた記録は消す（記録は、結んだ家にだけ入る）
   const skipKs = {};
-  out.forEach(function (o) { if (o.st === 'skip') skipKs[gbPre_(src, o.k)] = o; });
+  out.forEach(function (o) { if (o.st === 'skip' || o.st === 'new') skipKs[gbPre_(src, o.k)] = o; });
 
   // 訪問記録を1回だけ読む：この元の取り込みの記録と、結びついた家のアプリの記録（二重にしないため）
   const hids = {};
@@ -200,7 +202,6 @@ function gbSyncCore_(src, label, blds, dry) {
     if (!hd.label && b.name) nh.label = b.name;
     if (stable_(nh) !== stable_(hd)) hups.push(Object.assign({ id: hid }, nh));
   });
-  // 取り込まないことにした建物の、前に入れた記録は消す
   Object.keys(mine).forEach(function (id) {
     Object.keys(skipKs).forEach(function (p) { if (id.indexOf(p) === 0) { skipKs[p].del++; vdels.push(id); } });
   });
