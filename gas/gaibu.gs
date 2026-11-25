@@ -15,7 +15,7 @@
      結びつけた家がアパートでなければ、アパートにする（仮の家の印は外す）
    ・オートロック：送られた建物が lock なら、アパートに印をつける（外さない）
    ・データ：シート「gaibu」（id＝元~建物。同期の記録 journal には乗せない。係の画面だけが gb_list で読む）
-       { src, k, label, name, addr, lat, lng, lock, n: 部屋数, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果 }
+       { src, k, label, name, addr, lat, lng, lock, n: 部屋数, rooms: 部屋番号, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果 }
 
    送る形（action: 'gb_sync'。token の代わりに key）：
      { key, src: '元（英数字12字まで）', label: '一覧の名前', dry: true で確かめだけ,
@@ -227,7 +227,7 @@ function gbSyncCore_(src, label, blds, dry) {
       const o = out[i];
       ups.push([id, {
         src: src, k: b.k, label: label, name: b.name, addr: b.addr, lat: b.lat, lng: b.lng, lock: b.lock,
-        n: b.rooms.length, nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso,
+        n: b.rooms.length, rooms: b.rooms.map(function (rm) { return rm.r; }), nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso,
         res: { st: o.st, add: o.add, upd: o.upd, del: o.del, dup: o.dup }
       }]);
     });
@@ -293,7 +293,8 @@ function gbList_() {
   return { ok: true, key: { has: !!sp[GB_KEY_PROP], at: sp[GB_KEY_AT] || '' }, srcs: srcs, blds: blds };
 }
 
-/* items: [{ id: '元~建物', hid: '家id' または '', skip: true|false, make: true（建物の場所に新しいアパートを置く）, terrId, tmp: true（仮で結ぶ。あとで係が確かめる） }]（まとめて送れる）
+/* items: [{ id: '元~建物', hid: '家id' または '', skip: true|false, make: true（建物の場所に新しいアパートを置く）, terrId, tmp: true（仮で結ぶ。あとで係が確かめる）,
+             apply: true（係が選んで結んだ：家の名前・部屋・オートロックを、すぐ一覧の建物に合わせる） }]（まとめて送れる）
    make：家はサーバーで作る（画面で作ると、サーバーに届くまで結べないため）。区域は画面が場所から決めて送る */
 function gbLink_(user, items) {
   if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
@@ -324,5 +325,52 @@ function gbLink_(user, items) {
     }
   }
   gbWrite_(gm, ups, user.id);
-  return { ok: true, n: ups.length, bad: bad, made: made };
+  // apply：家の名前・部屋・オートロックを、すぐ一覧の建物に合わせる（取り込みを待たない）
+  const hu = [], ctx = { cols: {}, hcache: new Map() };
+  items.forEach(function (it) {
+    if (!it || !it.apply || it.skip || it.make || it.tmp || !it.hid) return;
+    const x = gm.get(String(it.id)), b = x && x.data;
+    if (!b || b.hid !== String(it.hid)) return;
+    const hd = houseData_(ctx, b.hid);
+    if (!hd) return;
+    const nh = gbFit_(hd, b);
+    if (stable_(nh) !== stable_(hd)) hu.push(nh);
+  });
+  let applied = 0;
+  if (hu.length) {
+    const res = applyChanges_(user, { houses: { up: hu } }, {});
+    applied = hu.length - (res.rejected || []).filter(function (x) { return x.c === 'houses'; }).length;
+  }
+  return { ok: true, n: ups.length, bad: bad, made: made, applied: applied };
+}
+
+/* 家を一覧の建物に合わせる：名前・アパート・オートロック・部屋。
+   部屋は一覧の部屋にそろえ、アプリで入れた記録のある部屋だけは残す（取り込みの記録だけの部屋は、ちがう建物の分かもしれないので残さない） */
+function gbFit_(hd, b) {
+  const nh = Object.assign({}, hd, { type: 'apt' });
+  if (b.name) nh.label = str_(b.name, 40);
+  if (b.lock) nh.lock = true;
+  delete nh.prov;
+  const rooms = Array.isArray(b.rooms) ? b.rooms.map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }) : [];
+  if (rooms.length) {
+    const app = gbAppUnits_(hd.id), have = {};
+    const out = rooms.slice().sort(gbRoomCmp_);
+    out.forEach(function (u) { have[u] = true; });
+    (hd.units || []).forEach(function (u) { u = String(u); if (!have[u] && app[u]) { have[u] = true; out.push(u); } });
+    nh.units = out.slice(0, 300);
+  }
+  return nh;
+}
+/* アプリで入れた記録（取り込みでないもの）のある部屋 */
+function gbAppUnits_(hid) {
+  const out = {};
+  try {
+    const sh = dataSheet_('visits'), n = sh.getLastRow();
+    if (n < 2) return out;
+    readFound_(sh, 2, sh.getRange(2, 2, n - 1, 1).createTextFinder('"houseId":"' + hid + '"').matchCase(true).findAll().slice(0, 3000)).forEach(function (val) {
+      const v = parseJson_(val, null);
+      if (v && String(v.houseId) === hid && String(v.src || '') !== GB_SRC) out[String(v.unit || '')] = true;
+    });
+  } catch (e) { console.warn('部屋の記録を確かめられませんでした：' + e); }
+  return out;
 }
