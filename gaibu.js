@@ -8,7 +8,7 @@
    ・建物の結びつき：一覧の建物を、アプリのアパート（または家）に結ぶ。結んだ建物の記録だけが入る
        候補：場所の近い家（アパートを先に）と、名前が同じ家。「候補が1つの建物をまとめて結ぶ」もできる
        新しく置く：建物の場所に、新しいアパートを置いて結ぶ（サーバーで作る）
-       取り込まない：前に入れた記録も、次の取り込みで消える
+       取り込まない・外す：前に入れた記録も、次の取り込みで消える（記録は結んだ家にだけ入る）
        仮で結ぶ：残りを全部まとめて結ぶ（近くのアパート → 近くの仮の家 → なければ新しく置く）。あとで「仮」のタブで確かめる
    ・入れた記録は「取り込み」（記録した人）。一覧を直せば、次の取り込みでアプリの記録も直る
 
@@ -367,7 +367,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <button type="button" class="btn small" data-gbmap="${esc(c.h.id)}">地図</button><button type="button" class="btn small primary" data-gbl="${esc(c.h.id)}">結ぶ</button></div>`).join('') || '<p class="hint">近くに家がありません。</p>'}</div>
       ${hasPos(b) ? '<button type="button" class="btn block" id="gbMake">この場所に新しいアパートを置いて結ぶ</button>' : ''}
       ${s !== 'skip' ? '<button type="button" class="btn block" id="gbSkip">この建物は取り込まない</button>' : ''}
-      ${b.hid || b.skip ? '<button type="button" class="btn block" id="gbUnlink">結びつきを外す（まだ にもどす）</button>' : ''}
+      ${b.hid || b.skip ? '<button type="button" class="btn block" id="gbUnlink">結びつきを外す（まだ にもどす・入れた記録は次の取り込みで消える）</button>' : ''}
       <button type="button" class="btn block" id="gbBack">もどる</button>`);
     const S = $('#sheet');
     $$('[data-gbl]', S).forEach(x => x.onclick = async () => {
@@ -389,7 +389,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       await link([{ id: b.id, skip: true }], '取り込まない建物にしました');
     };
     if ($('#gbUnlink')) $('#gbUnlink').onclick = async () => {
-      await link([{ id: b.id, hid: '' }], '結びつきを外しました（入れた記録は残っています）');
+      await link([{ id: b.id, hid: '' }], '結びつきを外しました。入れた記録は、次の取り込みで消えます');
     };
     $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
   }
@@ -412,10 +412,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${b.gone ? '・今の一覧にない' : ''}${hasPos(b) && h.lat != null ? `・一覧の位置から${fmtM(dist(b.lat, b.lng, h.lat, h.lng))}` : ''}</small></span>
         ${stOf(b) === 'tmp' ? `<button type="button" class="btn small primary" data-gbn="ok" data-b="${esc(b.id)}">これでよい</button>` : ''}${gmapBtn(b)}<button type="button" class="btn small" data-gbn="un" data-b="${esc(b.id)}">外す</button></div>`).join('');
     const sum = linked.length ? `外の一覧：${esc(linked.map(b => b.name || '（名前なし）').join('、'))}${tmp ? ' <span class="gb-st wait">仮</span>' : ''}` : '外の一覧：結んでいません';
-    return `<details class="notice gb-hn" data-gbn-h="${esc(h.id)}"${tmp ? ' open' : ''}><summary>${sum}</summary>
+    // 1行目の「切り替える」は、閉じたままでも押せる（押しても開け閉めしない）
+    return `<details class="notice gb-hn" data-gbn-h="${esc(h.id)}"${tmp ? ' open' : ''}><summary><span style="flex:1 1 auto">${sum}</span>
+        <button type="button" class="btn small" data-gbn="pick">${linked.length ? '切り替える' : '一覧の建物を選ぶ'}</button></summary>
       ${rows}
       ${linked.length > 1 ? '<p class="hint">2つ以上の一覧の建物が結ばれています。同じ建物でなければ、ちがう方を外してください。</p>' : ''}
-      <button type="button" class="btn small" data-gbn="pick">一覧の建物を選んで結ぶ</button>
       <small class="hint" style="display:block">区域係だけに出ます。</small></details>`;
   }
   window.gaibuNotice = houseNotice;
@@ -423,6 +424,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   document.addEventListener('click', async e => {
     const a = e.target && e.target.closest ? e.target.closest('[data-gbn]') : null;
     if (!a) return;
+    e.preventDefault(); // 1行目（summary）のボタンで、開け閉めしない
     const box = a.closest('[data-gbn-h]'), h = box && houseById(box.dataset.gbnH);
     if (!h || !st.data) return;
     const b = a.dataset.b ? (st.data.blds || []).find(x => x.id === a.dataset.b) : null;
@@ -433,36 +435,43 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const act = a.dataset.gbn;
     if (act === 'ok' && b) await link([{ id: b.id, hid: h.id }], '仮を外しました', repaint);
     else if (act === 'un' && b) {
-      if (!await ask(`「${b.name}」との結びつきを外します。入れた記録は残ります（次の取り込みでは入らなくなります）。よろしいですか？`, { ok: '外す' })) return;
+      if (!await ask(`「${b.name}」との結びつきを外します。この建物から入れた記録は、次の取り込みで消えます（アプリで入れた記録は残ります）。よろしいですか？`, { ok: '外す' })) return;
       await link([{ id: b.id, hid: '' }], '外しました', repaint);
     } else if (act === 'pick') pickFor(h, '');
   });
 
-  /* この家に結ぶ一覧の建物を選ぶ（近い順・名前でさがせる） */
-  function pickFor(h, q) {
+  /* この家の一覧の建物を切り替える（近い順・名前でさがせる）。
+     選ぶと、その建物をこの家に結び、前に結んでいた建物は「まだ」にもどす（「今の建物も残す」なら残す） */
+  function pickFor(h, q, keep) {
+    const cur = (st.data.blds || []).filter(b => b.hid === h.id && !b.skip);
     const nq = norm(q), nh = norm(h.label);
     const rows = (st.data.blds || []).filter(b => !b.gone)
       .map(b => ({ b, m: hasPos(b) && h.lat != null ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity, same: !!nh && norm(b.name) === nh }))
       .filter(x => !nq || norm(x.b.name).includes(nq) || norm(x.b.addr).includes(nq) || norm(x.b.label).includes(nq))
       .sort((x, y) => (y.same - x.same) || (x.m - y.m)).slice(0, 40);
     const now = b => b.hid === h.id ? 'この家に結んでいます' : b.hid ? `→ ${esc((houseById(b.hid) || {}).label || 'ほかの家')}に結んでいます${stOf(b) === 'tmp' ? '（仮）' : ''}` : b.skip ? '取り込まない' : 'まだ結んでいません';
-    setSheet(headHtml(terrById(h.terrId), '一覧の建物を結ぶ', esc(h.label || '名前のない家')) + `
-      <p class="hint">この${h.type === 'apt' ? '集合住宅' : '家'}に結ぶ、一覧の建物を選んでください。${nq ? '' : '近い順です。'}</p>
+    setSheet(headHtml(terrById(h.terrId), cur.length ? '一覧の建物を切り替える' : '一覧の建物を選ぶ', esc(h.label || '名前のない家')) + `
+      ${cur.length ? `<p class="gb-src">今：<b>${esc(cur.map(b => b.name || '（名前なし）').join('、'))}</b></p>` : ''}
+      <p class="hint">この${h.type === 'apt' ? '集合住宅' : '家'}の、一覧の建物を選んでください。${nq ? '' : '近い順です。'}</p>
+      ${cur.length ? `<label class="check"><input type="checkbox" id="gbKeep"${keep ? ' checked' : ''}>今の建物も残す（同じ建物が2つの一覧に載っているとき）</label>` : ''}
       <input type="search" id="gbPq" value="${esc(q)}" placeholder="建物名・住所・一覧の名前でさがす" aria-label="一覧の建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
       <div>${rows.map(x => `<div class="gb-row" style="cursor:default;flex-wrap:wrap"><span class="tx" style="flex:1 1 100%"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
           <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
-          <span style="margin-left:auto;display:flex;gap:6px">${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>結ぶ</button></span></div>`).join('') || '<div class="empty">ありません</div>'}</div>
+          <span style="margin-left:auto;display:flex;gap:6px">${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></span></div>`).join('') || '<div class="empty">ありません</div>'}</div>
       <button type="button" class="btn block" id="gbPBack">もどる</button>`);
     const S = $('#sheet');
     $('#gbPBack').onclick = backTo(h);
     const qi = $('#gbPq');
     let tm = null;
-    qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { pickFor(h, qi.value); const n = $('#gbPq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
+    const keepOn = () => !!($('#gbKeep') && $('#gbKeep').checked);
+    qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { pickFor(h, qi.value, keepOn()); const n = $('#gbPq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
     $$('[data-gbp]', S).forEach(x => x.onclick = async () => {
       const b = (st.data.blds || []).find(y => y.id === x.dataset.gbp); if (!b) return;
       if (b.hid && b.hid !== h.id && houseById(b.hid) && !await ask(`「${b.name}」は、いま「${houseById(b.hid).label || 'ほかの家'}」に結んでいます。この${h.type === 'apt' ? '集合住宅' : '家'}に結び直しますか？次の取り込みで、記録もこちらに移ります。`, { ok: '結び直す' })) return;
       if (h.type !== 'apt' && !await ask('この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。よろしいですか？', { ok: '結ぶ' })) return;
-      await link([{ id: b.id, hid: h.id }], '結びました。次の取り込みで記録が入ります', backTo(h));
+      const drop = keepOn() ? [] : cur.filter(c => c.id !== b.id);
+      await link([{ id: b.id, hid: h.id }].concat(drop.map(c => ({ id: c.id, hid: '' }))),
+        drop.length ? `「${b.name}」に切り替えました。「${drop.map(c => c.name).join('、')}」は まだ にもどし、その記録は次の取り込みで消えます` : '結びました。次の取り込みで記録が入ります', backTo(h));
     });
   }
 
