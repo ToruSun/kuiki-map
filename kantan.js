@@ -318,6 +318,7 @@
       const blocked = (dnc && !isAdmin()) || (other && !isAdmin() && !st.override && recentMet(k));
       let b = headHtml(t, title, sub);
       if (fromBuilding) b += '<button class="btn small" id="backBld">← 部屋の入力にもどる</button>';
+      if (!unit && h.type !== 'apt' && window.gaibuNotice) b += window.gaibuNotice(h); // 外の一覧の建物（区域係だけ・gaibu.js）
       // 大事なお知らせだけ（どれも1〜2行）
       if (dnc && dnc.lg) {
         b += langNoteHtml(what, k);

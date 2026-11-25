@@ -12,6 +12,9 @@
        仮で結ぶ：残りを全部まとめて結ぶ（近くのアパート → 近くの仮の家 → なければ新しく置く）。あとで「仮」のタブで確かめる
    ・入れた記録は「取り込み」（記録した人）。一覧を直せば、次の取り込みでアプリの記録も直る
 
+   ・家や「集」の画面（区域係だけ）：結んでいる一覧の建物を出し、これでよい・外す・ほかの一覧の建物を選んで結ぶ（window.gaibuNotice）
+   ・Google マップで見る：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
+
    index.html：torikomi.js の次に <script src="gaibu.js"></script>
    ========================================================= */
 (function () {
@@ -38,6 +41,12 @@
 .gb-mapbar .acts{display:flex;flex-wrap:wrap;gap:6px}
 .gb-mapbar .acts .btn{flex:1 1 auto;min-height:48px}
 .gb-mapbar .x{position:absolute;top:6px;right:6px;width:40px;height:40px;border-radius:50%;border:2px solid var(--line);background:#fff;font-size:20px;line-height:1;cursor:pointer}
+.gb-hn{margin:8px 0;padding:8px 12px}
+.gb-hn>summary{cursor:pointer;font-weight:700;min-height:40px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.gb-hrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.gb-hrow .tx{flex:1 1 180px;min-width:0;line-height:1.35}
+.gb-hrow .tx small{display:block;font-size:13px;color:var(--ink2)}
+a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 .gb-pin-h{background:var(--brand-ink,#1d3a5a);color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
 .gb-pin-b{background:#9A5B12;color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
 `;
@@ -50,6 +59,16 @@
   const day = iso => { const t = Date.parse(iso); if (!isFinite(t)) return ''; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const stOf = b => b.skip ? 'skip' : b.gone ? 'gone' : b.hid ? (houseById(b.hid) ? (b.tmp ? 'tmp' : 'ok') : 'lost') : 'wait';
   const ST_LABEL = { ok: '結んだ', tmp: '仮', wait: 'まだ', skip: '取り込まない', gone: '一覧にない', lost: '家がない' };
+  const fmtM = m => !isFinite(m) ? '場所不明' : m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
+  /* Google マップの検索を開く（建物名＋住所。住所に市町村がなければ、会衆の県・市をつける） */
+  function gmapUrl(b) {
+    const A = typeof CFG_AREA !== 'undefined' ? CFG_AREA : null;
+    let addr = String(b.addr || '').trim();
+    if (A && addr && !A.names.concat([A.muni]).some(n => n && addr.includes(n))) addr = A.prefOf(A.muni) + A.muni + addr;
+    const q = [String(b.name || '').trim(), addr].filter(Boolean).join(' ');
+    return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
+  }
+  const gmapBtn = (b, cls) => { const u = gmapUrl(b); return u ? `<a class="btn ${cls == null ? 'small' : cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">Google マップ</a>` : ''; };
   const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
 
   /* 候補：場所の近い家（60m 以内。アパートを先に）と、名前が同じ家（場所が分からないとき・遠くても） */
@@ -299,6 +318,7 @@
         ${tmp ? '<button type="button" class="btn primary" data-a="ok">これでよい</button>' : ''}
         ${!isCur ? '<button type="button" class="btn primary" data-a="link">ここに結ぶ</button>' : ''}
         ${h.type === 'apt' && typeof openBuilding === 'function' ? '<button type="button" class="btn" data-a="room">部屋</button>' : ''}
+        ${gmapBtn(b, '')}
         <button type="button" class="btn" data-a="bld">ほかを選ぶ</button>
         <button type="button" class="btn" data-a="list">一覧へ</button>
       </div>`;
@@ -331,7 +351,7 @@
     const cs = candidates(b).filter(c => !cur || c.h.id !== cur.id);
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
-      <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}${hasPos(b) ? '' : '・場所が分かりません（一覧のリンクか住所を確かめてください）'}</p>
+      <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}${hasPos(b) ? '' : '・場所が分かりません（一覧のリンクか住所を確かめてください）'}　${gmapBtn(b)}</p>
       ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
         <button type="button" class="btn primary block" id="gbOkTmp">これでよい（仮を外す）</button>
         <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る（一覧の位置と並べて）</button>` : ''}
@@ -372,6 +392,78 @@
       await link([{ id: b.id, hid: '' }], '結びつきを外しました（入れた記録は残っています）');
     };
     $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
+  }
+
+  /* ---------- 家や「集」の画面（区域係だけ）：結んでいる一覧の建物 ---------- */
+  let preloading = null;
+  function preload() {
+    if (preloading || st.data || typeof isAdmin !== 'function' || !isAdmin()) return;
+    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) st.data = d; }).catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
+  }
+  setTimeout(() => { try { if (typeof LIVE !== 'undefined' && LIVE) preload(); } catch (e) { /* そのまま */ } }, 8000);
+  const backTo = h => () => { if (!houseById(h.id)) { closeSheet(); return; } if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false); };
+
+  function houseNotice(h) {
+    if (!h || typeof isAdmin !== 'function' || !isAdmin()) return '';
+    if (!st.data) { preload(); return ''; }
+    const linked = (st.data.blds || []).filter(b => b.hid === h.id && !b.skip);
+    const tmp = linked.some(b => stOf(b) === 'tmp');
+    const rows = linked.map(b => `<div class="gb-hrow"><span class="tx"><b>${esc(b.name || '（名前なし）')}</b>${stOf(b) === 'tmp' ? ' <span class="gb-st wait">仮</span>' : ''}
+        <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${b.gone ? '・今の一覧にない' : ''}${hasPos(b) && h.lat != null ? `・一覧の位置から${fmtM(dist(b.lat, b.lng, h.lat, h.lng))}` : ''}</small></span>
+        ${stOf(b) === 'tmp' ? `<button type="button" class="btn small primary" data-gbn="ok" data-b="${esc(b.id)}">これでよい</button>` : ''}${gmapBtn(b)}<button type="button" class="btn small" data-gbn="un" data-b="${esc(b.id)}">外す</button></div>`).join('');
+    const sum = linked.length ? `外の一覧：${esc(linked.map(b => b.name || '（名前なし）').join('、'))}${tmp ? ' <span class="gb-st wait">仮</span>' : ''}` : '外の一覧：結んでいません';
+    return `<details class="notice gb-hn" data-gbn-h="${esc(h.id)}"${tmp ? ' open' : ''}><summary>${sum}</summary>
+      ${rows}
+      ${linked.length > 1 ? '<p class="hint">2つ以上の一覧の建物が結ばれています。同じ建物でなければ、ちがう方を外してください。</p>' : ''}
+      <button type="button" class="btn small" data-gbn="pick">一覧の建物を選んで結ぶ</button>
+      <small class="hint" style="display:block">区域係だけに出ます。</small></details>`;
+  }
+  window.gaibuNotice = houseNotice;
+
+  document.addEventListener('click', async e => {
+    const a = e.target && e.target.closest ? e.target.closest('[data-gbn]') : null;
+    if (!a) return;
+    const box = a.closest('[data-gbn-h]'), h = box && houseById(box.dataset.gbnH);
+    if (!h || !st.data) return;
+    const b = a.dataset.b ? (st.data.blds || []).find(x => x.id === a.dataset.b) : null;
+    const repaint = () => {
+      const el = document.querySelector(`[data-gbn-h="${CSS.escape(h.id)}"]`);
+      if (el) { el.outerHTML = houseNotice(h); const n = document.querySelector(`[data-gbn-h="${CSS.escape(h.id)}"]`); if (n) n.open = true; }
+    };
+    const act = a.dataset.gbn;
+    if (act === 'ok' && b) await link([{ id: b.id, hid: h.id }], '仮を外しました', repaint);
+    else if (act === 'un' && b) {
+      if (!await ask(`「${b.name}」との結びつきを外します。入れた記録は残ります（次の取り込みでは入らなくなります）。よろしいですか？`, { ok: '外す' })) return;
+      await link([{ id: b.id, hid: '' }], '外しました', repaint);
+    } else if (act === 'pick') pickFor(h, '');
+  });
+
+  /* この家に結ぶ一覧の建物を選ぶ（近い順・名前でさがせる） */
+  function pickFor(h, q) {
+    const nq = norm(q), nh = norm(h.label);
+    const rows = (st.data.blds || []).filter(b => !b.gone)
+      .map(b => ({ b, m: hasPos(b) && h.lat != null ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity, same: !!nh && norm(b.name) === nh }))
+      .filter(x => !nq || norm(x.b.name).includes(nq) || norm(x.b.addr).includes(nq) || norm(x.b.label).includes(nq))
+      .sort((x, y) => (y.same - x.same) || (x.m - y.m)).slice(0, 40);
+    const now = b => b.hid === h.id ? 'この家に結んでいます' : b.hid ? `→ ${esc((houseById(b.hid) || {}).label || 'ほかの家')}に結んでいます${stOf(b) === 'tmp' ? '（仮）' : ''}` : b.skip ? '取り込まない' : 'まだ結んでいません';
+    setSheet(headHtml(terrById(h.terrId), '一覧の建物を結ぶ', esc(h.label || '名前のない家')) + `
+      <p class="hint">この${h.type === 'apt' ? '集合住宅' : '家'}に結ぶ、一覧の建物を選んでください。${nq ? '' : '近い順です。'}</p>
+      <input type="search" id="gbPq" value="${esc(q)}" placeholder="建物名・住所・一覧の名前でさがす" aria-label="一覧の建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
+      <div>${rows.map(x => `<div class="gb-row" style="cursor:default;flex-wrap:wrap"><span class="tx" style="flex:1 1 100%"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
+          <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
+          <span style="margin-left:auto;display:flex;gap:6px">${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>結ぶ</button></span></div>`).join('') || '<div class="empty">ありません</div>'}</div>
+      <button type="button" class="btn block" id="gbPBack">もどる</button>`);
+    const S = $('#sheet');
+    $('#gbPBack').onclick = backTo(h);
+    const qi = $('#gbPq');
+    let tm = null;
+    qi.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { pickFor(h, qi.value); const n = $('#gbPq'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); };
+    $$('[data-gbp]', S).forEach(x => x.onclick = async () => {
+      const b = (st.data.blds || []).find(y => y.id === x.dataset.gbp); if (!b) return;
+      if (b.hid && b.hid !== h.id && houseById(b.hid) && !await ask(`「${b.name}」は、いま「${houseById(b.hid).label || 'ほかの家'}」に結んでいます。この${h.type === 'apt' ? '集合住宅' : '家'}に結び直しますか？次の取り込みで、記録もこちらに移ります。`, { ok: '結び直す' })) return;
+      if (h.type !== 'apt' && !await ask('この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。よろしいですか？', { ok: '結ぶ' })) return;
+      await link([{ id: b.id, hid: h.id }], '結びました。次の取り込みで記録が入ります', backTo(h));
+    });
   }
 
   window.gaibu = { open };

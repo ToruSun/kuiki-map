@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.182';
+var APP_JS_VER = '2026.13.183';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,10 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.183', items: [
+    ['係', '家や「集」の画面に「外の一覧」の欄ができました（区域係だけ）。結んでいる一覧の建物が出て、「これでよい」「外す」「一覧の建物を選んで結ぶ」が地図の上でできます。'],
+    ['係', '「外の一覧」の建物に「Google マップ」のボタンがつきました。建物名と住所で Google マップの検索を開きます（位置は保存しません）。']
+  ] },
   { v: '2026.13.182', items: [
     ['係', '「外の一覧とつなぐ」の「地図で見る」で、結んだ家と一覧の位置に印がつき、下の帯から「これでよい」「ほかを選ぶ」「一覧へ」をすぐ選べるようになりました。「これでよい」で次の仮の建物の地図へ進みます。一覧の画面は前に読んだものをすぐ出し、見ていた所にもどります。']
   ] },
@@ -5049,6 +5053,7 @@ function openTarget(hid, unit, fromBuilding, review) {
     if (h.ban) b += banNotice(h);
     if (unit) b += bldMemoHtml(h);
     if (window.chuiNotice) b += window.chuiNotice(h, unit); // 注意（！）。特別区域で回る家のお知らせも、ここに続けて出す（tokubetsu.js）
+    if (!unit && h.type !== 'apt' && window.gaibuNotice) b += window.gaibuNotice(h); // 外の一覧の建物を結ぶ（区域係だけ・gaibu.js）
     if (!dnc && other) b += `<div class="notice warn"><b>ほかの人が再訪問している${unit ? '部屋' : '家'}です。</b>${recentMet(k) ? '最近会えているので、訪問は控えてください。' : 'しばらく会えていないので、訪ねてもかまいません。'}${blocked ? '<span class="actions"><button class="btn small" id="shOverride">それでも記録する</button></span>' : ''}</div>`;
 
 
@@ -6428,7 +6433,7 @@ function openBuilding(hid, startSel) {
     }
 
     setSheet(headHtml(t, esc(h.label || '集合住宅') + 'の編集', `区域${t ? esc(t.no) : '-'}　${fl ? fl + '階建て・' : ''}${h.units.filter(u => !B_FRAME.test(u)).length}部屋`) + `
-      ${banNotice(h)}${window.chuiNotice ? window.chuiNotice(h, '') : ''}${window.aptAutoNotice ? window.aptAutoNotice(h) : ''}
+      ${banNotice(h)}${window.chuiNotice ? window.chuiNotice(h, '') : ''}${window.aptAutoNotice ? window.aptAutoNotice(h) : ''}${window.gaibuNotice ? window.gaibuNotice(h) : ''}
       ${h.units.length ? '<button class="btn block bback" id="seqStart">← 続けて入力にもどる</button>' : ''}
       ${frames || !h.units.length ? `<button class="btn primary block" data-aptedit="${esc(h.id)}">部屋番号を入れる（階ごとにまとめて）</button>` : ''}
       <div class="bgrid">${grid || '<p class="muted">部屋がまだありません。</p>'}</div>
@@ -6669,6 +6674,7 @@ function openAptSeq(hid, startUnit) {
       : `<div class="unitstrip">${h.units.map(chip).join('')}</div>`;
     b += banNotice(h) + bldMemoHtml(h);
     if (window.chuiNotice) b += window.chuiNotice(h, st.finished ? '' : h.units[idx]); // 注意（！）
+    if (window.gaibuNotice) b += window.gaibuNotice(h); // 外の一覧の建物（区域係だけ・gaibu.js）
     if (st.finished) {
       b += `<div class="okmsg"><b>${cnt === need ? 'すべての部屋に緑のチェックがつきました。' : '最後の部屋まで進みました。'}</b>部屋番号をタップすると、その部屋を入力できます。</div>
         <button class="btn primary block" data-close>閉じる</button>
