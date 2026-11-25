@@ -15,7 +15,9 @@
      結びつけた家がアパートでなければ、アパートにする（仮の家の印は外す）
    ・オートロック：送られた建物が lock なら、アパートに印をつける（外さない）
    ・データ：シート「gaibu」（id＝元~建物。同期の記録 journal には乗せない。係の画面だけが gb_list で読む）
-       { src, k, label, name, addr, lat, lng, lock, n: 部屋数, rooms: 部屋番号, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果 }
+       { src, k, label, name, addr, lat, lng, lock, n: 部屋数, rooms: 部屋番号, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果,
+         fix: { lat, lng, from: 'chiban'（地番の地図）|'hand'（係が地図で置いた） } }
+       lat・lng は一覧から届いた位置（取り込みのたびに入れかわる）。fix は画面で直した位置で、取り込みでは変えない（gb_pos）
 
    送る形（action: 'gb_sync'。token の代わりに key）：
      { key, src: '元（英数字12字まで）', label: '一覧の名前', dry: true で確かめだけ,
@@ -227,7 +229,7 @@ function gbSyncCore_(src, label, blds, dry) {
       const o = out[i];
       ups.push([id, {
         src: src, k: b.k, label: label, name: b.name, addr: b.addr, lat: b.lat, lng: b.lng, lock: b.lock,
-        n: b.rooms.length, rooms: b.rooms.map(function (rm) { return rm.r; }), nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso,
+        n: b.rooms.length, rooms: b.rooms.map(function (rm) { return rm.r; }), nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso, fix: d.fix || null,
         res: { st: o.st, add: o.add, upd: o.upd, del: o.del, dup: o.dup }
       }]);
     });
@@ -264,6 +266,11 @@ function gbApi_(user, req) {
     props_().deleteProperty(GB_KEY_AT);
     gbOpsLog_(user, '鍵を止めた');
     return { ok: true };
+  }
+  if (a === 'gb_pos') {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
+    try { return gbPos_(user, req.items); } finally { lock.releaseLock(); }
   }
   if (a === 'gb_link') {
     const lock = LockService.getScriptLock();
@@ -305,7 +312,7 @@ function gbLink_(user, items) {
     if (!cur || !cur.data) { bad.push(id); return; }
     let hid = String(it.hid || '');
     if (it.make) {
-      const b = cur.data;
+      const b = Object.assign({}, cur.data, cur.data.fix && cur.data.fix.lat != null ? { lat: cur.data.fix.lat, lng: cur.data.fix.lng } : {}); // 直した位置があれば、そこに置く
       if (b.lat == null || b.lng == null || !isFinite(Number(b.lat)) || !isFinite(Number(b.lng))) { bad.push(id); return; }
       const tid = it.terrId && terrs.get(String(it.terrId)) ? String(it.terrId) : null;
       hid = 'hg' + gbH_(id + '|' + nowIso_(), 12);
@@ -342,6 +349,23 @@ function gbLink_(user, items) {
     applied = hu.length - (res.rejected || []).filter(function (x) { return x.c === 'houses'; }).length;
   }
   return { ok: true, n: ups.length, bad: bad, made: made, applied: applied };
+}
+
+/* 一覧の建物の位置を直す。items: [{ id, lat, lng, from: 'chiban'|'hand' }] または [{ id, clear: true }]（一覧の位置にもどす）
+   取り込みでは変えない。新しく置くときは、この位置に置く */
+function gbPos_(user, items) {
+  if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
+  const gm = gbRead_(), ups = [], bad = [];
+  items.forEach(function (it) {
+    const id = String(it && it.id || ''), cur = gm.get(id);
+    if (!cur || !cur.data) { bad.push(id); return; }
+    if (it.clear) { ups.push([id, Object.assign({}, cur.data, { fix: null })]); return; }
+    const lat = gbNum_(it.lat), lng = gbNum_(it.lng), from = it.from === 'chiban' ? 'chiban' : it.from === 'hand' ? 'hand' : '';
+    if (lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180 || !from) { bad.push(id); return; }
+    ups.push([id, Object.assign({}, cur.data, { fix: { lat: lat, lng: lng, from: from, at: nowIso_() } })]);
+  });
+  gbWrite_(gm, ups, user.id);
+  return { ok: true, n: ups.length, bad: bad };
 }
 
 /* 家を一覧の建物に合わせる：名前・アパート・オートロック・部屋。

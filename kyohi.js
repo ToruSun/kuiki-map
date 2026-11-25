@@ -916,6 +916,7 @@
     return { pos: { lat: ps[0].lat, lng: ps[0].lng, good: true, chiban: true, exact }, polys: ps.map(x => x.ring), src: idx.src, asof: idx.asof };
   }
   window.chibanFind = chibanFind; // index.html のエクセル取り込みでも使う
+  window.chibanAddr = raw => parseAddr(raw, defMuni([])); // 住所の文字 → chibanFind に渡す形（外の一覧の位置・gaibu.js）
   /* 場所 → 地番の住所（外国語の家の一覧・gaikokugo.js）。端末の中だけで調べる。
      names：その区域の字の名前（t.aza の n）。そこから探し、なければその市町村の字を全部見る */
   const inRing = (lat, lng, r) => {

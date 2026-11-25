@@ -13,6 +13,10 @@
    ・入れた記録は「取り込み」（記録した人）。一覧を直せば、次の取り込みでアプリの記録も直る
 
    ・家や「集」の画面（区域係だけ）：結んでいる一覧の建物を出し、これでよい・外す・ほかの一覧の建物を選んで結ぶ（window.gaibuNotice）
+   ・一覧の位置：直した位置（fix：地番の地図・係が地図で置いた）＞ 一覧から届いた位置（リンク・住所）。
+       一覧から届いた位置でも、名前のちがう建物がほぼ同じ所にあるとき（リンクの写しまちがい・住所が町の代表点になったもの）は使わない
+       地番の地図（kyohi.js の chibanFind。法務省の地図）で住所が見つかれば、その位置を覚える（gb_pos）
+   ・位置を地図で直す：十字に建物を合わせて「ここにする」（Google マップの位置は写さない。見て確かめるだけ）
    ・Google マップで見る：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
 
    index.html：torikomi.js の次に <script src="gaibu.js"></script>
@@ -48,6 +52,10 @@
 .gb-hrow .tx small{display:block;font-size:13px;color:var(--ink2)}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 .gb-pin-h{background:var(--brand-ink,#1d3a5a);color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
+.gb-cross{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;z-index:650;pointer-events:none}
+.gb-cross::before,.gb-cross::after{content:'';position:absolute;background:#C0392B;box-shadow:0 0 0 2px #fff}
+.gb-cross::before{left:20px;top:0;width:4px;height:44px}
+.gb-cross::after{top:20px;left:0;height:4px;width:44px}
 .gb-pin-o{background:#5b6776;color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
 .gb-pin-b{background:#9A5B12;color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
 `;
@@ -106,26 +114,90 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     return null;
   }
 
-  /* 仮で結ぶ相手：近くのアパート（名前が同じものを先に）→ 近くの仮の家 → なければ新しく置く。場所が分からない建物は残す */
-  function kariOf(b) {
-    if (!hasPos(b)) return null;
-    const nb = norm(b.name);
-    let apt = null, prov = null;
-    D().houses.forEach(h => {
-      if (!h || h.lat == null) return;
-      const m = dist(b.lat, b.lng, h.lat, h.lng);
-      if (h.type === 'apt' && m <= KARI_APT_M) {
-        const same = nb && norm(h.label) === nb;
-        if (!apt || (same && !apt.same) || (same === apt.same && m < apt.m)) apt = { h, m, same };
-      } else if (h.type !== 'apt' && h.prov && m <= KARI_PROV_M && (!prov || m < prov.m)) prov = { h, m };
+  /* 仮で結ぶ相手を決める（まとめて）
+     ・使える位置がない建物（分からない・あやしい）は、まだ のまま
+     ・ほかの一覧の建物を結んでいる家には結ばない。1つの家には1棟だけ（名前が同じ組 → 近い組の順に決める）
+     ・近くのアパート（40m）→ 近くの仮の家（25m）。どちらもなく、近くに相手がとられた家もなければ、新しく置く
+     返す：[{ b, h, how: 'apt'|'prov'|'make'|'nopos'|'busy', m }] */
+  function kariPlan(list) {
+    const taken = new Set((st.data.blds || []).filter(x => x.hid && !x.skip && !x.gone).map(x => x.hid));
+    const pairs = [], near = new Map();
+    list.forEach(b => {
+      if (!hasPos(b)) return;
+      const nb = norm(b.name);
+      D().houses.forEach(h => {
+        if (!h || h.lat == null) return;
+        const isApt = h.type === 'apt', ok = isApt || (h.type !== 'apt' && h.prov);
+        if (!ok) return;
+        const m = dist(b.lat, b.lng, h.lat, h.lng);
+        if (m > (isApt ? KARI_APT_M : KARI_PROV_M)) return;
+        near.set(b.id, true);
+        if (taken.has(h.id)) return;
+        pairs.push({ b, h, m, how: isApt ? 'apt' : 'prov', same: !!nb && norm(h.label) === nb });
+      });
     });
-    if (apt) return { b, h: apt.h, how: 'apt', m: apt.m };
-    if (prov) return { b, h: prov.h, how: 'prov', m: prov.m };
-    return { b, h: null, how: 'make' };
+    pairs.sort((x, y) => (y.same - x.same) || ((x.how === 'apt' ? 0 : 1) - (y.how === 'apt' ? 0 : 1)) || (x.m - y.m));
+    const got = new Map(), used = new Set();
+    pairs.forEach(p => { if (!got.has(p.b.id) && !used.has(p.h.id)) { got.set(p.b.id, p); used.add(p.h.id); } });
+    return list.map(b => got.get(b.id) || (!hasPos(b) ? { b, how: 'nopos' } : near.get(b.id) ? { b, how: 'busy' } : { b, h: null, how: 'make' }));
+  }
+
+  /* 位置をそろえる：b.lat・b.lng を「使ってよい位置」にする（一覧から届いた位置は b.llat・b.llng に残す）
+     b.pf：chiban（地番の地図）・hand（係が置いた）・list（一覧から）・dup（ほかの建物と同じ所であやしい）・''（分からない） */
+  const DUP_M = 8;
+  function prep() {
+    const bl = (st.data && st.data.blds) || [];
+    bl.forEach(b => { if (!('llat' in b)) { b.llat = b.lat; b.llng = b.lng; } b.dupPos = false; });
+    const pts = bl.filter(b => b.llat != null && b.llng != null && isFinite(b.llat) && isFinite(b.llng));
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      const a = pts[i], c = pts[j];
+      if (Math.abs(a.llat - c.llat) > 0.0002 || Math.abs(a.llng - c.llng) > 0.0003) continue;
+      if (dist(a.llat, a.llng, c.llat, c.llng) > DUP_M) continue;
+      if ((norm(a.name) && norm(a.name) === norm(c.name)) || (norm(a.addr) && norm(a.addr) === norm(c.addr))) continue; // 同じ建物（2つの一覧に載っている）
+      a.dupPos = c.dupPos = true;
+    }
+    bl.forEach(b => {
+      if (b.fix && b.fix.lat != null) { b.lat = b.fix.lat; b.lng = b.fix.lng; b.pf = b.fix.from; }
+      else if (b.llat != null && !b.dupPos) { b.lat = b.llat; b.lng = b.llng; b.pf = 'list'; }
+      else { b.lat = null; b.lng = null; b.pf = b.llat != null ? 'dup' : ''; }
+    });
+  }
+  const PF_LABEL = { chiban: '地番の地図で調べた位置', hand: '地図で直した位置', list: '一覧のリンク・住所の位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
+
+  /* 地番の地図で、一覧の住所の位置を調べて覚える（使える位置がない建物だけ。この端末の中で調べる）。
+     一覧の位置があっても、地番の地図と 80m 以上はなれていたら b.far に残す（画面で知らせるだけ） */
+  let cbRunning = null;
+  function chibanPass() {
+    if (cbRunning) return cbRunning;
+    if (typeof window.chibanFind !== 'function' || typeof window.chibanAddr !== 'function' || !st.data) return Promise.resolve(0);
+    cbRunning = (async () => {
+      const todo = (st.data.blds || []).filter(b => !b.gone && !b.cbDone && b.addr && !(b.fix && b.fix.lat != null));
+      const save = [];
+      for (const b of todo) {
+        b.cbDone = true;
+        let r = null;
+        try { const e = window.chibanAddr(b.addr); r = e ? await window.chibanFind(e) : null; } catch (e) { r = null; }
+        if (!r || !r.pos) continue;
+        if (b.pf === 'list') { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); continue; }
+        b.fix = { lat: Math.round(r.pos.lat * 1e6) / 1e6, lng: Math.round(r.pos.lng * 1e6) / 1e6, from: 'chiban' };
+        save.push({ id: b.id, lat: b.fix.lat, lng: b.fix.lng, from: 'chiban' });
+      }
+      if (save.length) {
+        prep();
+        for (let i = 0; i < save.length; i += 100) { try { await api('gb_pos', { items: save.slice(i, i + 100) }, { timeout: 60000 }); } catch (e) { /* 次に開いたとき、また調べる */ } }
+      }
+      return save.length;
+    })().finally(() => { cbRunning = null; });
+    return cbRunning;
   }
 
   async function load(quiet) {
-    try { st.data = await api('gb_list', {}, { timeout: 45000 }); return true; }
+    try {
+      const d = await api('gb_list', {}, { timeout: 45000 });
+      const old = new Map(((st.data && st.data.blds) || []).map(b => [b.id, b]));
+      (d.blds || []).forEach(b => { const o = old.get(b.id); if (o) { if (o.cbDone) b.cbDone = true; if (o.far) b.far = o.far; } });
+      st.raw = JSON.stringify(d); st.data = d; prep(); return true;
+    }
     catch (e) {
       if (!quiet || !st.data) { st.data = null; toast(e && e.code === 'unknown_action' ? 'サーバーがまだ新しくなっていません' : '読み込めませんでした。あとでもう一度ためしてください'); }
       return false;
@@ -133,20 +205,27 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
   /* うしろで読み直す。一覧の画面のままなら、変わったときだけ描き直す（見ていた所はそのまま） */
   async function refresh() {
-    const before = JSON.stringify(st.data);
+    const before = st.raw;
     if (!await load(true)) return;
-    if (JSON.stringify(st.data) === before) return;
+    if (st.raw === before) return;
     if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); }
+  }
+
+  /* 一覧の画面を開いたあと、地番の地図で位置を調べる。見つかったら知らせて描き直す */
+  async function cbAfter() {
+    const n = await chibanPass().catch(() => 0);
+    if (n) { toast(`地番の地図で、${n}棟の位置が分かりました`); if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); } }
   }
 
   /* 一覧の画面：前に読んだものをすぐ出し、うしろで読み直す */
   async function open() {
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
     mapOff();
-    if (st.data) { render(); refresh(); return; }
+    if (st.data) { render(); refresh().then(cbAfter); return; }
     setSheet(headHtml(null, '外の一覧とつなぐ', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
     render();
+    cbAfter();
   }
 
   function render() {
@@ -166,6 +245,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${(d.srcs || []).length ? `<h3 class="sub">届いた一覧</h3>${d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(s => `<p class="gb-src">${esc(s.label || s.src)}：${s.n}棟・${esc(day(s.at))}</p>`).join('')}` : '<p class="hint">まだ一覧が届いていません。取り込み用のプログラムで「今すぐ取り込む」をためしてください。</p>'}
       ${sure.length ? `<button type="button" class="btn primary block" id="gbSure">候補が1つの建物をまとめて結ぶ（${sure.length}棟）</button>` : ''}
       ${cnt.wait ? `<button type="button" class="btn block" id="gbKari">残り ${cnt.wait}棟を全部、仮で結ぶ</button>` : ''}
+      ${cnt.tmp ? `<button type="button" class="btn block" id="gbKariOff">仮 ${cnt.tmp}棟をまとめて外す</button>` : ''}
       <div class="gb-tabs">${tab('wait', `まだ ${cnt.wait + cnt.lost}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ok', `結んだ ${cnt.ok}`)}${tab('skip', `取り込まない ${cnt.skip}`)}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}${tab('all', 'すべて')}</div>
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="建物名・住所でさがす" aria-label="建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
       <div id="gbRows">${listRows()}</div>
@@ -183,6 +263,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     };
     if ($('#gbSure')) $('#gbSure').onclick = () => confirmSure(sure);
     if ($('#gbKari')) $('#gbKari').onclick = () => confirmKari(blds.filter(b => stOf(b) === 'wait'));
+    if ($('#gbKariOff')) $('#gbKariOff').onclick = () => kariOff(blds.filter(b => stOf(b) === 'tmp'));
   }
 
   /* 一覧の画面の建物の行（タブと検索で しぼる） */
@@ -235,20 +316,23 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     };
   }
 
-  function confirmKari(list) {
-    const plan = list.map(kariOf), go = plan.filter(Boolean);
-    const n = { apt: 0, prov: 0, make: 0 };
-    go.forEach(x => { n[x.how]++; });
-    const none = plan.length - go.length;
+  async function confirmKari(list) {
+    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="hint">地番の地図で位置を調べています…</p>');
+    await chibanPass().catch(() => 0);
+    list = list.map(b => (st.data.blds || []).find(x => x.id === b.id) || b);
+    const plan = kariPlan(list), go = plan.filter(x => x.how === 'apt' || x.how === 'prov' || x.how === 'make');
+    const n = { apt: 0, prov: 0, make: 0, nopos: 0, busy: 0 };
+    plan.forEach(x => { n[x.how]++; });
     setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + `
       <p>まだ結んでいない建物を、まとめて仮で結びます。次の取り込みで、地図に記録が出ます。</p>
       <ul>
         <li>近く（${KARI_APT_M}m 以内）のアパートに結ぶ：<b>${n.apt}棟</b>（名前が同じものを先に）</li>
         <li>近く（${KARI_PROV_M}m 以内）の仮の家に結ぶ（アパートになります）：<b>${n.prov}棟</b></li>
         <li>建物の場所に新しいアパートを置いて結ぶ：<b>${n.make}棟</b></li>
-        ${none ? `<li>場所が分からないので、まだ のまま：<b>${none}棟</b></li>` : ''}
+        ${n.busy ? `<li>近くの家に、もうほかの一覧の建物が結ばれているので、まだ のまま：<b>${n.busy}棟</b></li>` : ''}
+        ${n.nopos ? `<li>位置が分からない・あやしいので、まだ のまま：<b>${n.nopos}棟</b>（「位置を地図で直す」で置けます）</li>` : ''}
       </ul>
-      <p class="hint">あとで「仮」のタブで1棟ずつ確かめ、「これでよい」か、ほかの家に結び直してください。結び直すと、記録もそちらに移ります。ふつうの家（戸建て）は、アパートに変えません。</p>
+      <p class="hint">1つの家には1棟だけ結びます。あとで「仮」のタブで1棟ずつ確かめ、「これでよい」か、ほかの家に結び直してください。結び直すと、記録もそちらに移ります。ふつうの家（戸建て）は、アパートに変えません。</p>
       <button type="button" class="btn primary block" id="gbKariGo"${go.length ? '' : ' disabled'}>${go.length}棟を仮で結ぶ</button>
       <button type="button" class="btn block" id="gbKariBack">もどる</button>`);
     $('#gbKariBack').onclick = () => render();
@@ -269,6 +353,22 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       st.tab = 'tmp';
       await load(); sheetKeep = true; render();
     };
+  }
+
+  /* 仮で結んだ建物を、まとめて外す（まだ にもどす）。その建物から入れた記録は、次の取り込みで消える */
+  async function kariOff(list) {
+    if (!list.length) return;
+    if (!await ask(`仮で結んだ ${list.length}棟を、まとめて外します（まだ にもどします）。その建物から入れた記録は、次の取り込みで消えます。「これでよい」を押した建物はそのままです。よろしいですか？`, { ok: '外す' })) return;
+    list.forEach(b => Object.assign(b, { hid: '', tmp: false }));
+    st.tab = 'wait'; sheetKeep = true; render();
+    let bad = 0;
+    for (let i = 0; i < list.length; i += 100) {
+      toast(`外しています… ${i}／${list.length}`);
+      try { const r = await api('gb_link', { items: list.slice(i, i + 100).map(b => ({ id: b.id, hid: '' })) }, { timeout: 120000 }); bad += (r.bad || []).length; }
+      catch (e) { bad += Math.min(100, list.length - i); }
+    }
+    toast(bad ? `${list.length - bad}棟を外しました（${bad}棟は外せませんでした）` : `${list.length}棟を外しました。記録は次の取り込みで消えます`);
+    refresh();
   }
 
   /* 結ぶ・外す。新しく置くとき以外は、手元の一覧をすぐ直して先へ進み、サーバーへはうしろで送る
@@ -300,6 +400,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   function mapOff() {
     if (mapLayer) { try { map.removeLayer(mapLayer); } catch (e) { /* もう無い */ } mapLayer = null; }
     if (mapBar) { mapBar.remove(); mapBar = null; }
+    if (cross) { cross.remove(); cross = null; }
   }
   const nextTmp = after => (st.data.blds || []).find(x => x.id !== after && stOf(x) === 'tmp');
   function showOnMap(b, h) {
@@ -338,6 +439,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         ${!isCur ? '<button type="button" class="btn primary" data-a="link">ここに結ぶ</button>' : ''}
         ${h.type === 'apt' && typeof openBuilding === 'function' ? '<button type="button" class="btn" data-a="room">部屋</button>' : ''}
         ${gmapBtn(b, '')}
+        <button type="button" class="btn" data-a="pos">位置を直す</button>
         <button type="button" class="btn" data-a="bld">ほかを選ぶ</button>
         <button type="button" class="btn" data-a="list">一覧へ</button>
       </div>`;
@@ -348,6 +450,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (act === 'x') { mapOff(); return; }
       if (act === 'room') { openBuilding(h.id); return; }
       if (act === 'bld') { mapOff(); openBld(b.id); return; }
+      if (act === 'pos') { fixPos(b, () => showOnMap((st.data.blds || []).find(x => x.id === b.id) || b, h)); return; }
       if (act === 'list') { mapOff(); st.restore = st.back; open(); return; }
       if (act === 'ok') {
         const n = nextTmp(b.id);
@@ -370,7 +473,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const cs = candidates(b).filter(c => !cur || c.h.id !== cur.id);
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
-      <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}${hasPos(b) ? '' : '・場所が分かりません（一覧のリンクか住所を確かめてください）'}　${gmapBtn(b)}</p>
+      <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}　${gmapBtn(b)}</p>
+      <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
+      <button type="button" class="btn${hasPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
       ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
         <button type="button" class="btn primary block" id="gbOkTmp">これでよい（仮を外す）</button>
         <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る（一覧の位置と並べて）</button>` : ''}
@@ -410,14 +515,65 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if ($('#gbUnlink')) $('#gbUnlink').onclick = async () => {
       await link([{ id: b.id, hid: '' }], '結びつきを外しました。入れた記録は、次の取り込みで消えます');
     };
+    $('#gbFix').onclick = () => fixPos(b, () => openBld(b.id));
     $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
+  }
+
+  /* ---------- 位置を地図で直す：地図を動かして、建物を十字の真ん中に合わせ「ここにする」 ---------- */
+  let cross = null, baseBefore = null;
+  function fixPos(b, back) {
+    if (typeof L === 'undefined' || typeof map === 'undefined') return;
+    mapOff();
+    closeSheet();
+    showView('map');
+    const hh = b.hid ? houseById(b.hid) : null;
+    const start = hasPos(b) ? [b.lat, b.lng] : b.llat != null ? [b.llat, b.llng] : hh && hh.lat != null ? [hh.lat, hh.lng] : null;
+    const go = () => { try { map.invalidateSize(); } catch (e) { /* そのまま */ } if (start) map.setView(start, 19); };
+    setTimeout(go, 200);
+    setTimeout(go, 700); // 地図に切りかえた直後は大きさが決まっていないので、寄せ直す
+    const host = document.getElementById('map').parentElement;
+    cross = document.createElement('div');
+    cross.className = 'gb-cross';
+    host.appendChild(cross);
+    baseBefore = typeof baseName !== 'undefined' ? baseName : null;
+    mapBar = document.createElement('div');
+    mapBar.className = 'gb-mapbar';
+    mapBar.innerHTML = `<button type="button" class="x" data-a="x" aria-label="やめる">×</button>
+      <p class="t"><b>${esc(b.name || '（名前なし）')}</b> の位置<br>地図を動かして、建物を十字の真ん中に合わせてください。</p>
+      <div class="acts">
+        <button type="button" class="btn primary" data-a="set">ここにする</button>
+        ${typeof setBase === 'function' ? '<button type="button" class="btn" data-a="photo">写真／地図</button>' : ''}
+        ${gmapBtn(b, '')}
+        ${b.fix ? '<button type="button" class="btn" data-a="clear">一覧の位置にもどす</button>' : ''}
+      </div>`;
+    host.appendChild(mapBar);
+    const done = () => { if (baseBefore && typeof setBase === 'function') setBase(baseBefore); mapOff(); back(); };
+    mapBar.onclick = async e => {
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      const act = a.dataset.a;
+      if (act === 'x') { done(); return; }
+      if (act === 'photo') { setBase(baseName === 'photo' ? 'pale' : 'photo'); return; }
+      if (act === 'clear') {
+        b.fix = null; b.cbDone = true; prep();
+        api('gb_pos', { items: [{ id: b.id, clear: true }] }, { timeout: 30000 }).catch(() => toast('もどせませんでした。あとでもう一度ためしてください'));
+        toast('一覧の位置にもどしました'); done(); return;
+      }
+      if (act === 'set') {
+        const c = map.getCenter(), lat = Math.round(c.lat * 1e6) / 1e6, lng = Math.round(c.lng * 1e6) / 1e6;
+        b.fix = { lat, lng, from: 'hand' }; prep();
+        a.disabled = true;
+        try { await api('gb_pos', { items: [{ id: b.id, lat, lng, from: 'hand' }] }, { timeout: 30000 }); toast('位置を直しました'); }
+        catch (err) { toast('位置を送れませんでした。あとでもう一度ためしてください'); }
+        done();
+      }
+    };
   }
 
   /* ---------- 家や「集」の画面（区域係だけ）：結んでいる一覧の建物 ---------- */
   let preloading = null;
   function preload() {
     if (preloading || st.data || typeof isAdmin !== 'function' || !isAdmin()) return;
-    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) st.data = d; }).catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
+    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) { st.raw = JSON.stringify(d); st.data = d; prep(); } }).catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
   }
   setTimeout(() => { try { if (typeof LIVE !== 'undefined' && LIVE) preload(); } catch (e) { /* そのまま */ } }, 8000);
   const backTo = h => () => { if (!houseById(h.id)) { closeSheet(); return; } if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false); };
