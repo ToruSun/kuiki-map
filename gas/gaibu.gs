@@ -14,6 +14,8 @@
    ・部屋：アパートにない部屋を足す（部屋は消さない）。「1階」などの階の枠しかないアパートは、記録のない枠を部屋番号に置きかえる
      結びつけた家がアパートでなければ、アパートにする（仮の家の印は外す）
    ・オートロック：送られた建物が lock なら、アパートに印をつける（外さない）
+   ・家の名前：一覧の名前を付けるのは、確定した結びつき・新しく置いたとき・係が選んで結んだとき。そのとき家に gbn（一覧から付けた名前）を残す。
+     画面は「名前が同じ」を比べるとき、一覧から付けた名前（gb_list の named）は数えない（自分で付けた名前で自分に合うのを防ぐ）
    ・データ：シート「gaibu」（id＝元~建物。同期の記録 journal には乗せない。係の画面だけが gb_list で読む）
        { src, k, label, name, addr, lat, lng, lock, n: 部屋数, rooms: 部屋番号, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果,
          laddr: 一覧のリンクに入っていた住所（位置が入っていないリンクのとき。画面が住所で位置を調べるのに使う）,
@@ -146,7 +148,7 @@ function gbSyncCore_(src, label, blds, dry) {
     else if (d.hid) {
       const hd = houseData_(ctx, d.hid);
       if (!hd) o.st = 'nohouse';
-      else { o.st = 'linked'; linked.push({ b: b, hid: String(d.hid), hd: hd, o: o, ename: d.ed && d.ed.name ? d.ed.name : '' }); }
+      else { o.st = 'linked'; linked.push({ b: b, hid: String(d.hid), hd: hd, o: o, ename: d.ed && d.ed.name ? d.ed.name : '', tmp: !!d.tmp }); }
     }
     out.push(o);
   });
@@ -205,7 +207,7 @@ function gbSyncCore_(src, label, blds, dry) {
     if (b.lock) nh.lock = true;
     delete nh.prov;
     const ename = x.ename || b.name;
-    if (!hd.label && ename) nh.label = ename;
+    if (!hd.label && ename && !x.tmp) { nh.label = ename; nh.gbn = str_(ename, 40); } // 仮のあいだは、家に名前を付けない
     if (stable_(nh) !== stable_(hd)) hups.push(Object.assign({ id: hid }, nh));
   });
   Object.keys(mine).forEach(function (id) {
@@ -301,12 +303,35 @@ function gbOpsLog_(user, what) {
 function gbList_() {
   const gm = gbRead_(), sp = props_().getProperties(), blds = [], srcs = [];
   gm.forEach(function (x, id) { if (x.data && typeof x.data === 'object') blds.push(Object.assign({ id: id }, x.data)); });
+  return gbListOut_(sp, blds, srcs);
+}
+/* 一覧から付けた名前の家：gbn（一覧から付けた名前）と今の名前が同じ家。
+   gbn を残す前に付いた名前は、外の一覧から作った家（id が hg）・最後に取り込み（imp）が直した家のうち、名前が一覧の建物名と同じもの */
+function gbNamed_(blds) {
+  const names = {}, out = [];
+  const nz = function (t) { return String(t || '').normalize('NFKC').toLowerCase().replace(/[\s・･\-ー―‐－〜~()（）]/g, ''); };
+  blds.forEach(function (b) { [b.name, b.ed && b.ed.name].forEach(function (n) { if (n) names[nz(n)] = true; }); });
+  const sh = dataSheet_('houses'), n = sh.getLastRow();
+  if (n < 2) return out;
+  sh.getRange(2, 1, n - 1, 4).getValues().forEach(function (r) {
+    const id = String(r[0] || ''), s = String(r[1] || '');
+    const cand = s.indexOf('"gbn"') >= 0 || id.indexOf('hg') === 0 || String(r[3]) === GB_USER;
+    if (!cand) return;
+    const h = parseJson_(s, null);
+    if (!h || !h.label) return;
+    if ((h.gbn && nz(h.gbn) === nz(h.label)) || (!h.gbn && names[nz(h.label)])) out.push(id);
+  });
+  return out;
+}
+function gbListOut_(sp, blds, srcs) {
   Object.keys(sp).forEach(function (k) {
     if (k.indexOf('GB_SRC_') !== 0) return;
     const v = parseJson_(sp[k], null);
     if (v) srcs.push(Object.assign({ src: k.slice(7) }, v));
   });
-  return { ok: true, key: { has: !!sp[GB_KEY_PROP], at: sp[GB_KEY_AT] || '' }, srcs: srcs, blds: blds };
+  let named = [];
+  try { named = gbNamed_(blds); } catch (e) { console.warn('一覧から付けた名前を確かめられませんでした：' + e); }
+  return { ok: true, key: { has: !!sp[GB_KEY_PROP], at: sp[GB_KEY_AT] || '' }, srcs: srcs, blds: blds, named: named };
 }
 
 /* items: [{ id: '元~建物', hid: '家id' または '', skip: true|false, make: true（建物の場所に新しいアパートを置く）, terrId, tmp: true（仮で結ぶ。あとで係が確かめる）,
@@ -327,6 +352,7 @@ function gbLink_(user, items) {
       hid = 'hg' + gbH_(id + '|' + nowIso_(), 12);
       const h = { id: hid, terrId: tid, type: 'apt', lat: Number(b.lat), lng: Number(b.lng), label: str_(b.ed && b.ed.name ? b.ed.name : b.name, 40), units: [], createdAt: nowIso_(), createdBy: user.id };
       if (b.lock) h.lock = true;
+      if (h.label) h.gbn = h.label; // 一覧から付けた名前
       mk.push(h);
       made.push(hid);
     } else if (hid && (!ID_RE.test(hid) || !findRow_('houses', hid))) { bad.push(id); return; }
@@ -400,7 +426,7 @@ function gbEdit_(user, items) {
 function gbFit_(hd, b) {
   const nh = Object.assign({}, hd, { type: 'apt' });
   const name = b.ed && b.ed.name ? b.ed.name : b.name; // 係が直した名前を先に
-  if (name) nh.label = str_(name, 40);
+  if (name) { nh.label = str_(name, 40); nh.gbn = nh.label; }
   if (b.lock) nh.lock = true;
   delete nh.prov;
   const rooms = Array.isArray(b.rooms) ? b.rooms.map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }) : [];
