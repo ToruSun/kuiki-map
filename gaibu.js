@@ -17,6 +17,8 @@
        一覧から届いた位置でも、名前のちがう建物がほぼ同じ所にあるとき（リンクの写しまちがい・住所が町の代表点になったもの）は使わない
        使える位置がない建物は、住所（一覧のリンクに入っていた住所 → 一覧の住所）で位置を調べて覚える（gb_pos）：
        地番の地図（kyohi.js の chibanFind。法務省の地図）→ 国土地理院（app.js の xlGeocode。番地まで合ったときだけ）
+   ・名前・住所・位置を直す：直した名前・住所（ed）は取り込みで変わらない。住所を直すと、その住所で位置を調べ直す。
+       位置は緯度・経度の数字でも入れられる（係が置いた位置として覚える）
    ・位置を地図で直す：十字に建物を合わせて「ここにする」（Google マップの位置は写さない。見て確かめるだけ）
    ・Google マップで見る：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
 
@@ -148,7 +150,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const DUP_M = 8;
   function prep() {
     const bl = (st.data && st.data.blds) || [];
-    bl.forEach(b => { if (!('llat' in b)) { b.llat = b.lat; b.llng = b.lng; } b.dupPos = false; });
+    bl.forEach(b => {
+      if (!('llat' in b)) { b.llat = b.lat; b.llng = b.lng; }
+      if (!('oname' in b)) { b.oname = b.name || ''; b.oaddr = b.addr || ''; } // 一覧の値
+      b.name = (b.ed && b.ed.name) || b.oname; b.addr = (b.ed && b.ed.addr) || b.oaddr; // 係が直した値を先に
+      b.dupPos = false;
+    });
     const pts = bl.filter(b => b.llat != null && b.llng != null && isFinite(b.llat) && isFinite(b.llng));
     for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
       const a = pts[i], c = pts[j];
@@ -163,7 +170,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       else { b.lat = null; b.lng = null; b.pf = b.llat != null ? 'dup' : ''; }
     });
   }
-  const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（番地まで合った）', hand: '地図で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
+  const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（番地まで合った）', hand: '手で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
 
   /* 使える位置がない建物の位置を、住所で調べて覚える（この端末から。結果は gb_pos でサーバーに覚えさせる）
      住所：一覧のリンクに入っていた住所（laddr）→ 一覧の住所（addr）
@@ -201,7 +208,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         setProg(`住所から位置を調べています… ${++i}／${todo.length}${found ? `・分かった ${found}棟` : ''}${tail}`);
         if (save.length >= 20) await flushSave();
         b.cbDone = true;
-        const es = [b.laddr, b.addr].filter(Boolean).map(a => { try { return window.chibanAddr(a); } catch (e) { return null; } }).filter(Boolean);
+        const es = (b.ed && b.ed.addr ? [b.ed.addr] : [b.laddr, b.addr]).filter(Boolean).map(a => { try { return window.chibanAddr(a); } catch (e) { return null; } }).filter(Boolean);
         let r = null;
         for (const e of es) { try { r = await window.chibanFind(e); } catch (err) { r = null; } if (r && r.pos) break; }
         if (b.pf === 'list') { if (r && r.pos) { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); } continue; }
@@ -508,9 +515,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}　${gmapBtn(b)}</p>
+      ${b.ed ? `<p class="gb-src">直した値（一覧：${esc(b.oname || 'なし')}・${esc(b.oaddr || 'なし')}）</p>` : ''}
       ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
       <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
       <button type="button" class="btn${hasPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
+      <button type="button" class="btn block" id="gbEdit">名前・住所・位置（緯度・経度）を直す</button>
       ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
         <button type="button" class="btn primary block" id="gbOkTmp">これでよい（仮を外す）</button>
         <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る（一覧の位置と並べて）</button>` : ''}
@@ -551,7 +560,71 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       await link([{ id: b.id, hid: '' }], '結びつきを外しました。入れた記録は、次の取り込みで消えます');
     };
     $('#gbFix').onclick = () => fixPos(b, () => openBld(b.id));
+    $('#gbEdit').onclick = () => editBld(b);
     $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
+  }
+
+  /* ---------- 名前・住所・位置（緯度・経度）を直す ---------- */
+  /* 「35.123, 139.456」「35.123 139.456」などを読む。緯度・経度の欄に分けて入れてもよい */
+  function readLatLng(a, b) {
+    const t = (String(a || '') + ' ' + String(b || '')).normalize('NFKC').replace(/[、，]/g, ',');
+    const ns = (t.match(/-?\d{1,3}(?:\.\d+)?/g) || []).map(Number);
+    if (ns.length < 2) return null;
+    let [lat, lng] = ns;
+    if (lat > 90 && lng <= 90) [lat, lng] = [lng, lat]; // 経度・緯度の順で入れたとき
+    if (!(lat >= 20 && lat <= 46 && lng >= 122 && lng <= 154)) return null; // 日本の中だけ
+    return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+  }
+  function editBld(b) {
+    const fx = b.fix && b.fix.from === 'hand' ? b.fix : null;
+    setSheet(headHtml(null, '名前・住所・位置を直す', esc(b.label || b.src)) + `
+      <p class="hint">仮で結ぶとき・候補をさがすときに使う値です。直した値は、取り込みのたびに一覧の値で上書きされません。空にすると一覧のとおりにもどります。訪問の記録には関係しません。</p>
+      <label class="field"><span>名前</span><input type="text" id="gbEN" value="${esc(b.ed && b.ed.name || '')}" placeholder="${esc(b.oname || '（一覧に名前なし）')}" maxlength="40"></label>
+      <p class="gb-src">一覧：${esc(b.oname || '（なし）')}</p>
+      <label class="field"><span>住所</span><input type="text" id="gbEA" value="${esc(b.ed && b.ed.addr || '')}" placeholder="${esc(b.oaddr || '（一覧に住所なし）')}" maxlength="80"></label>
+      <p class="gb-src">一覧：${esc(b.oaddr || '（なし）')}${b.laddr ? `　／　一覧のリンク：${esc(b.laddr)}` : ''}</p>
+      <label class="field"><span>位置（緯度, 経度）</span><input type="text" id="gbEL" inputmode="decimal" value="${fx ? `${fx.lat}, ${fx.lng}` : ''}" placeholder="例：35.401234, 139.471234"></label>
+      <p class="gb-src">今の位置：${esc(PF_LABEL[b.pf || ''])}${hasPos(b) ? `（${b.lat}, ${b.lng}）` : ''}。空のままなら、今の位置のまま（数字を消すと、手で入れた位置を消す）</p>
+      <p class="hint" id="gbEErr" hidden></p>
+      <button type="button" class="btn primary block" id="gbESave">保存する</button>
+      <button type="button" class="btn block" id="gbEMap">地図で位置を直す</button>
+      ${b.ed || fx ? '<button type="button" class="btn block" id="gbEReset">一覧のとおりにもどす</button>' : ''}
+      <button type="button" class="btn block" id="gbEBack">もどる</button>`);
+    const err = t => { const e = $('#gbEErr'); e.textContent = t; e.hidden = !t; };
+    $('#gbEBack').onclick = () => openBld(b.id);
+    $('#gbEMap').onclick = () => fixPos(b, () => openBld(b.id));
+    const save = async (name, addr, posText) => {
+      let pos = null;
+      if (posText) { pos = readLatLng(posText); if (!pos) { err('緯度・経度が読めません。「35.401234, 139.471234」のように、緯度・経度の順に入れてください。'); return; } }
+      const near = hasPos(b) ? b : b.llat != null ? { lat: b.llat, lng: b.llng } : null;
+      if (pos && near && dist(pos.lat, pos.lng, near.lat, near.lng) > 3000
+        && !await ask(`入れた位置は、今の位置から ${fmtM(dist(pos.lat, pos.lng, near.lat, near.lng))} はなれています。このままでよいですか？`, { ok: 'このまま保存' })) return;
+      const addrChanged = (b.ed && b.ed.addr || '') !== addr;
+      toast('保存しています…');
+      try {
+        const r = await api('gb_edit', { items: [{ id: b.id, name, addr }] }, { timeout: 30000 });
+        if (r.bad && r.bad.length) throw new Error('bad');
+        b.ed = name || addr ? { name, addr } : null;
+        if (addrChanged && b.fix && b.fix.from !== 'hand') b.fix = null;
+        if (pos) {
+          await api('gb_pos', { items: [{ id: b.id, lat: pos.lat, lng: pos.lng, from: 'hand' }] }, { timeout: 30000 });
+          b.fix = { lat: pos.lat, lng: pos.lng, from: 'hand' };
+        } else if (fx && !posText) {
+          await api('gb_pos', { items: [{ id: b.id, clear: true }] }, { timeout: 30000 });
+          b.fix = null;
+        }
+      } catch (e) { toast(e && e.code === 'unknown_action' ? 'サーバーがまだ新しくなっていません' : '保存できませんでした。あとでもう一度ためしてください'); return; }
+      b.cbDone = false; // 新しい住所で調べ直す
+      prep();
+      toast('保存しました');
+      openBld(b.id);
+      if (!hasPos(b)) chibanPass().then(n => { if (n && $('#gbFix')) openBld(b.id); });
+    };
+    $('#gbESave').onclick = () => save($('#gbEN').value.trim(), $('#gbEA').value.trim(), $('#gbEL').value.trim());
+    if ($('#gbEReset')) $('#gbEReset').onclick = async () => {
+      if (!await ask('名前・住所・手で入れた位置を、一覧のとおりにもどします。よろしいですか？', { ok: 'もどす' })) return;
+      save('', '', '');
+    };
   }
 
   /* ---------- 位置を地図で直す：地図を動かして、建物を十字の真ん中に合わせ「ここにする」 ---------- */
