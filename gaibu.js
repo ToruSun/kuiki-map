@@ -662,7 +662,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <button type="button" class="btn primary" data-a="set">ここにする</button>
         ${typeof setBase === 'function' ? '<button type="button" class="btn" data-a="photo">写真／地図</button>' : ''}
         ${gmapBtn(b, '')}
-        ${b.fix ? '<button type="button" class="btn" data-a="clear">一覧の位置にもどす</button>' : ''}
+        ${b.fix && b.fix.from === 'hand' ? '<button type="button" class="btn" data-a="clear">手で直した位置を消す（自動の位置にもどす）</button>' : ''}
       </div>`;
     host.appendChild(mapBar);
     const done = () => { if (baseBefore && typeof setBase === 'function') setBase(baseBefore); mapOff(); back(); };
@@ -671,10 +671,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       const act = a.dataset.a;
       if (act === 'x') { done(); return; }
       if (act === 'photo') { setBase(baseName === 'photo' ? 'pale' : 'photo'); return; }
-      if (act === 'clear') {
-        b.fix = null; b.cbDone = true; prep();
-        api('gb_pos', { items: [{ id: b.id, clear: true }] }, { timeout: 30000 }).catch(() => toast('もどせませんでした。あとでもう一度ためしてください'));
-        toast('一覧の位置にもどしました'); done(); return;
+      if (act === 'clear') { // 手で直した位置だけを消し、自動の位置（リンクのピン・住所から調べた位置）を調べ直す
+        b.fix = null; b.cbDone = false; prep();
+        try { await api('gb_pos', { items: [{ id: b.id, clear: true }] }, { timeout: 30000 }); }
+        catch (err) { toast('消せませんでした。あとでもう一度ためしてください'); done(); return; }
+        toast(hasPos(b) ? '手で直した位置を消し、一覧のリンクの位置にもどしました' : '手で直した位置を消しました。住所から位置を調べ直します');
+        done();
+        if (!hasPos(b)) chibanPass().then(n => {
+          toast(n ? '住所から位置が分かりました' : '住所からは位置が分かりませんでした');
+          if (n && $('#gbFix')) openBld(b.id);
+        });
+        return;
       }
       if (act === 'set') {
         const c = map.getCenter(), lat = Math.round(c.lat * 1e6) / 1e6, lng = Math.round(c.lng * 1e6) / 1e6;
