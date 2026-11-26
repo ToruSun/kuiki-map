@@ -21,7 +21,7 @@
    ・名前・住所・位置を直す：直した名前・住所（ed）は取り込みで変わらない。住所を直すと、その住所で位置を調べ直す。
        位置は緯度・経度の数字でも入れられる（係が置いた位置として覚える）
    ・位置を地図で直す：十字に建物を合わせて「ここにする」（Google マップの位置は写さない。見て確かめるだけ）
-   ・Google マップで見る：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
+   ・Google マップで見る（iPhone は Google マップのアプリを直接呼ぶ。無ければウェブ）：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
 
    index.html：torikomi.js の次に <script src="gaibu.js"></script>
    ========================================================= */
@@ -98,7 +98,26 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const q = [String(b.name || '').trim(), addr].filter(Boolean).join(' ');
     return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
   }
-  const gmapBtn = (b, cls) => { const u = gmapUrl(b); return u ? `<a class="btn ${cls == null ? 'small' : cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">Google マップ</a>` : ''; };
+  const gmapBtn = (b, cls) => { const u = gmapUrl(b); return u ? `<a class="btn ${cls == null ? 'small' : cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" data-gmap="1">Google マップ</a>` : ''; };
+  /* iPhone・iPad：ホーム画面のアプリから開くと、リンクがアプリ内のブラウザで開き、そこの「アプリで開く」が App Store に
+     飛んでしまうことがある。Google マップのアプリを直接呼び（comgooglemaps://）、開かなければ（入っていなければ）ウェブで開く */
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  document.addEventListener('click', e => {
+    const a = e.target && e.target.closest ? e.target.closest('a[data-gmap]') : null;
+    if (!a || !isIOS) return;
+    const web = a.href, q = (web.split('query=')[1] || '');
+    if (!q) return;
+    e.preventDefault();
+    let left = false;
+    const gone = () => { left = true; };
+    document.addEventListener('visibilitychange', gone, { once: true });
+    window.addEventListener('pagehide', gone, { once: true });
+    location.href = 'comgooglemaps://?q=' + q;
+    setTimeout(() => {
+      document.removeEventListener('visibilitychange', gone);
+      if (!left && document.visibilityState === 'visible') window.open(web, '_blank', 'noopener'); // アプリが無い：ウェブで開く
+    }, 1500);
+  }, true);
   const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
 
   /* 候補：場所の近い家（60m 以内。アパートを先に）と、名前が同じ家（場所が分からないとき・遠くても） */
