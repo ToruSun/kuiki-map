@@ -13,6 +13,7 @@
    ・入れた記録は「取り込み」（記録した人）。一覧を直せば、次の取り込みでアプリの記録も直る
 
    ・家や「集」の画面（区域係だけ）：結んでいる一覧の建物を出し、これでよい・外す・ほかの一覧の建物を選んで結ぶ（window.gaibuNotice）
+   ・名前が同じ：家の名前が人の付けた名前のときだけ数える（一覧から付けた名前は数えない）
    ・一覧の位置：直した位置（fix：地番の地図・係が地図で置いた）＞ 一覧から届いた位置（リンク・住所）。
        一覧から届いた位置でも、名前のちがう建物がほぼ同じ所にあるとき（リンクの写しまちがい・住所が町の代表点になったもの）は使わない
        使える位置がない建物は、住所（一覧のリンクに入っていた住所 → 一覧の住所）で位置を調べて覚える（gb_pos）：
@@ -81,6 +82,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     input.addEventListener('input', e => { if (composing || e.isComposing) return; go(); });
   }
   const pullNow = () => { try { return typeof window.refresh === 'function' ? window.refresh(true) : null; } catch (e) { return null; } }; // app.js の「最新の変更を取りに行く」
+  /* 家の名前が一覧の建物名（norm したもの nb）と同じか。一覧から付けた名前の家（gb_list の named・家の gbn）は数えない
+     （仮で結んだときなどに一覧の名前が付いた家が、次に「名前が同じ」で選ばれてしまうのを防ぐ） */
+  function sameName(nb, h) {
+    if (!nb || !h || norm(h.label) !== nb) return false;
+    if (h.gbn && norm(h.gbn) === norm(h.label)) return false;
+    return !(st.data && Array.isArray(st.data.named) && st.data.named.includes(h.id));
+  }
   const fmtM = m => !isFinite(m) ? '場所不明' : m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
   /* Google マップの検索を開く（建物名＋住所。住所に市町村がなければ、会衆の県・市をつける） */
   function gmapUrl(b) {
@@ -99,7 +107,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     D().houses.forEach(h => {
       if (!h || h.lat == null) return;
       const m = hasPos(b) ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity;
-      const same = nb && norm(h.label) === nb;
+      const same = sameName(nb, h);
       if (m <= 60 || (same && (m <= 1000 || !hasPos(b)))) { out.push({ h, m, same }); seen.add(h.id); }
     });
     out.sort((x, y) => (y.same - x.same) || ((y.h.type === 'apt') - (x.h.type === 'apt')) || (x.m - y.m));
@@ -136,7 +144,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         if (m > (isApt ? KARI_APT_M : KARI_PROV_M)) return;
         near.set(b.id, true);
         if (taken.has(h.id)) return;
-        pairs.push({ b, h, m, how: isApt ? 'apt' : 'prov', same: !!nb && norm(h.label) === nb });
+        pairs.push({ b, h, m, how: isApt ? 'apt' : 'prov', same: sameName(nb, h) });
       });
     });
     pairs.sort((x, y) => (y.same - x.same) || ((x.how === 'apt' ? 0 : 1) - (y.how === 'apt' ? 0 : 1)) || (x.m - y.m));
@@ -749,7 +757,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   function pickRows(h, q) {
     const nq = norm(q), nh = norm(h.label);
     const rows = (st.data.blds || []).filter(b => !b.gone)
-      .map(b => ({ b, m: hasPos(b) && h.lat != null ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity, same: !!nh && norm(b.name) === nh }))
+      .map(b => ({ b, m: hasPos(b) && h.lat != null ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity, same: sameName(norm(b.name), h) }))
       .filter(x => !nq || norm(x.b.name).includes(nq) || norm(x.b.addr).includes(nq) || norm(x.b.label).includes(nq))
       .sort((x, y) => (y.same - x.same) || (x.m - y.m)).slice(0, 40);
     const now = b => b.hid === h.id ? 'この家に結んでいます' : b.hid ? `→ ${esc((houseById(b.hid) || {}).label || 'ほかの家')}に結んでいます${stOf(b) === 'tmp' ? '（仮）' : ''}` : b.skip ? '取り込まない' : 'まだ結んでいません';
