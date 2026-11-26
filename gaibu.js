@@ -569,7 +569,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     };
     $('#gbFix').onclick = () => fixPos(b, () => openBld(b.id));
     $('#gbEdit').onclick = () => editBld(b);
+    lookupThen(b, () => { if ($('#gbEdit') && $('#sheet').dataset.gbBld === b.id) openBld(b.id); });
+    $('#sheet').dataset.gbBld = b.id;
     $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
+  }
+
+  /* 位置が無く、まだ住所から調べていない建物なら、調べてから then を呼ぶ */
+  function lookupThen(b, then) {
+    if (hasPos(b) || b.cbDone || !(b.laddr || b.addr)) return;
+    chibanPass().then(n => { if (n && hasPos(b)) then(); }).catch(() => 0);
   }
 
   /* ---------- 名前・住所・位置（緯度・経度）を直す ---------- */
@@ -600,6 +608,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${b.ed || fx ? '<button type="button" class="btn block" id="gbEReset">一覧のとおりにもどす</button>' : ''}
       <button type="button" class="btn block" id="gbEBack">もどる</button>`);
     const err = t => { const e = $('#gbEErr'); e.textContent = t; e.hidden = !t; };
+    $('#sheet').dataset.gbBld = '';
+    lookupThen(b, () => { // まだ調べていなければ、ここで住所から調べ、分かったら欄に入れる
+      const el = $('#gbEL');
+      if (el && !el.value && hasPos(b)) { el.value = `${Math.round(b.lat * 1e6) / 1e6}, ${Math.round(b.lng * 1e6) / 1e6}`; toast('住所から位置が分かりました'); }
+    });
     $('#gbEBack').onclick = () => openBld(b.id);
     $('#gbEMap').onclick = () => fixPos(b, () => openBld(b.id));
     const save = async (name, addr, posText) => {
@@ -698,7 +711,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   let preloading = null;
   function preload() {
     if (preloading || st.data || typeof isAdmin !== 'function' || !isAdmin()) return;
-    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) { st.raw = JSON.stringify(d); st.data = d; prep(); } }).catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
+    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) { st.raw = JSON.stringify(d); st.data = d; prep(); chibanPass().catch(() => 0); } }) // 住所から位置を調べておく.catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
   }
   setTimeout(() => { try { if (typeof LIVE !== 'undefined' && LIVE) preload(); } catch (e) { /* そのまま */ } }, 8000);
   const backTo = h => () => { if (!houseById(h.id)) { closeSheet(); return; } if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false); };
