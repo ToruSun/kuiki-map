@@ -322,13 +322,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     return stOf(r.b); // wait・skip・gone・lost
   }
   const U_LABEL = { map: '地図', tmp: '仮', wait: 'まだ', lost: '家がない', skip: '取り込まない', gone: '一覧にない' };
+  const isTe = b => b && b.src === 'te'; // 区域係が手で登録した集合住宅（取り込みは無い）
+  const roomsOf = b => b.fl ? `${b.n}階分` : `${b.n}部屋`;
+  const subOf = b => isTe(b) ? `手で登録・${roomsOf(b)}` : `${b.label || b.src}・${b.n}部屋・記録${b.nv}件`;
   function rowIn(r, tab) {
     const s = rowSt(r);
     if (tab === 'all') return s !== 'skip';
     if (tab === 'map') return r.k === 'm';
     if (tab === 'reg') return r.k === 'r' && (s === 'wait' || s === 'lost');
     if (tab === 'tmp') return s === 'tmp';
-    if (tab === 'ext') return r.k === 'r' || r.links.length > 0;
+    if (tab === 'ext') return r.k === 'r' ? !isTe(r.b) : r.links.some(b => !isTe(b));
+    if (tab === 'te') return r.k === 'r' ? isTe(r.b) : r.links.some(isTe);
     if (tab === 'skip') return s === 'skip';
     if (tab === 'gone') return r.k === 'r' ? !!r.b.gone : r.links.some(b => b.gone);
     return true;
@@ -374,7 +378,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!d) { setSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
     const rows = uniRows();
-    const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, skip: 0, gone: 0 };
+    const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
     rows.forEach(r => Object.keys(cnt).forEach(t => { if (rowIn(r, t)) cnt[t]++; }));
     const wait = blds.filter(b => stOf(b) === 'wait' && !b.same);
     const tmpB = blds.filter(b => stOf(b) === 'tmp');
@@ -385,6 +389,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     setSheet(headHtml(null, '集合住宅の一覧', `${cnt.map}棟が地図に・${cnt.reg}棟がまだ`) + `
       <p class="notice" id="gbProg"${st.prog ? '' : ' hidden'}>${esc(st.prog || '')}</p>
       <p class="hint">地図の集合住宅と、外の一覧（スプレッドシート）から届いた建物の一覧です。外の一覧の建物を地図の集合住宅に<b>結ぶ</b>と1行にまとまり、次の取り込みから記録が入ります。一軒家は載せません。</p>
+      <button type="button" class="btn block" id="gbAdd">＋ 集合住宅を登録（地図にまだ置かない）</button>
       ${prs.length ? `<button type="button" class="btn primary block" id="gbPairs">同じらしい組をまとめる（${prs.length}組）</button>` : ''}
       <details class="gb-more"><summary>まとめて結ぶ・外す</summary>
         ${sure.length ? `<button type="button" class="btn block" id="gbSure">候補が1つの建物をまとめて結ぶ（${sure.length}棟）</button>` : ''}
@@ -397,7 +402,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
         ${(d.srcs || []).length ? d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(x => `<p class="gb-src">${esc(x.label || x.src)}：${x.n}棟・${esc(day(x.at))}</p>`).join('') : '<p class="hint">まだ一覧が届いていません。取り込み用のスプレッドシートで「今すぐ取り込む」をためしてください。</p>'}
       </details>
-      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
+      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="名前・住所・区域番号でさがす" aria-label="集合住宅をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
       <div id="gbRows">${listRows()}</div>
       <button type="button" class="btn block" data-close>閉じる</button>`);
@@ -412,6 +417,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       try { await api('gb_key_del', {}, { timeout: 30000 }); toast('鍵を止めました'); } catch (e) { toast('止められませんでした'); }
       await load(); sheetKeep = true; render();
     };
+    $('#gbAdd').onclick = () => { st.back = S.scrollTop; regForm(null); };
     if ($('#gbPairs')) $('#gbPairs').onclick = () => confirmPairs(prs);
     if ($('#gbSure')) $('#gbSure').onclick = () => confirmSure(sure);
     if ($('#gbKari')) $('#gbKari').onclick = () => confirmKari(wait);
@@ -435,7 +441,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       }
       const b = r.b;
       return `<div class="gb-row"><button type="button" class="gb-open" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(rowName(r))}${b.lock ? '　🔒' : ''}</b>
-        <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件</small>
+        <small>${esc(subOf(b))}</small>
         <small>${esc(b.addr || '')}${r.alias.length ? `　＋同じ建物：${r.alias.map(x => esc(x.label || x.src)).join('、')}` : ''}</small></span></button>
         <span class="gb-st ${cls}">${U_LABEL[s] || ''}</span></div>`;
     }).join('');
@@ -716,7 +722,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const s = stOf(b), cur = b.hid ? houseById(b.hid) : null;
     const cs = candidates(b).filter(c => !cur || c.h.id !== cur.id);
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
-    setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
+    setSheet(headHtml(null, esc(b.name || '（名前なし）'), esc(subOf(b))) + `
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}　${gmapBtn(b)}</p>
       ${(() => {
         const bl = st.data.blds || [], p = b.same ? bl.find(x => x.id === b.same) : null, al = bl.filter(x => x.same === b.id);
@@ -728,7 +734,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
       <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
       <button type="button" class="btn${hasPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
-      <button type="button" class="btn block" id="gbEdit">名前・住所・位置（緯度・経度）を直す</button>
+      ${isTe(b) ? `<p class="gb-src">部屋：${esc((b.rooms || []).slice(0, 12).join('・'))}${(b.rooms || []).length > 12 ? '…' : ''}${b.ac === 'ev' ? '・エレベーターあり' : ''}${b.ban === 'no' ? '・立入禁止' : b.ban === 'letter' ? '・手紙のみ' : ''}</p>
+        <button type="button" class="btn block" id="gbReg">登録した内容（名前・住所・部屋など）を直す</button>` : ''}
+      <button type="button" class="btn block" id="gbEdit">${isTe(b) ? '位置（緯度・経度）を直す' : '名前・住所・位置（緯度・経度）を直す'}</button>
       ${s === 'tmp' && cur ? `<div class="notice warn">仮で結んでいます：<b>${esc(cur.label || '名前のない家')}</b>（${esc(tOf(cur))}${cur.type === 'apt' ? 'アパート' : '家'}）。地図で確かめて、よければ「これでよい」を押してください。</div>
         <button type="button" class="btn primary block" id="gbOkTmp">これでよい（仮を外す）</button>
         <button type="button" class="btn block" data-gbmap="${esc(cur.id)}">結んだ家を地図で見る（一覧の位置と並べて）</button>` : ''}
@@ -743,23 +751,24 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <small>${esc(tOf(c.h))}${c.h.type === 'apt' ? `アパート・${(c.h.units || []).length}部屋` : c.h.prov ? '仮の家' : '家'}${isFinite(c.m) ? `・${Math.round(c.m)}m` : ''}</small></span>
         <button type="button" class="btn small" data-gbmap="${esc(c.h.id)}">地図</button><button type="button" class="btn small primary" data-gbl="${esc(c.h.id)}">結ぶ</button></div>`).join('') || '<p class="hint">近くに家がありません。</p>'}</div>
       ${hasPos(b) ? '<button type="button" class="btn block" id="gbMake">この場所に新しいアパートを置いて結ぶ</button>' : ''}
-      ${s !== 'skip' ? '<button type="button" class="btn block" id="gbSkip">この建物は取り込まない</button>' : ''}
-      ${b.hid || b.skip ? '<button type="button" class="btn block" id="gbUnlink">結びつきを外す（まだ にもどす・入れた記録は次の取り込みで消える）</button>' : ''}
+      ${s !== 'skip' && !isTe(b) ? '<button type="button" class="btn block" id="gbSkip">この建物は取り込まない</button>' : ''}
+      ${b.hid || b.skip ? `<button type="button" class="btn block" id="gbUnlink">${isTe(b) ? '結びつきを外す（地図の家はそのまま）' : '結びつきを外す（まだ にもどす・入れた記録は次の取り込みで消える）'}</button>` : ''}
+      ${isTe(b) ? '<button type="button" class="btn danger block" id="gbDel">この登録を消す（地図の家は消えません）</button>' : ''}
       <button type="button" class="btn block" id="gbBack">もどる</button>`);
     const S = $('#sheet');
     $$('[data-gbl]', S).forEach(x => x.onclick = async () => {
       const h = houseById(x.dataset.gbl);
       if (h && h.type !== 'apt' && !await ask('この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。よろしいですか？', { ok: '結ぶ' })) return;
-      await link([{ id: b.id, hid: x.dataset.gbl, apply: true }], '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）');
+      await link([{ id: b.id, hid: x.dataset.gbl, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）');
     });
     $$('[data-gbmap]', S).forEach(x => x.onclick = () => showOnMap(b, houseById(x.dataset.gbmap)));
     if ($('#gbOkTmp')) $('#gbOkTmp').onclick = async () => {
       const n = nextTmp(b.id); // 続けて次の仮へ
-      await link([{ id: b.id, hid: b.hid }], n ? '仮を外しました。次の建物です' : '仮を外しました', n ? () => openBld(n.id) : null);
+      await link([Object.assign({ id: b.id, hid: b.hid }, isTe(b) ? { apply: true } : {})], n ? '仮を外しました。次の建物です' : '仮を外しました', n ? () => openBld(n.id) : null); // 手で登録した建物は取り込みが無いので、ここで家を登録に合わせる
     };
     if ($('#gbMake')) $('#gbMake').onclick = async () => {
       if (!await ask(`「${b.name}」の場所に、新しいアパートを置いて結びます。近くに同じ建物があるときは、そちらを結んでください。よろしいですか？`, { ok: '置いて結ぶ' })) return;
-      await link([{ id: b.id, make: true, terrId: typeof terrOf === 'function' ? terrOf(b.lat, b.lng) : null }], '新しいアパートを置いて結びました。次の取り込みで部屋と記録が入ります');
+      await link([{ id: b.id, make: true, terrId: typeof terrOf === 'function' ? terrOf(b.lat, b.lng) : null }], isTe(b) ? '新しいアパートを置いて結びました。登録した部屋が入っています' : '新しいアパートを置いて結びました。次の取り込みで部屋と記録が入ります');
     };
     if ($('#gbSkip')) $('#gbSkip').onclick = async () => {
       if (b.hid && !await ask('この建物を取り込まないことにします。前に入れた記録は、次の取り込みで消えます（アプリで入れた記録は残ります）。よろしいですか？', { ok: '取り込まない' })) return;
@@ -776,9 +785,40 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       openBld(b.id);
     });
     $('#gbEdit').onclick = () => editBld(b);
+    if ($('#gbReg')) $('#gbReg').onclick = () => regForm(b);
+    if ($('#gbDel')) $('#gbDel').onclick = async () => {
+      if (!await ask(`「${b.name || '（名前なし）'}」の登録を、集合住宅の一覧から消します。${b.hid && houseById(b.hid) ? '結んでいる地図の家は、そのまま残ります。' : ''}よろしいですか？`, { ok: '消す' })) return;
+      try { await api('gb_del', { id: b.id }, { timeout: 30000 }); toast('消しました'); }
+      catch (e) { toast('消せませんでした。あとでもう一度ためしてください'); return; }
+      await load(true); st.restore = st.back; sheetKeep = true; render();
+    };
     lookupThen(b, () => { if ($('#gbEdit') && $('#sheet').dataset.gbBld === b.id) openBld(b.id); });
     $('#sheet').dataset.gbBld = b.id;
     $('#gbBack').onclick = () => { st.restore = st.back; sheetKeep = true; render(); };
+  }
+
+  /* ---------- 手で登録する（区域係）：アプリで集合住宅を作るときと同じ画面（apt-wizard.js）で、地図には置かずに一覧へ ----------
+     b：直すときの行（無ければ新しく） */
+  function regForm(b) {
+    if (!window.openAptWizard) { toast('この画面では登録できません。アプリを読み込み直してください'); return; }
+    const back = () => b ? openBld(b.id) : (st.restore = st.back, sheetKeep = true, render());
+    const v = b ? { name: b.oname || b.name, addr: b.oaddr || b.addr, rooms: b.rooms || [], lock: !!b.lock, ac: b.ac || '', bn: b.bn || '', ban: b.ban || '' } : null;
+    window.openAptWizard(null, { reg: {
+      v,
+      onClose: back,
+      onSave: async item => {
+        if (b) item.id = b.id;
+        toast('登録しています…');
+        let r;
+        try { r = await api('gb_add', { item }, { timeout: 30000 }); } catch (e) { r = null; }
+        if (!r || !r.ok) { toast('登録できませんでした。あとでもう一度ためしてください'); return; }
+        await load(true);
+        const nb = (st.data.blds || []).find(x => x.id === r.id);
+        if (nb && b && (b.oaddr || b.addr) !== item.addr) nb.cbDone = false; // 新しい住所で位置を調べ直す
+        toast(b ? '直しました' : '集合住宅の一覧に登録しました。地図に置くときは「位置」と「候補」を見てください');
+        if (nb) openBld(nb.id); else back();
+      }
+    } });
   }
 
   /* 位置が無く、まだ住所から調べていない建物なら、調べてから then を呼ぶ */
@@ -801,18 +841,19 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   function editBld(b) {
     const fx = b.fix && b.fix.from === 'hand' ? b.fix : null;
     const r6 = x => Math.round(x * 1e6) / 1e6, curPos = hasPos(b) ? `${r6(b.lat)}, ${r6(b.lng)}` : ''; // 今使っている位置（どこから来た位置でも）
-    setSheet(headHtml(null, '名前・住所・位置を直す', esc(b.label || b.src)) + `
-      <p class="hint">仮で結ぶとき・候補をさがすときに使う値です。直した値は、取り込みのたびに一覧の値で上書きされません。空にすると一覧のとおりにもどります。訪問の記録には関係しません。</p>
+    const te = isTe(b); // 手で登録した建物の名前・住所は、登録した内容を直す画面で直す
+    setSheet(headHtml(null, te ? '位置を直す' : '名前・住所・位置を直す', esc(b.label || b.src)) + `
+      ${te ? '' : `<p class="hint">仮で結ぶとき・候補をさがすときに使う値です。直した値は、取り込みのたびに一覧の値で上書きされません。空にすると一覧のとおりにもどります。訪問の記録には関係しません。</p>
       <label class="field"><span>名前</span><input type="text" id="gbEN" value="${esc(b.ed && b.ed.name || '')}" placeholder="${esc(b.oname || '（一覧に名前なし）')}" maxlength="40"></label>
       <p class="gb-src">一覧：${esc(b.oname || '（なし）')}</p>
       <label class="field"><span>住所</span><input type="text" id="gbEA" value="${esc(b.ed && b.ed.addr || '')}" placeholder="${esc(b.oaddr || '（一覧に住所なし）')}" maxlength="80"></label>
-      <p class="gb-src">一覧：${esc(b.oaddr || '（なし）')}${b.laddr ? `　／　一覧のリンク：${esc(b.laddr)}` : ''}</p>
+      <p class="gb-src">一覧：${esc(b.oaddr || '（なし）')}${b.laddr ? `　／　一覧のリンク：${esc(b.laddr)}` : ''}</p>`}
       <label class="field"><span>位置（緯度, 経度）</span><input type="text" id="gbEL" inputmode="decimal" value="${esc(curPos)}" placeholder="例：35.401234, 139.471234"></label>
       <p class="gb-src">今の位置：${esc(PF_LABEL[b.pf || ''])}。数字を変えて保存すると「手で直した位置」になります。${fx ? '空にして保存すると、手で直した位置を消し、自動の位置（リンクのピン・住所から調べた位置）にもどります。' : ''}</p>
       <p class="hint" id="gbEErr" hidden></p>
       <button type="button" class="btn primary block" id="gbESave">保存する</button>
       <button type="button" class="btn block" id="gbEMap">地図で位置を直す</button>
-      ${b.ed || fx ? '<button type="button" class="btn block" id="gbEReset">一覧のとおりにもどす</button>' : ''}
+      ${(b.ed && !te) || fx ? `<button type="button" class="btn block" id="gbEReset">${te ? '手で入れた位置を消す' : '一覧のとおりにもどす'}</button>` : ''}
       <button type="button" class="btn block" id="gbEBack">もどる</button>`);
     const err = t => { const e = $('#gbEErr'); e.textContent = t; e.hidden = !t; };
     $('#sheet').dataset.gbBld = '';
@@ -850,9 +891,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       openBld(b.id);
       if (!hasPos(b)) chibanPass().then(n => { if (n && $('#gbFix')) openBld(b.id); });
     };
-    $('#gbESave').onclick = () => save($('#gbEN').value.trim(), $('#gbEA').value.trim(), $('#gbEL').value.trim());
+    const ed0 = b.ed || {}, val = (sel, d) => $(sel) ? $(sel).value.trim() : d;
+    $('#gbESave').onclick = () => save(val('#gbEN', ed0.name || ''), val('#gbEA', ed0.addr || ''), $('#gbEL').value.trim());
     if ($('#gbEReset')) $('#gbEReset').onclick = async () => {
-      if (!await ask('名前・住所・手で入れた位置を、一覧のとおりにもどします。よろしいですか？', { ok: 'もどす' })) return;
+      if (!await ask(te ? '手で入れた位置を消し、住所から調べた位置にもどします。よろしいですか？' : '名前・住所・手で入れた位置を、一覧のとおりにもどします。よろしいですか？', { ok: 'もどす' })) return;
       save('', '', '');
     };
   }

@@ -39,6 +39,7 @@ const GB_SRC_RE = /^[A-Za-z0-9_\-]{1,12}$/;
 const GB_K_RE = /^[\w.\-]{1,40}$/;
 const GB_MAX_BLD = 200, GB_MAX_ROOMS = 300, GB_MAX_VIS = 60;
 const GB_FRAME_RE = /^(\d{1,2}階|\?|？)$/;   // 階の枠（apt-import.js が作る）
+const GB_TE = 'te';                    // 区域係が手で登録した集合住宅の元（取り込みでは送れない。一覧にない にならない）
 
 function gbH_(s, n) { return hash_(s).replace(/[^A-Za-z0-9]/g, '').slice(0, n); }
 function gbPre_(src, k) { return 'imp.' + src + '.' + gbH_('k|' + k, 6) + '.'; }
@@ -123,7 +124,7 @@ function gbUnits_(cur, rooms, recUnits) {
 function gbSync_(req) {
   if (!gbKeyOk_(req.key)) return { ok: false, error: 'auth' };
   const src = String(req.src || '');
-  if (!GB_SRC_RE.test(src) || !Array.isArray(req.blds)) return { ok: false, error: 'bad_request' };
+  if (!GB_SRC_RE.test(src) || src === GB_TE || !Array.isArray(req.blds)) return { ok: false, error: 'bad_request' };
   if (req.blds.length > GB_MAX_BLD) return { ok: false, error: 'too_many' };
   const label = str_(req.label, 40).replace(/[<>"'&]/g, '');
   const dry = req.dry === true;
@@ -289,6 +290,11 @@ function gbApi_(user, req) {
     if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
     try { return gbPos_(user, req.items); } finally { lock.releaseLock(); }
   }
+  if (a === 'gb_add' || a === 'gb_del') {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
+    try { return a === 'gb_add' ? gbAdd_(user, req.item) : gbDel_(user, req.id); } finally { lock.releaseLock(); }
+  }
   if (a === 'gb_link') {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
@@ -345,8 +351,9 @@ function gbListOut_(sp, blds, srcs) {
    make：家はサーバーで作る（画面で作ると、サーバーに届くまで結べないため）。区域は画面が場所から決めて送る */
 function gbLink_(user, items) {
   if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
-  const gm = gbRead_(), ups = [], bad = [], made = [], mk = [], madeIds = {};
+  const gm = gbRead_(), ups = [], bad = [], made = [], mk = [], madeIds = {}, prev = {};
   const terrs = readCol_('territories');
+  items.forEach(function (it) { const x = gm.get(String(it && it.id || '')); if (x && x.data) prev[String(it.id)] = x.data; });
   items.forEach(function (it) {
     const id = String(it && it.id || ''), cur = gm.get(id);
     if (!cur || !cur.data) { bad.push(id); return; }
@@ -359,6 +366,7 @@ function gbLink_(user, items) {
       const h = { id: hid, terrId: tid, type: 'apt', lat: Number(b.lat), lng: Number(b.lng), label: str_(b.ed && b.ed.name ? b.ed.name : b.name, 40), units: [], createdAt: nowIso_(), createdBy: user.id };
       if (b.lock) h.lock = true;
       if (h.label) h.gbn = h.label; // 一覧から付けた名前
+      if (b.src === GB_TE) gbTeHouse_(h, b); // 手で登録した集合住宅：登録した部屋・エレベーター・メモ・立ち入りも
       mk.push(h);
       made.push(hid);
       madeIds[id] = hid;
@@ -377,6 +385,9 @@ function gbLink_(user, items) {
   // apply：家の名前・部屋・オートロックを、すぐ一覧の建物に合わせる（取り込みを待たない）
   const hu = [], ctx = { cols: {}, hcache: new Map() };
   items.forEach(function (it) {
+    // 手で登録した集合住宅は取り込みが無いので、仮から確定したときにも合わせる（取り込みの建物は、次の取り込みで合う）
+    if (it && !it.apply && !it.skip && !it.make && !it.tmp && it.hid && prev[String(it.id)] && prev[String(it.id)].src === GB_TE &&
+        prev[String(it.id)].tmp && prev[String(it.id)].hid === String(it.hid)) it = Object.assign({}, it, { apply: true });
     if (!it || !it.apply || it.skip || it.make || it.tmp || !it.hid) return;
     const x = gm.get(String(it.id)), b = x && x.data;
     if (!b || b.hid !== String(it.hid)) return;
@@ -459,6 +470,12 @@ function gbFit_(hd, b) {
   if (b.lock) nh.lock = true;
   delete nh.prov;
   const rooms = Array.isArray(b.rooms) ? b.rooms.map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }) : [];
+  if (b.src === GB_TE) { // 手で登録した集合住宅：家にまだ無いものだけ入れる。階の枠だけの登録は、部屋のある家の部屋を変えない
+    if (b.ac && !nh.ac) nh.ac = b.ac;
+    if (b.bn && !nh.bn) nh.bn = b.bn;
+    if (b.ban && !nh.ban) nh.ban = b.ban;
+    if (b.fl && (hd.units || []).some(function (u) { return !GB_FRAME_RE.test(String(u)); })) return nh;
+  }
   if (rooms.length) {
     const app = gbAppUnits_(hd.id), have = {};
     const out = rooms.slice().sort(gbRoomCmp_);
@@ -480,4 +497,65 @@ function gbAppUnits_(hid) {
     });
   } catch (e) { console.warn('部屋の記録を確かめられませんでした：' + e); }
   return out;
+}
+
+/* ---------- 手で登録する集合住宅（区域係） ----------
+   行：te~<id>。{ src: 'te', k, label: '手で登録', name, addr, rooms: 部屋（または「1階」などの階の枠）, fl: 階の枠だけ, n, nv: 0,
+         lock, ac: エレベーター（ev・no・st）, bn: 建物のメモ, ban: 立ち入り（no・letter）, hid, tmp, skip, fix, same, at }
+   地図に置く（gb_link の make）と、登録した内容で家ができる。今ある家に結ぶと、家の名前・部屋・オートロックを合わせる */
+function gbTeClean_(it) {
+  if (!it || typeof it !== 'object') return null;
+  const name = str_(it.name, 40).replace(/[<>"'&]/g, '').trim(), addr = str_(it.addr, 80).replace(/[<>"'&]/g, '').trim();
+  if (!addr) return null;
+  const seen = {}, rooms = [];
+  (Array.isArray(it.rooms) ? it.rooms : []).slice(0, 300).forEach(function (r) {
+    r = str_(r, 12).trim();
+    if (r && !UNIT_BAD_RE.test(r) && !seen[r]) { seen[r] = true; rooms.push(r); }
+  });
+  if (!rooms.length) return null;
+  return {
+    name: name, addr: addr, rooms: rooms, n: rooms.length, fl: rooms.every(function (r) { return GB_FRAME_RE.test(r); }),
+    lock: it.lock === true, ac: ['ev', 'no', 'st'].indexOf(it.ac) >= 0 ? it.ac : '', bn: bldNote_(it.bn),
+    ban: it.ban === 'no' || it.ban === 'letter' ? it.ban : ''
+  };
+}
+/* item: { id: 直すときの行の id（無ければ新しく）, name, addr, rooms, lock, ac, bn, ban, lat, lng（無くてよい） } */
+function gbAdd_(user, item) {
+  const c = gbTeClean_(item);
+  if (!c) return { ok: false, error: 'bad_request' };
+  const gm = gbRead_();
+  let id = String(item.id || ''), cur = id ? gm.get(id) : null;
+  if (id && (!cur || !cur.data || cur.data.src !== GB_TE)) return { ok: false, error: 'bad_request' };
+  const d = cur ? cur.data : {};
+  if (!cur) {
+    const k = gbH_('te|' + user.id + '|' + c.name + '|' + c.addr + '|' + nowIso_() + '|' + Math.random(), 10);
+    id = GB_TE + '~' + k;
+    d.k = k;
+  }
+  const lat = gbNum_(item.lat), lng = gbNum_(item.lng);
+  let fix = d.fix || null;
+  if (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) fix = { lat: lat, lng: lng, from: 'hand', at: nowIso_() };
+  else if (cur && (d.addr || '') !== c.addr && fix && fix.from !== 'hand') fix = null; // 住所を変えたら、住所から調べた位置は調べ直す
+  const row = Object.assign({ src: GB_TE, k: d.k, label: '手で登録', lat: null, lng: null, nv: 0, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip,
+    same: d.same || '', by: d.by || user.id }, c, { fix: fix, ed: null, at: nowIso_() });
+  gbWrite_(gm, [[id, row]], user.id);
+  return { ok: true, id: id, bld: Object.assign({ id: id }, row) };
+}
+/* 手で登録した行を消す（地図の家は消さない）。この行に「同じ建物」とまとめていた行は分ける */
+function gbDel_(user, id) {
+  id = String(id || '');
+  const gm = gbRead_(), cur = gm.get(id);
+  if (!cur || !cur.data || cur.data.src !== GB_TE || !(cur.row > 0)) return { ok: false, error: 'bad_request' };
+  const ups = [];
+  gm.forEach(function (x, oid) { if (x.data && x.data.same === id) ups.push([oid, Object.assign({}, x.data, { same: '' })]); });
+  gbWrite_(gm, ups, user.id);
+  dataSheet_(GB_SHEET).deleteRow(cur.row);
+  return { ok: true };
+}
+/* 新しく置く家に、手で登録した内容を入れる */
+function gbTeHouse_(h, b) {
+  h.units = (Array.isArray(b.rooms) ? b.rooms : []).map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }).slice(0, 300);
+  if (['ev', 'no', 'st'].indexOf(b.ac) >= 0) h.ac = b.ac;
+  const bn = bldNote_(b.bn); if (bn) h.bn = bn;
+  if (b.ban === 'no' || b.ban === 'letter') h.ban = b.ban;
 }

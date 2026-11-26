@@ -166,8 +166,8 @@
     const h = hid ? houseById(hid) : null;
     if (hid && !h) return;
     const ll = h ? { lat: h.lat, lng: h.lng } : opt.ll;
-    if (!ll) return;
-    const tid = h ? h.terrId : (opt.tid || terrOf(ll.lat, ll.lng));
+    if (!ll && !opt.reg) return;
+    const tid = h ? h.terrId : (opt.tid || (ll ? terrOf(ll.lat, ll.lng) : null));
     const edit = !!h && h.type === 'apt';
     if (h && !edit && !isAdmin() && (hasSkip(h) || hasLang(h))) { toast(`${hasSkip(h) ? '訪問しない' : '外国語'}の家の種類は、区域係だけが変えられます`); return; }
     const s = {
@@ -182,8 +182,24 @@
     s.ac0 = s.ac; s.bn0 = s.bn;
     if (edit) s.g1 = !h.units.length || h.units.some(u => u === '1階' || /^\D*?1\d{2}$/.test(u) || /^\D*?1-\d+$/.test(u) || /^1[A-Za-z]$/.test(u));
     if (edit && h.units.every(u => FRAME.test(u))) s.mode = 'room';
-    if (opt.fromAdd) { s.step = 'form'; s.mode = 'room'; if (opt.label) s.name = opt.label; } // 部屋がまだ無い建物（取り込みで「集」になったもの・階の枠だけ）は、はじめから「部屋番号まで入れる」
+    if (opt.fromAdd) { s.step = 'form'; s.mode = 'room'; if (opt.label) s.name = opt.label; }
+    if (opt.reg) regStart(s, opt.reg); // 部屋がまだ無い建物（取り込みで「集」になったもの・階の枠だけ）は、はじめから「部屋番号まで入れる」
     paint(s);
+  }
+
+  /* ---------- 集合住宅の一覧に登録する（地図にはまだ置かない。gaibu.js） ----------
+     reg：{ v: 今の登録（直すとき）{ name, addr, rooms, lock, ac, bn, ban }, onSave(登録の内容), onClose() }
+     地図の家は作らない。できあがりの部屋（または階の枠）を onSave にわたす */
+  function regStart(s, reg) {
+    const v = reg.v || {};
+    Object.assign(s, { reg, step: 'form', tid: null, name: v.name || '', addr: v.addr || '', lock: !!v.lock, ac: v.ac || '', bn: v.bn || '', ban: v.ban || '' });
+    s.ac0 = s.ac; s.bn0 = s.bn;
+    const rooms = Array.isArray(v.rooms) ? v.rooms.slice(0, 300) : [];
+    if (!rooms.length) return;
+    if (rooms.every(u => FRAME.test(u))) { // 階の枠だけ
+      s.mode = 'floor'; s.floors = Math.max(1, ...rooms.map(u => parseInt(u, 10) || 1)); s.g1 = rooms.includes('1階');
+      s.del = new Set(gen(s).filter(u => !rooms.includes(u)));
+    } else { s.mode = 'room'; s.fmt = 'free'; s.extra = rooms; }
   }
 
   /* ---------- 画面 ---------- */
@@ -237,10 +253,11 @@
       const dis = i === 0 && !s.g1;
       return `<div class="floorrow"><b>${i + 1}階</b>${dis ? '<span class="muted">部屋なし</span>' : stepper(`data-fc="${i}"`, s.cnt[i] == null ? s.cnt0 : s.cnt[i], `${i + 1}階の部屋`)}</div>`;
     }).join('')}</div>` : '';
-    setSheet(headHtml(t, edit ? '部屋を入力する・直す' : 'アパート・マンションの登録', t ? `区域${esc(t.no)}　${esc(t.name)}` : '') + `
-      ${s.cand ? `<div class="aw-from"><b>候補：${esc(s.cand.n || '（名前なし）')}</b><button id="awBack">えらびなおす</button></div>` : (!edit && !s.cand ? '<div class="aw-from"><b>候補を使わず、自分で入力</b><button id="awBack">候補を見る</button></div>' : '')}
+    setSheet(headHtml(t, s.reg ? (s.reg.v ? '登録した集合住宅を直す' : '集合住宅を登録') : edit ? '部屋を入力する・直す' : 'アパート・マンションの登録', s.reg ? '集合住宅の一覧に入れます（地図にはまだ置きません）' : t ? `区域${esc(t.no)}　${esc(t.name)}` : '') + `
+      ${s.reg ? '' : s.cand ? `<div class="aw-from"><b>候補：${esc(s.cand.n || '（名前なし）')}</b><button id="awBack">えらびなおす</button></div>` : (!edit && !s.cand ? '<div class="aw-from"><b>候補を使わず、自分で入力</b><button id="awBack">候補を見る</button></div>' : '')}
       ${s.cand && s.ban ? `<div class="notice refnote"><b>${s.ban === 'no' ? '立入禁止の建物です。' : '手紙のみの建物です。'}</b>${isAdmin() ? '' : '係の確認のあと、地図に注意が出ます。'}</div>` : ''}
       <label class="field"><span>建物名</span><input type="text" id="awName" maxlength="30" value="${esc(s.name)}" placeholder="例：〇〇ハイツ"><small class="hint">住んでいる人の名前は書かないでください。</small></label>
+      ${s.reg ? `<label class="field"><span>住所（必ず）</span><input type="text" id="awAddr" maxlength="80" value="${esc(s.addr)}" placeholder="例：〇〇町1-2-3"><small class="hint">地図に置くとき、この住所で場所をさがします。</small></label>` : ''}
       <div class="aw-row"><span>階の数</span>${stepper('data-fl="1"', s.floors, '階')}</div>
       <label class="check locrow"><input type="checkbox" id="awG1"${s.g1 ? ' checked' : ''}>1階に部屋がある</label>
       <label class="check locrow"><input type="checkbox" id="awLock"${s.lock ? ' checked' : ''}>オートロックの建物</label>
@@ -275,7 +292,7 @@
       <p class="hint">空白で区切ると、まとめて足せます。全角や「ー」は自動でそろえます。</p>`}` : ''}
 
       <div class="aw-bar"><p>${s.floors}階建て・${us.length}${s.mode === 'floor' ? '個の枠' : '部屋'}</p>
-        <button class="btn primary block" id="awSave"${us.length ? '' : ' disabled'}>${edit ? '保存する' : '登録して、訪問の入力へ'}</button>
+        <button class="btn primary block" id="awSave"${us.length ? '' : ' disabled'}>${s.reg ? (s.reg.v ? '保存する' : '一覧に登録する') : edit ? '保存する' : '登録して、訪問の入力へ'}</button>
         <button class="btn block" id="awClose">やめる</button></div>`);
     bindForm(s);
   }
@@ -283,6 +300,7 @@
   function bindForm(s) {
     const S = $('#sheet'), again = () => paint(s, true);
     const nm = $('#awName'); if (nm) nm.oninput = () => { s.name = nm.value; };
+    const ad = $('#awAddr'); if (ad) ad.oninput = () => { s.addr = ad.value; };
     $$('[data-fl]', S).forEach(b => b.onclick = () => { s.floors = Math.max(1, Math.min(MAX_FLOORS, s.floors + (+b.dataset.d))); again(); });
     $$('[data-c0]', S).forEach(b => b.onclick = () => { s.cnt0 = Math.max(1, Math.min(60, s.cnt0 + (+b.dataset.d))); again(); });
     $$('[data-fc]', S).forEach(b => b.onclick = () => { const i = +b.dataset.fc; s.cnt[i] = Math.max(0, Math.min(60, (s.cnt[i] == null ? s.cnt0 : s.cnt[i]) + (+b.dataset.d))); again(); });
@@ -325,8 +343,8 @@
       if (i >= 0) s.extra.splice(i, 1); else s.del.add(u);
       delete s.ren[u]; s.sel = null; again();
     };
-    const ad = $('#awAdd');
-    if (ad) ad.oninput = () => { s.freeText = ad.value; };
+    const af = $('#awAdd');
+    if (af) af.oninput = () => { s.freeText = af.value; };
     const addOk = () => {
       const add = splitUnits(s.freeText); if (!add.length) return;
       const cur = new Set(finalUnits(s));
@@ -334,14 +352,14 @@
       s.freeText = ''; again();
     };
     if ($('#awAddOk')) $('#awAddOk').onclick = addOk;
-    if (ad) ad.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addOk(); } };
+    if (af) af.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addOk(); } };
     if ($('#awBack')) $('#awBack').onclick = () => {
       if (s.cand && s.cand.r && !s.edit) { s.extra = []; s.mode = 'floor'; s.fmt = 'n3'; }
       if (s.cand && s.ac === (s.cand.ac || s.ac0)) s.ac = s.ac0;                       // 候補から入ったものは、えらびなおすと元にもどす
       if (s.cand && s.cand.m && s.bn === cleanMemo(s.cand.m)) { s.bn = s.bn0; s.noteOpen = false; }
       s.step = 'pick'; s.cand = null; paint(s);
     };
-    if ($('#awClose')) $('#awClose').onclick = () => { closeSheet(); if (s.hid) (s.edit ? openBuilding : (id) => openTarget(id, '', false))(s.hid); };
+    if ($('#awClose')) $('#awClose').onclick = () => { if (s.reg) { s.reg.onClose ? s.reg.onClose() : closeSheet(); return; } closeSheet(); if (s.hid) (s.edit ? openBuilding : (id) => openTarget(id, '', false))(s.hid); };
     $('#awSave').onclick = () => save(s);
   }
 
@@ -355,6 +373,12 @@
       if (w.length && !await ask(`メモに「${w.join('・')}」とあります。建物のメモは、みんなが見ます。住んでいる人のこと（名前・国籍・年齢・病気など）が入っていなければ、このまま保存してください。`, { title: 'このまま保存しますか？', body: `メモに「${w.join('・')}」とあります。建物のメモは、くわしい表示の人みんなが見ます。住んでいる人のこと（名前・国籍・年齢・病気など）が入っていなければ、このまま保存してください。`, ok: '保存する', danger: false })) return;
     }
     const label = String(s.name || '').trim().slice(0, 30);
+    if (s.reg) { // 一覧に登録するだけ（地図の家は作らない）
+      const addr = String(s.addr || '').trim();
+      if (!addr) { toast('住所を入れてください'); const a = $('#awAddr'); if (a) a.focus(); return; }
+      s.reg.onSave({ name: label, addr: addr.slice(0, 80), rooms: us, lock: !!s.lock, ac: s.ac || '', bn, ban: s.ban || '' });
+      return;
+    }
     const hid = s.hid || ('h' + uid());
     const lost = s.edit ? s.h.units.filter(u => !us.includes(u)).length : 0;
     closeSheet();
