@@ -20,7 +20,8 @@
        { src, k, label, name, addr, lat, lng, lock, n: 部屋数, rooms: 部屋番号, nv: 記録数, hid: 家id, tmp: 仮で結んだ, skip, gone, at: 最後に届いた日時, res: 最後の結果,
          laddr: 一覧のリンクに入っていた住所（位置が入っていないリンクのとき。画面が住所で位置を調べるのに使う）,
          fix: { lat, lng, from: 'chiban'（地番の地図）|'addr'（住所で番地まで合った）|'hand'（係が地図で置いた・数字で入れた） },
-         ed: { name, addr }（係が直した名前・住所。取り込みでは変えない。gb_edit） }
+         ed: { name, addr }（係が直した名前・住所。取り込みでは変えない。gb_edit）,
+         same: ほかの行の id（地図にまだ無い建物どうしを「同じ建物」とまとめた。画面は same の行を、相手と一緒に結ぶ。gb_same） }
        lat・lng は一覧から届いた位置（取り込みのたびに入れかわる）。fix は画面で直した位置で、取り込みでは変えない（gb_pos）
 
    送る形（action: 'gb_sync'。token の代わりに key）：
@@ -235,7 +236,7 @@ function gbSyncCore_(src, label, blds, dry) {
       const o = out[i];
       ups.push([id, {
         src: src, k: b.k, label: label, name: b.name, addr: b.addr, laddr: b.laddr, lat: b.lat, lng: b.lng, lock: b.lock,
-        n: b.rooms.length, rooms: b.rooms.map(function (rm) { return rm.r; }), nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso, fix: d.fix || null, ed: d.ed || null,
+        n: b.rooms.length, rooms: b.rooms.map(function (rm) { return rm.r; }), nv: nv, hid: d.hid || '', tmp: !!d.tmp, skip: !!d.skip, at: nowIso, fix: d.fix || null, ed: d.ed || null, same: d.same || '',
         res: { st: o.st, add: o.add, upd: o.upd, del: o.del, dup: o.dup }
       }]);
     });
@@ -277,6 +278,11 @@ function gbApi_(user, req) {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
     try { return gbEdit_(user, req.items); } finally { lock.releaseLock(); }
+  }
+  if (a === 'gb_same') {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
+    try { return gbSame_(user, req.items); } finally { lock.releaseLock(); }
   }
   if (a === 'gb_pos') {
     const lock = LockService.getScriptLock();
@@ -339,7 +345,7 @@ function gbListOut_(sp, blds, srcs) {
    make：家はサーバーで作る（画面で作ると、サーバーに届くまで結べないため）。区域は画面が場所から決めて送る */
 function gbLink_(user, items) {
   if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
-  const gm = gbRead_(), ups = [], bad = [], made = [], mk = [];
+  const gm = gbRead_(), ups = [], bad = [], made = [], mk = [], madeIds = {};
   const terrs = readCol_('territories');
   items.forEach(function (it) {
     const id = String(it && it.id || ''), cur = gm.get(id);
@@ -355,6 +361,7 @@ function gbLink_(user, items) {
       if (h.label) h.gbn = h.label; // 一覧から付けた名前
       mk.push(h);
       made.push(hid);
+      madeIds[id] = hid;
     } else if (hid && (!ID_RE.test(hid) || !findRow_('houses', hid))) { bad.push(id); return; }
     ups.push([id, Object.assign({}, cur.data, { hid: it.skip ? '' : hid, skip: !!it.skip, tmp: !!(it.tmp && hid && !it.skip) })]);
   });
@@ -383,7 +390,7 @@ function gbLink_(user, items) {
     const res = applyChanges_(user, { houses: { up: hu } }, {});
     applied = hu.length - (res.rejected || []).filter(function (x) { return x.c === 'houses'; }).length;
   }
-  return { ok: true, n: ups.length, bad: bad, made: made, applied: applied };
+  return { ok: true, n: ups.length, bad: bad, made: made, madeIds: madeIds, applied: applied };
 }
 
 /* 一覧の建物の位置を直す。items: [{ id, lat, lng, from: 'chiban'|'addr'|'hand' }] または [{ id, clear: true }]（一覧の位置にもどす）
@@ -398,6 +405,28 @@ function gbPos_(user, items) {
     const lat = gbNum_(it.lat), lng = gbNum_(it.lng), from = ['chiban', 'addr', 'hand'].indexOf(it.from) >= 0 ? it.from : '';
     if (lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180 || !from) { bad.push(id); return; }
     ups.push([id, Object.assign({}, cur.data, { fix: { lat: lat, lng: lng, from: from, at: nowIso_() } })]);
+  });
+  gbWrite_(gm, ups, user.id);
+  return { ok: true, n: ups.length, bad: bad };
+}
+
+/* 地図にまだ無い建物どうしを「同じ建物」とまとめる・分ける。items: [{ id, same: 相手の id（'' で分ける） }]
+   相手が、さらにほかの行と同じなら、そのもとの行にまとめる（つながりを1段にする） */
+function gbSame_(user, items) {
+  if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
+  const gm = gbRead_(), ups = [], bad = [];
+  items.forEach(function (it) {
+    const id = String(it && it.id || ''), cur = gm.get(id);
+    let to = String(it && it.same || '');
+    if (!cur || !cur.data) { bad.push(id); return; }
+    if (to) {
+      const t = gm.get(to);
+      if (!t || !t.data) { bad.push(id); return; }
+      if (t.data.same) to = String(t.data.same);
+      if (to === id) { bad.push(id); return; }
+    }
+    ups.push([id, Object.assign({}, cur.data, { same: to })]);
+    if (to) gm.forEach(function (x, oid) { if (x.data && x.data.same === id) ups.push([oid, Object.assign({}, x.data, { same: to })]); }); // この行にまとめていた行も、もとの行へ
   });
   gbWrite_(gm, ups, user.id);
   return { ok: true, n: ups.length, bad: bad };
