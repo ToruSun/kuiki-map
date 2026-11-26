@@ -585,14 +585,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
   function editBld(b) {
     const fx = b.fix && b.fix.from === 'hand' ? b.fix : null;
+    const r6 = x => Math.round(x * 1e6) / 1e6, curPos = hasPos(b) ? `${r6(b.lat)}, ${r6(b.lng)}` : ''; // 今使っている位置（どこから来た位置でも）
     setSheet(headHtml(null, '名前・住所・位置を直す', esc(b.label || b.src)) + `
       <p class="hint">仮で結ぶとき・候補をさがすときに使う値です。直した値は、取り込みのたびに一覧の値で上書きされません。空にすると一覧のとおりにもどります。訪問の記録には関係しません。</p>
       <label class="field"><span>名前</span><input type="text" id="gbEN" value="${esc(b.ed && b.ed.name || '')}" placeholder="${esc(b.oname || '（一覧に名前なし）')}" maxlength="40"></label>
       <p class="gb-src">一覧：${esc(b.oname || '（なし）')}</p>
       <label class="field"><span>住所</span><input type="text" id="gbEA" value="${esc(b.ed && b.ed.addr || '')}" placeholder="${esc(b.oaddr || '（一覧に住所なし）')}" maxlength="80"></label>
       <p class="gb-src">一覧：${esc(b.oaddr || '（なし）')}${b.laddr ? `　／　一覧のリンク：${esc(b.laddr)}` : ''}</p>
-      <label class="field"><span>位置（緯度, 経度）</span><input type="text" id="gbEL" inputmode="decimal" value="${fx ? `${fx.lat}, ${fx.lng}` : ''}" placeholder="例：35.401234, 139.471234"></label>
-      <p class="gb-src">今の位置：${esc(PF_LABEL[b.pf || ''])}${hasPos(b) ? `（${b.lat}, ${b.lng}）` : ''}。空のままなら、今の位置のまま（数字を消すと、手で入れた位置を消す）</p>
+      <label class="field"><span>位置（緯度, 経度）</span><input type="text" id="gbEL" inputmode="decimal" value="${esc(curPos)}" placeholder="例：35.401234, 139.471234"></label>
+      <p class="gb-src">今の位置：${esc(PF_LABEL[b.pf || ''])}。数字を変えて保存すると「手で直した位置」になります。${fx ? '空にして保存すると、手で直した位置を消し、自動の位置（リンクのピン・住所から調べた位置）にもどります。' : ''}</p>
       <p class="hint" id="gbEErr" hidden></p>
       <button type="button" class="btn primary block" id="gbESave">保存する</button>
       <button type="button" class="btn block" id="gbEMap">地図で位置を直す</button>
@@ -603,7 +604,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     $('#gbEMap').onclick = () => fixPos(b, () => openBld(b.id));
     const save = async (name, addr, posText) => {
       let pos = null;
-      if (posText) { pos = readLatLng(posText); if (!pos) { err('緯度・経度が読めません。「35.401234, 139.471234」のように、緯度・経度の順に入れてください。'); return; } }
+      if (posText && posText === curPos) posText = '__same__'; // 位置は変えていない
+      if (posText && posText !== '__same__') { pos = readLatLng(posText); if (!pos) { err('緯度・経度が読めません。「35.401234, 139.471234」のように、緯度・経度の順に入れてください。'); return; } }
       const near = hasPos(b) ? b : b.llat != null ? { lat: b.llat, lng: b.llng } : null;
       if (pos && near && dist(pos.lat, pos.lng, near.lat, near.lng) > 3000
         && !await ask(`入れた位置は、今の位置から ${fmtM(dist(pos.lat, pos.lng, near.lat, near.lng))} はなれています。このままでよいですか？`, { ok: 'このまま保存' })) return;
@@ -617,7 +619,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         if (pos) {
           await api('gb_pos', { items: [{ id: b.id, lat: pos.lat, lng: pos.lng, from: 'hand' }] }, { timeout: 30000 });
           b.fix = { lat: pos.lat, lng: pos.lng, from: 'hand' };
-        } else if (fx && !posText) {
+        } else if (fx && !posText) { // 欄を空にした：手で直した位置を消す
           await api('gb_pos', { items: [{ id: b.id, clear: true }] }, { timeout: 30000 });
           b.fix = null;
         }
