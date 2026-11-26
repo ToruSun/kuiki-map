@@ -1,9 +1,12 @@
 /* =========================================================
-   gaibu.js  区域係の「外の一覧とつなぐ」  ※区域係だけ
+   gaibu.js  区域係の「集合住宅の一覧」（もとは「外の一覧とつなぐ」）  ※区域係だけ
+
+   集合住宅の一覧：地図の集合住宅（アパート）を全部と、地図にまだ無い建物（外の一覧から届いた建物）を1つの一覧にする。
+     外の一覧の建物を地図のアパートに結ぶと、1行にまとまる。さがす・しぼる・同じらしい組をまとめる。一軒家は載せない
 
    会衆が別に使っている一覧（アパート・オートロックの訪問の記録など）を、移行のあいだ、何度でもアプリに入れるための画面。
    一覧を読んで送るのは、区域係が別に用意するプログラム（取り込み用のスプレッドシートの Apps Script）。サーバーの受け口は gas/gaibu.gs
-   ・入口：係の画面 ＞ 区域 ＞「区域の線・取り込み」＞「外の一覧とつなぐ」
+   ・入口：係の画面 ＞ 区域 ＞「区域の線・取り込み」＞「集合住宅の一覧」
    ・取り込みの鍵：作る（1回だけ表示）・止める。鍵は、外のプログラムのスクリプトのプロパティに入れる
    ・建物の結びつき：一覧の建物を、アプリのアパート（または家）に結ぶ。結んだ建物の記録だけが入る
        候補：場所の近い家（アパートを先に）と、名前が同じ家。「候補が1つの建物をまとめて結ぶ」もできる
@@ -38,6 +41,9 @@
 .gb-st{flex:none;font-size:13px;font-weight:700;border-radius:8px;padding:2px 8px;background:#EEF1F5;color:var(--ink2)}
 .gb-st.ok{background:#E6F4EA;color:#1E7A3C}
 .gb-st.wait{background:#FFF4E5;color:#9A5B12}
+.gb-open{flex:1;min-width:0;background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;display:flex}
+.gb-more{margin:8px 0;border:2px solid var(--line);border-radius:12px;padding:6px 12px;background:#fff}
+.gb-more>summary{cursor:pointer;font-weight:700;min-height:40px;display:flex;align-items:center}
 .gb-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .gb-tabs button{min-height:44px;border:2px solid var(--line);border-radius:22px;background:#fff;padding:0 14px;font:inherit;font-size:15px;cursor:pointer}
 .gb-tabs button.on{border-color:var(--brand-ink);background:#E3ECF6;font-weight:700}
@@ -288,37 +294,115 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
     mapOff();
     if (st.data) { render(); refresh().then(cbAfter); return; }
-    setSheet(headHtml(null, '外の一覧とつなぐ', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
+    setSheet(headHtml(null, '集合住宅の一覧', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
     render();
     cbAfter();
   }
 
+  /* ---------- 集合住宅の一覧 ----------
+     行：{ k: 'm'（地図の集合住宅）, h, links: 結んでいる外の一覧の建物 } ・ { k: 'r'（地図にまだ無い建物）, b, alias: 同じ建物とまとめた行 } */
+  const LIST_MAX = 200;
+  function uniRows() {
+    const bl = (st.data && st.data.blds) || [];
+    const byH = new Map();
+    bl.forEach(b => { if (b.hid && !b.skip && houseById(b.hid)) { if (!byH.has(b.hid)) byH.set(b.hid, []); byH.get(b.hid).push(b); } });
+    const rows = [];
+    (D().houses || []).forEach(h => { if (h && (h.type === 'apt' || byH.has(h.id))) rows.push({ k: 'm', h, links: byH.get(h.id) || [] }); });
+    bl.forEach(b => {
+      if (b.hid && !b.skip && houseById(b.hid)) return; // 地図のアパートの行に入っている
+      if (b.same && bl.some(x => x.id === b.same)) return; // まとめた相手の行に入っている
+      rows.push({ k: 'r', b, alias: bl.filter(x => x.same === b.id) });
+    });
+    return rows;
+  }
+  const rowName = r => r.k === 'm' ? (r.h.label || '名前のない集合住宅') : (r.b.name || '（名前なし）');
+  function rowSt(r) {
+    if (r.k === 'm') return r.links.some(b => stOf(b) === 'tmp') ? 'tmp' : 'map';
+    return stOf(r.b); // wait・skip・gone・lost
+  }
+  const U_LABEL = { map: '地図', tmp: '仮', wait: 'まだ', lost: '家がない', skip: '取り込まない', gone: '一覧にない' };
+  function rowIn(r, tab) {
+    const s = rowSt(r);
+    if (tab === 'all') return s !== 'skip';
+    if (tab === 'map') return r.k === 'm';
+    if (tab === 'reg') return r.k === 'r' && (s === 'wait' || s === 'lost');
+    if (tab === 'tmp') return s === 'tmp';
+    if (tab === 'ext') return r.k === 'r' || r.links.length > 0;
+    if (tab === 'skip') return s === 'skip';
+    if (tab === 'gone') return r.k === 'r' ? !!r.b.gone : r.links.some(b => b.gone);
+    return true;
+  }
+  function rowHit(r, q) {
+    if (!q) return true;
+    const t = r.k === 'm'
+      ? [r.h.label, r.h.terrId && terrById(r.h.terrId) ? terrById(r.h.terrId).no : '', ...r.links.map(b => b.name + ' ' + b.addr + ' ' + b.label)]
+      : [r.b.name, r.b.addr, r.b.label, ...r.alias.map(x => x.name + ' ' + x.label)];
+    return t.some(x => norm(x).includes(q));
+  }
+
+  /* 同じらしい組：地図にまだ無い建物と、地図のアパート（人が付けた名前が同じで 100m 以内。位置が分からなければ名前が同じものが1つだけ）、
+     地図にまだ無い建物どうし（名前が同じで、100m 以内か住所が同じ） */
+  function pairsOf() {
+    const bl = (st.data && st.data.blds) || [];
+    const regs = bl.filter(b => !b.skip && !b.gone && !b.same && !(b.hid && houseById(b.hid)));
+    const apts = (D().houses || []).filter(h => h && h.type === 'apt' && h.lat != null);
+    const out = [], usedB = new Set();
+    regs.forEach(b => {
+      const nb = norm(b.name); if (!nb) return;
+      const ms = apts.filter(h => sameName(nb, h)).map(h => ({ h, m: hasPos(b) ? dist(b.lat, b.lng, h.lat, h.lng) : Infinity }));
+      const near = ms.filter(x => x.m <= 100);
+      if (near.length === 1) { out.push({ k: 'bm', b, h: near[0].h, m: near[0].m, sure: true }); usedB.add(b.id); }
+      else if (!hasPos(b) && ms.length === 1) { out.push({ k: 'bm', b, h: ms[0].h, m: Infinity, sure: false }); usedB.add(b.id); }
+    });
+    for (let i = 0; i < regs.length; i++) for (let j = i + 1; j < regs.length; j++) {
+      const a = regs[i], c = regs[j];
+      if (usedB.has(a.id) || usedB.has(c.id) || a.src === c.src && a.k === c.k) continue;
+      if (!norm(a.name) || norm(a.name) !== norm(c.name)) continue;
+      const near = hasPos(a) && hasPos(c) && dist(a.lat, a.lng, c.lat, c.lng) <= 100;
+      const sameAddr = norm(a.addr) && norm(a.addr) === norm(c.addr);
+      if (!near && !sameAddr) continue;
+      const [p, q] = hasPos(c) && !hasPos(a) ? [c, a] : [a, c]; // 位置の分かるほうを、もとの行に
+      out.push({ k: 'bb', b: p, b2: q, sure: true });
+      usedB.add(a.id); usedB.add(c.id);
+    }
+    return out;
+  }
+
   function render() {
     const d = st.data;
-    if (!d) { setSheet(headHtml(null, '外の一覧とつなぐ', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
+    if (!d) { setSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
-    const cnt = { wait: 0, ok: 0, tmp: 0, skip: 0, gone: 0, lost: 0 };
-    blds.forEach(b => { cnt[stOf(b)]++; });
-    const sure = blds.filter(b => stOf(b) === 'wait').map(b => ({ b, h: sureMatch(b) })).filter(x => x.h);
-    const tab = (k, t) => `<button type="button" data-gbt="${k}" class="${st.tab === k ? 'on' : ''}">${t}</button>`;
-    setSheet(headHtml(null, '外の一覧とつなぐ', `建物 ${blds.length}棟`) + `
+    const rows = uniRows();
+    const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, skip: 0, gone: 0 };
+    rows.forEach(r => Object.keys(cnt).forEach(t => { if (rowIn(r, t)) cnt[t]++; }));
+    const wait = blds.filter(b => stOf(b) === 'wait' && !b.same);
+    const tmpB = blds.filter(b => stOf(b) === 'tmp');
+    const sure = wait.map(b => ({ b, h: sureMatch(b) })).filter(x => x.h);
+    const prs = pairsOf();
+    if (!st.utab) st.utab = 'all';
+    const tab = (k, t) => `<button type="button" data-gbt="${k}" class="${st.utab === k ? 'on' : ''}">${t}</button>`;
+    setSheet(headHtml(null, '集合住宅の一覧', `${cnt.map}棟が地図に・${cnt.reg}棟がまだ`) + `
       <p class="notice" id="gbProg"${st.prog ? '' : ' hidden'}>${esc(st.prog || '')}</p>
-      <p class="hint">ほかで使っている一覧（アパート・オートロックの訪問の記録など）を、取り込み用のプログラムが読んで送ります。
-        一覧の建物をアプリのアパートに<b>結ぶ</b>と、次の取り込みからその建物の記録が入ります。一覧を直すと、次の取り込みでアプリの記録も直ります（アプリで入れた記録はそのまま）。</p>
-      <h3 class="sub">取り込みの鍵</h3>
-      <p class="gb-src">${d.key && d.key.has ? `あり（${esc(day(d.key.at))} に作成）` : 'まだありません'}</p>
-      <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
-      ${(d.srcs || []).length ? `<h3 class="sub">届いた一覧</h3>${d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(s => `<p class="gb-src">${esc(s.label || s.src)}：${s.n}棟・${esc(day(s.at))}</p>`).join('')}` : '<p class="hint">まだ一覧が届いていません。取り込み用のプログラムで「今すぐ取り込む」をためしてください。</p>'}
-      ${sure.length ? `<button type="button" class="btn primary block" id="gbSure">候補が1つの建物をまとめて結ぶ（${sure.length}棟）</button>` : ''}
-      ${cnt.wait ? `<button type="button" class="btn block" id="gbKari">残り ${cnt.wait}棟を全部、仮で結ぶ</button>` : ''}
-      ${cnt.tmp ? `<button type="button" class="btn block" id="gbKariOff">仮 ${cnt.tmp}棟をまとめて外す</button>` : ''}
-      <div class="gb-tabs">${tab('wait', `まだ ${cnt.wait + cnt.lost}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ok', `結んだ ${cnt.ok}`)}${tab('skip', `取り込まない ${cnt.skip}`)}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}${tab('all', 'すべて')}</div>
-      <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="建物名・住所でさがす" aria-label="建物をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
+      <p class="hint">地図の集合住宅と、外の一覧（スプレッドシート）から届いた建物の一覧です。外の一覧の建物を地図の集合住宅に<b>結ぶ</b>と1行にまとまり、次の取り込みから記録が入ります。一軒家は載せません。</p>
+      ${prs.length ? `<button type="button" class="btn primary block" id="gbPairs">同じらしい組をまとめる（${prs.length}組）</button>` : ''}
+      <details class="gb-more"><summary>まとめて結ぶ・外す</summary>
+        ${sure.length ? `<button type="button" class="btn block" id="gbSure">候補が1つの建物をまとめて結ぶ（${sure.length}棟）</button>` : ''}
+        ${wait.length ? `<button type="button" class="btn block" id="gbKari">まだの ${wait.length}棟を全部、仮で結ぶ</button>` : ''}
+        ${tmpB.length ? `<button type="button" class="btn block" id="gbKariOff">仮 ${tmpB.length}棟をまとめて外す</button>` : ''}
+        ${!sure.length && !wait.length && !tmpB.length ? '<p class="hint">ありません</p>' : ''}
+      </details>
+      <details class="gb-more"><summary>外の一覧の取り込み（鍵・届いた一覧）</summary>
+        <p class="gb-src">取り込みの鍵：${d.key && d.key.has ? `あり（${esc(day(d.key.at))} に作成）` : 'まだありません'}</p>
+        <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
+        ${(d.srcs || []).length ? d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(x => `<p class="gb-src">${esc(x.label || x.src)}：${x.n}棟・${esc(day(x.at))}</p>`).join('') : '<p class="hint">まだ一覧が届いていません。取り込み用のスプレッドシートで「今すぐ取り込む」をためしてください。</p>'}
+      </details>
+      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
+      <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="名前・住所・区域番号でさがす" aria-label="集合住宅をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
       <div id="gbRows">${listRows()}</div>
       <button type="button" class="btn block" data-close>閉じる</button>`);
     const S = $('#sheet');
-    $$('[data-gbt]', S).forEach(x => x.onclick = () => { st.tab = x.dataset.gbt; sheetKeep = true; render(); });
+    $$('[data-gbt]', S).forEach(x => x.onclick = () => { st.utab = x.dataset.gbt; sheetKeep = true; render(); });
     bindRows();
     if (st.restore != null) { S.scrollTop = st.restore; st.restore = null; }
     bindSearch($('#gbQ'), v => { st.q = v; const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } });
@@ -328,28 +412,99 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       try { await api('gb_key_del', {}, { timeout: 30000 }); toast('鍵を止めました'); } catch (e) { toast('止められませんでした'); }
       await load(); sheetKeep = true; render();
     };
+    if ($('#gbPairs')) $('#gbPairs').onclick = () => confirmPairs(prs);
     if ($('#gbSure')) $('#gbSure').onclick = () => confirmSure(sure);
-    if ($('#gbKari')) $('#gbKari').onclick = () => confirmKari(blds.filter(b => stOf(b) === 'wait'));
-    if ($('#gbKariOff')) $('#gbKariOff').onclick = () => kariOff(blds.filter(b => stOf(b) === 'tmp'));
+    if ($('#gbKari')) $('#gbKari').onclick = () => confirmKari(wait);
+    if ($('#gbKariOff')) $('#gbKariOff').onclick = () => kariOff(tmpB);
   }
 
-  /* 一覧の画面の建物の行（タブと検索で しぼる） */
+  /* 一覧の行（タブと検索で しぼる。名前の順。多すぎるときは先頭だけ） */
   function listRows() {
     const q = norm(st.q);
-    const shown = (st.data.blds || []).filter(b => (st.tab === 'all' || stOf(b) === st.tab || (st.tab === 'wait' && stOf(b) === 'lost')) && (!q || norm(b.name).includes(q) || norm(b.addr).includes(q)))
-      .sort((a, b) => String(a.label).localeCompare(String(b.label)) || String(a.name).localeCompare(String(b.name), 'ja'));
-    return shown.map(b => {
-      const s = stOf(b), h = b.hid ? houseById(b.hid) : null, r = b.res || {};
-      const last = s === 'ok' && (r.add || r.upd || r.del || r.dup) ? `・前回 +${r.add || 0}${r.upd ? `・直し${r.upd}` : ''}${r.del ? `・−${r.del}` : ''}${r.dup ? `・重なり${r.dup}` : ''}` : '';
-      return `<button type="button" class="gb-row" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(b.name || '（名前なし）')}${b.lock ? '　🔒' : ''}</b>
-        <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${last}</small>
-        <small>${h ? `→ ${esc(h.label || '名前のない家')}${h.terrId && terrById(h.terrId) ? `（区域${esc(terrById(h.terrId).no)}）` : ''}` : esc(b.addr || '')}</small></span>
-        <span class="gb-st ${s === 'ok' ? 'ok' : s === 'wait' || s === 'lost' || s === 'tmp' ? 'wait' : ''}">${ST_LABEL[s]}</span></button>`;
-    }).join('') || '<div class="empty">ありません</div>';
+    const shown = uniRows().filter(r => rowIn(r, st.utab || 'all') && rowHit(r, q))
+      .sort((a, b) => rowName(a).localeCompare(rowName(b), 'ja'));
+    const html = shown.slice(0, LIST_MAX).map(r => {
+      const s = rowSt(r), cls = s === 'map' ? 'ok' : (s === 'wait' || s === 'lost' || s === 'tmp') ? 'wait' : '';
+      if (r.k === 'm') {
+        const h = r.h, t = h.terrId && terrById(h.terrId);
+        const links = r.links.map(b => `${esc(b.name)}（${esc(b.label || b.src)}${stOf(b) === 'tmp' ? '・仮' : ''}）`).join('、');
+        return `<div class="gb-row"><button type="button" class="gb-open" data-um="${esc(h.id)}"><span class="tx"><b>${esc(rowName(r))}${h.lock ? '　🔒' : ''}</b>
+          <small>${t ? `区域${esc(t.no)}・` : ''}${h.type === 'apt' ? `${(h.units || []).length}部屋` : h.prov ? '仮の家' : '家'}</small>
+          ${links ? `<small>外の一覧：${links}</small>` : ''}</span></button>
+          <button type="button" class="btn small" data-uz="${esc(h.id)}">地図</button><span class="gb-st ${cls}">${U_LABEL[s]}</span></div>`;
+      }
+      const b = r.b;
+      return `<div class="gb-row"><button type="button" class="gb-open" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(rowName(r))}${b.lock ? '　🔒' : ''}</b>
+        <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件</small>
+        <small>${esc(b.addr || '')}${r.alias.length ? `　＋同じ建物：${r.alias.map(x => esc(x.label || x.src)).join('、')}` : ''}</small></span></button>
+        <span class="gb-st ${cls}">${U_LABEL[s] || ''}</span></div>`;
+    }).join('');
+    return (html || '<div class="empty">ありません</div>') + (shown.length > LIST_MAX ? `<p class="hint">ほかに ${shown.length - LIST_MAX}棟あります。さがして しぼってください。</p>` : '');
   }
   function bindRows() {
     const S = $('#sheet');
     $$('#gbRows [data-gb]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openBld(x.dataset.gb); });
+    $$('#gbRows [data-um]', S).forEach(x => x.onclick = () => {
+      st.back = S.scrollTop;
+      const h = houseById(x.dataset.um); if (!h) return;
+      if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false);
+    });
+    $$('#gbRows [data-uz]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; peekHouse(houseById(x.dataset.uz)); });
+  }
+
+  /* 地図で見る（地図の集合住宅）：その建物に印をつけて寄せ、下に「建物を開く」「一覧へ」 */
+  function peekHouse(h) {
+    if (!h || typeof L === 'undefined' || typeof map === 'undefined' || h.lat == null) return;
+    mapOff(); closeSheet(); showView('map');
+    mapLayer = L.layerGroup();
+    L.circleMarker([h.lat, h.lng], { radius: 20, color: '#1d3a5a', weight: 5, fillColor: '#5B8DEF', fillOpacity: .18 })
+      .bindTooltip(esc(h.label || '名前のない集合住宅'), { permanent: true, direction: 'top', offset: [0, -14], className: 'gb-pin-h', opacity: 1 }).addTo(mapLayer);
+    mapLayer.addTo(map);
+    const go = () => { try { map.invalidateSize(); } catch (e) { /* そのまま */ } map.setView([h.lat, h.lng], 19); };
+    setTimeout(go, 200); setTimeout(go, 700);
+    mapBar = document.createElement('div');
+    mapBar.className = 'gb-mapbar';
+    mapBar.innerHTML = `<button type="button" class="x" data-a="x" aria-label="閉じる">×</button>
+      <p class="t"><b>${esc(h.label || '名前のない集合住宅')}</b></p>
+      <div class="acts"><button type="button" class="btn primary" data-a="open">建物を開く</button><button type="button" class="btn" data-a="list">一覧へ</button></div>`;
+    document.getElementById('map').parentElement.appendChild(mapBar);
+    mapBar.onclick = e => {
+      const a = e.target.closest('[data-a]'); if (!a) return;
+      if (a.dataset.a === 'x') { mapOff(); return; }
+      if (a.dataset.a === 'open') { mapOff(); if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false); return; }
+      if (a.dataset.a === 'list') { mapOff(); st.restore = st.back; open(); }
+    };
+  }
+
+  /* 同じらしい組をまとめる：チェックした組を結ぶ（地図のアパート）・同じ建物にする（地図にまだ無いものどうし） */
+  function confirmPairs(list) {
+    setSheet(headHtml(null, '同じらしい組をまとめる', `${list.length}組`) + `
+      <p class="hint">名前が同じで近い組です（地図の集合住宅の名前は、人が付けたものだけで比べます）。ちがう組はチェックを外してください。</p>
+      <div class="gb-tabs" style="margin-bottom:4px">
+        <label class="check"><input type="radio" name="gbFit" value="keep" checked>地図の建物の名前・部屋のまま</label>
+        <label class="check"><input type="radio" name="gbFit" value="fit">一覧の名前・部屋に合わせる</label>
+      </div>
+      <div>${list.map((x, i) => `<label class="tk-del"><input type="checkbox" data-gbpr="${i}"${x.sure ? ' checked' : ''}><span class="tx">
+        <b>${esc(x.b.name)}</b><small>${esc(x.b.label || x.b.src)}</small>
+        <small>${x.k === 'bm' ? `＝ 地図の「${esc(x.h.label)}」${isFinite(x.m) ? `（${fmtM(x.m)}）` : '（位置が分からないので、名前だけで選びました）'}` : `＝ ${esc(x.b2.label || x.b2.src)} の「${esc(x.b2.name)}」（地図にまだ無いものどうし）`}</small></span></label>`).join('')}</div>
+      <button type="button" class="btn primary block" id="gbPrGo">チェックした組をまとめる</button>
+      <button type="button" class="btn block" id="gbPrBack">もどる</button>`);
+    $('#gbPrBack').onclick = () => render();
+    $('#gbPrGo').onclick = async () => {
+      const on = [...$$('[data-gbpr]', $('#sheet'))].filter(c => c.checked).map(c => list[+c.dataset.gbpr]);
+      if (!on.length) return;
+      const fit = ($('input[name="gbFit"]:checked') || {}).value === 'fit';
+      const bm = on.filter(x => x.k === 'bm'), bb = on.filter(x => x.k === 'bb');
+      $('#gbPrGo').disabled = true;
+      if (bb.length) {
+        try {
+          await api('gb_same', { items: bb.map(x => ({ id: x.b2.id, same: x.b.id })) }, { timeout: 60000 });
+          bb.forEach(x => { x.b2.same = x.b.id; });
+        } catch (e) { toast(e && e.code === 'unknown_action' ? 'サーバーがまだ新しくなっていません' : 'まとめられませんでした'); }
+      }
+      if (bm.length) await link(bm.map(x => fit ? { id: x.b.id, hid: x.h.id, apply: true } : { id: x.b.id, hid: x.h.id }), `${on.length}組をまとめました`);
+      else { toast(`${on.length}組をまとめました`); await load(true); sheetKeep = true; render(); }
+    };
   }
 
   async function makeKey() {
@@ -417,8 +572,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       }
       if (made) await pullNow(); // サーバーで作ったアパートを読みにいく
       toast(`${ok}棟を仮で結びました${bad ? `（${bad}棟は結べませんでした）` : ''}。次の取り込みで記録が入ります`);
-      st.tab = 'tmp';
-      await load(); sheetKeep = true; render();
+      st.utab = 'tmp';
+      await load(); await linkAliases(); sheetKeep = true; render();
     };
   }
 
@@ -427,7 +582,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!list.length) return;
     if (!await ask(`仮で結んだ ${list.length}棟を、まとめて外します（まだ にもどします）。その建物から入れた記録は、次の取り込みで消えます。「これでよい」を押した建物はそのままです。よろしいですか？`, { ok: '外す' })) return;
     list.forEach(b => Object.assign(b, { hid: '', tmp: false }));
-    st.tab = 'wait'; sheetKeep = true; render();
+    st.utab = 'reg'; sheetKeep = true; render();
     let bad = 0;
     for (let i = 0; i < list.length; i += 100) {
       toast(`外しています… ${i}／${list.length}（終わるまで、アプリを閉じずにお待ちください）`);
@@ -438,16 +593,37 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     refresh();
   }
 
+  /* 同じ建物とまとめた行（same）を、相手が結んだ家に結ぶ（仮で結ぶのあとなど） */
+  async function linkAliases() {
+    const bl = (st.data && st.data.blds) || [];
+    const items = bl.filter(x => x.same && !x.skip).map(x => ({ x, p: bl.find(y => y.id === x.same) }))
+      .filter(o => o.p && o.p.hid && houseById(o.p.hid) && o.x.hid !== o.p.hid).map(o => ({ id: o.x.id, hid: o.p.hid, tmp: !!o.p.tmp }));
+    if (!items.length) return;
+    try { await api('gb_link', { items }, { timeout: 60000 }); await load(true); } catch (e) { /* 次にまた */ }
+  }
+
   /* 結ぶ・外す。新しく置くとき以外は、手元の一覧をすぐ直して先へ進み、サーバーへはうしろで送る
      next：手元を直したあとにすること（なければ一覧の画面） */
   async function link(items, msg, next) {
     const go = next || (() => { st.restore = st.back; sheetKeep = true; render(); });
+    // 同じ建物とまとめた行（same）も、一緒に結ぶ・外す。新しく置くときは、置いた家の id が分かってから
+    const bl = (st.data && st.data.blds) || [], later = [];
+    items = items.flatMap(it => {
+      const al = bl.filter(x => x.same === it.id && x.id !== it.id);
+      if (!al.length) return [it];
+      if (it.make) { al.forEach(x => later.push({ from: it.id, id: x.id, tmp: !!it.tmp })); return [it]; }
+      return [it].concat(al.map(x => Object.assign({}, it, { id: x.id, apply: false })));
+    });
     if (items.some(it => it.make || it.apply)) { // 新しく置く・家を一覧に合わせる：サーバーの返事を待って、家を読み直す
       toast('結んでいます…（少し待ってください）');
       try {
         const r = await api('gb_link', { items }, { timeout: 60000 });
         toast(r.bad && r.bad.length ? `${r.n}棟を結びました（${r.bad.length}棟は結べませんでした）` : msg);
         if (r.applied) await pullNow();
+        if (later.length && r.madeIds) {
+          const more = later.filter(x => r.madeIds[x.from]).map(x => ({ id: x.id, hid: r.madeIds[x.from], tmp: x.tmp }));
+          if (more.length) { try { await api('gb_link', { items: more }, { timeout: 60000 }); } catch (e) { /* 次に一覧を開いたとき、結び直せる */ } }
+        }
         if (r.made && r.made.length) await pullNow(); // サーバーで作ったアパートを読みにいく
       } catch (e) { toast('結べませんでした。あとでもう一度ためしてください'); }
       await load(true); go(); return;
@@ -542,6 +718,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), `${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件`) + `
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}　${gmapBtn(b)}</p>
+      ${(() => {
+        const bl = st.data.blds || [], p = b.same ? bl.find(x => x.id === b.same) : null, al = bl.filter(x => x.same === b.id);
+        if (p) return `<div class="notice">「${esc(p.name)}」（${esc(p.label || p.src)}）と同じ建物としてまとめています。結ぶときは一緒に結ばれます。<button type="button" class="btn small" data-gbun="${esc(b.id)}">分ける</button></div>`;
+        if (al.length) return `<div class="notice">同じ建物：${al.map(x => `${esc(x.name)}（${esc(x.label || x.src)}）<button type="button" class="btn small" data-gbun="${esc(x.id)}">分ける</button>`).join('　')}</div>`;
+        return '';
+      })()}
       ${b.ed ? `<p class="gb-src">直した値（一覧：${esc(b.oname || 'なし')}・${esc(b.oaddr || 'なし')}）</p>` : ''}
       ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
       <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
@@ -587,6 +769,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       await link([{ id: b.id, hid: '' }], '結びつきを外しました。入れた記録は、次の取り込みで消えます');
     };
     $('#gbFix').onclick = () => fixPos(b, () => openBld(b.id));
+    $$('[data-gbun]', S).forEach(x => x.onclick = async () => {
+      const t = (st.data.blds || []).find(y => y.id === x.dataset.gbun); if (!t) return;
+      try { await api('gb_same', { items: [{ id: t.id, same: '' }] }, { timeout: 30000 }); t.same = ''; toast('分けました'); }
+      catch (e) { toast('分けられませんでした'); }
+      openBld(b.id);
+    });
     $('#gbEdit').onclick = () => editBld(b);
     lookupThen(b, () => { if ($('#gbEdit') && $('#sheet').dataset.gbBld === b.id) openBld(b.id); });
     $('#sheet').dataset.gbBld = b.id;
