@@ -2,7 +2,8 @@
 # 市町村の「固定資産（土地）地番参考図」など（市町村のホームページの SHP の zip）→ 区域マップ用の kuiki-sankouzu.json.gz
 # ・使う前に、市町村の利用規約を読み、必要なら了解を取る
 # ・平面直角座標の系（1〜19）は、SHP の範囲と会衆の範囲から自動で選ぶ。字の列が無いときは、およそ1km の四角ごとに分ける
-# ・法務省の線（chiban/）が無い所だけ、会衆の範囲（config.js の area＋150m）の筆の「線の形」だけを入れる。地番は入れない
+# ・法務省の線（chiban/）が無い所だけ、会衆の範囲（config.js の area＋150m）の筆の線の形と地番を入れる。
+#   地番は、サーバー（gas/sankouzu.gs）の中で区域係が住所の位置を引くのにだけ使い、端末には渡さない
 # ・できたファイルは、持ち主のドライブ「区域マップ_地番参考図」に置く（公開ページ・GitHub には置かない）。サーバー（gas/sankouzu.gs）が読む
 # ・使い方：python3 tools/sankouzu-build.py <出力 .json.gz> <データの時点 年-月> <zip>[=<市町村名>] [<zip>=<市町村名> ...]
 #   会衆がいくつかの市町村にまたがるときは、市町村ごとの zip を「=市町村名」つきで並べる（1つだけなら config.js の muni）
@@ -27,6 +28,36 @@ def dbf(path, enc='cp932'):
                 o[name] = r[pos:pos + ln].decode(enc, 'replace').strip(); pos += ln
             yield o
     return n, fields, rows()
+BAN_COLS = ('地番', 'CHIBAN', 'TIBAN', '地番名', '地番表示', 'CHIBAN1')
+HON_COLS, EDA_COLS = ('本番', '親番', 'HONBAN'), ('枝番', '子番', 'EDABAN')
+BAN_RE = re.compile(r'^\d{1,5}(-\d{1,4}){0,3}$')
+def norm_ban(s):  # gas/sankouzu-build.gs の sbBan_ と同じ
+    t = unicodedata.normalize('NFKC', str(s or '')).replace('\0', '').strip()
+    t = re.sub(r'^[^\d]+', '', t); t = re.sub(r'\s+', '', t)
+    t = re.sub(r'(番地の?|番の?|の|ノ|[‐－ー―−~〜])', '-', t); t = re.sub(r'-+', '-', t); t = re.sub(r'-$', '', t)
+    m = re.match(r'^\d+(?:-\d+)*', t)
+    return re.sub(r'(^|-)0+(\d)', r'\1\2', m.group(0)) if m else ''
+def ban_col(fields, rows, acol):  # gas/sankouzu-build.gs の sbDbfBan_ と同じ順で、地番の列を決める → (列の名前, 行ごとの地番)
+    up = {unicodedata.normalize('NFKC', f[0]).strip().upper(): f for f in fields}
+    pick = lambda names: next((up[c][0] for c in names if c in up), None)
+    c = pick(BAN_COLS)
+    if c: return c, [norm_ban(r.get(c, '')) for r in rows]
+    h, e = pick(HON_COLS), pick(EDA_COLS)
+    if h:
+        def one(r):
+            a, b = norm_ban(r.get(h, '')), (norm_ban(r.get(e, '')) if e else '')
+            return a + '-' + b if a and b and b != '0' else a
+        return h + ('＋' + e if e else ''), [one(r) for r in rows]
+    best = None
+    for f in fields:
+        nm = unicodedata.normalize('NFKC', f[0]).strip().upper()
+        if f[0] == acol or f[2] > 40: continue
+        vs = [r.get(f[0], '') for r in rows]; sample = [norm_ban(v) for v in vs[:2000]]
+        ok = sum(1 for v in sample if v and BAN_RE.match(v)); dash = sum(1 for v in sample if v.find('-') > 0)
+        raw = sum(1 for v in vs[:2000] if unicodedata.normalize('NFKC', str(v)).strip())
+        rr = ok / raw if raw else 0
+        if rr >= 0.9 and dash >= len(sample) * 0.05 and (not best or rr > best[0]): best = (rr, f[0], [norm_ban(v) for v in vs])
+    return (best[1], best[2]) if best else (None, None)
 def shapes(path):
     f = open(path, 'rb'); h = f.read(100)
     stype = struct.unpack('<i', h[32:36])[0]; bbox = struct.unpack('<4d', h[36:68])
@@ -187,7 +218,10 @@ def one_zip(zpath, tmp, AREA, box, in_moj, groups, stat, prefix):
     cols = {unicodedata.normalize('NFKC', f[0]).strip().upper(): f[0] for f in fields}
     acol = next((cols[c] for c in ('大字名', '大字', '町丁名', '町名', '字名', '大字町丁名', '所在', 'OAZA', 'AZA') if c in cols), None)
     if not acol: print('  字の列がないので、およそ1km の四角ごとに分けます')
-    for r, g in zip(rows, geoms):
+    rows = list(rows)
+    bcol, bans = ban_col(fields, rows, acol)
+    print('  地番の列：' + bcol if bcol else '  地番の列が見つかりませんでした（線だけ入れます）')
+    for i, (r, g) in enumerate(zip(rows, geoms)):
         if not g: continue
         ring = g[0]
         la, ln = to_ll(sum(q[1] for q in ring) / len(ring), sum(q[0] for q in ring) / len(ring))
@@ -198,7 +232,8 @@ def one_zip(zpath, tmp, AREA, box, in_moj, groups, stat, prefix):
         if in_moj(*c): stat['法務省の線がある'] += 1; continue
         if not (inside(c[0], c[1], AREA) or near(c[0], c[1], AREA, 150)): stat['範囲の外'] += 1; continue
         cy, cx = round(c[0] * 1e6), round(c[1] * 1e6)
-        e = ['', cy, cx]; prev = None   # 地番は入れない
+        e = [bans[i] if bans else '', cy, cx]; prev = None   # 地番（サーバーの中で位置を引くのにだけ使う）
+        if e[0]: stat['地番あり'] += 1
         for q in ll:
             v = (round(q[0] * 1e6) - cy, round(q[1] * 1e6) - cx)
             if v == prev: continue
@@ -233,7 +268,7 @@ def main():
         files[f] = {'p': ps}
     allb = [v['b'] for v in azas.values()]
     index = {'v': 1, 'asof': asof, 'name': '地番参考図', 'cities': cities,
-             'src': '「固定資産（土地）地番参考図」（%s）を加工して作成（線だけ。地番は入れていない）' % ('・'.join(cities) or '市町村'),
+             'src': '「固定資産（土地）地番参考図」（%s）を加工して作成' % ('・'.join(cities) or '市町村'),
              'b': [min(b[0] for b in allb), min(b[1] for b in allb), max(b[2] for b in allb), max(b[3] for b in allb)], 'azas': azas}
     with gzip.open(out, 'wt', encoding='utf-8', compresslevel=9) as o:
         json.dump({'index': index, 'files': files}, o, ensure_ascii=False, separators=(',', ':'))

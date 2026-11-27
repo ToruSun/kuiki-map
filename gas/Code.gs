@@ -190,6 +190,10 @@ function doPost(e) {
       if (typeof sanApi_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
       return json_(sanApi_(user, req));
     }
+    if (req.action === 'tks_find') { // 住所 → 位置（地番参考図の地番。sankouzu.gs）：区域係だけ
+      if (typeof sanFind_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
+      return json_(sanFind_(user, req));
+    }
     if (req.action === 'lm_pull' || req.action === 'lm_save' || req.action === 'lm_del') { // 地図の目印（landmarks.gs）
       if (typeof lmApi_ !== 'function') return json_({ ok: false, error: 'unknown_action' });
       return json_(lmApi_(user, req));

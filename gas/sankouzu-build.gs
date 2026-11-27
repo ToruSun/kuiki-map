@@ -11,11 +11,13 @@
         市町村ごとにそこへ入れる（フォルダの名前が、出典に出る市町村の名前になる）
      3. メニュー「地番参考図から土地の区切りを作る」→ 時点（年-月）を入れる → 5分ごとに自動で続く
    しくみ：
-     ・SHP はドライブの API から 8MB ずつ（Range）読み、筆（多角形）を1つずつ取り出す。DBF からは字の名前だけを読む
-       （字の列が無いときは、およそ1km の四角ごとに分ける）
+     ・SHP はドライブの API から 8MB ずつ（Range）読み、筆（多角形）を1つずつ取り出す。DBF からは字の名前と地番を読む
+       （字の列が無いときは、およそ1km の四角ごとに分ける。地番の列は名前で探し、無ければ「779-1」のような中身の列を探す）
      ・平面直角座標（1〜19系。SHP の範囲と会衆の範囲から、合う系を自動で選ぶ）→ 緯度・経度。
        会衆の範囲（公開ページの config.js の area＋150m）の筆だけ
-     ・法務省の線（公開ページの chiban/）がある所の筆は入れない。地番は入れない（線の形だけ）
+     ・法務省の線（公開ページの chiban/）がある所の筆は入れない
+     ・地番も入れる。ただし地番は、サーバー（sankouzu.gs）の中で区域係が住所の位置を引くのにだけ使い、端末には渡さない
+       （土地の区切りの線を見せるとき（action 'tks'）は、地番を抜いて渡す）
      ・できあがりを kuiki-sankouzu.json.gz として同じフォルダに置き、古いのはゴミ箱へ。サーバー（sankouzu.gs）が次の問い合わせで使う
    ========================================================= */
 const SB_STATE = 'SAN_BUILD';
@@ -106,20 +108,73 @@ function sbNorm_(s) {
   return String(s || '').normalize('NFKC').trim().replace(/^(大字|字)/, '');
 }
 
-/* ---------- DBF：字の名前だけを読む。くり返しの多い字は、同じ並びのバイトを1回だけ文字にする ---------- */
+/* ---------- DBF：字の名前と地番を読む。くり返しの多い字は、同じ並びのバイトを1回だけ文字にする ---------- */
 const SB_AZA_COLS = ['大字名', '大字', '町丁名', '町名', '字名', '大字町丁名', '所在', 'OAZA', 'AZA'];
+const SB_BAN_COLS = ['地番', 'CHIBAN', 'TIBAN', '地番名', '地番表示', 'CHIBAN1'];
+const SB_HON_COLS = ['本番', '親番', 'HONBAN'], SB_EDA_COLS = ['枝番', '子番', 'EDABAN'];
+const SB_BAN_RE = /^\d{1,5}(-\d{1,4}){0,3}$/;
+/* 地番の文字をそろえる（「７７９番１」「779の1」「〇〇779-1」→「779-1」）。tools/sankouzu-build.py の norm_ban と同じ */
+function sbBan_(s) {
+  let t = String(s || '').normalize('NFKC').replace(/\u0000/g, '').trim();
+  t = t.replace(/^[^\d]+/, '').replace(/\s+/g, '').replace(/(番地の?|番の?|の|ノ|[‐－ー―−~〜])/g, '-').replace(/-+/g, '-').replace(/-$/, '');
+  const m = /^\d+(?:-\d+)*/.exec(t);
+  return m ? m[0].replace(/(^|-)0+(\d)/g, '$1$2') : '';
+}
+function sbDbfFields_(u8, decode) {
+  const hl = new DataView(u8.buffer, u8.byteOffset, u8.byteLength).getUint16(8, true), out = [];
+  let pos = 32, off = 1;
+  while (u8[pos] !== 0x0D && pos < hl) {
+    let e = pos; while (e < pos + 11 && u8[e] !== 0) e++;
+    out.push({ name: String(decode(u8.subarray(pos, e))).normalize('NFKC').trim().toUpperCase(), off: off, len: u8[pos + 16] });
+    off += u8[pos + 16]; pos += 32;
+  }
+  return out;
+}
+/* 1つの列を、全部の行ぶん文字にする（行ごとに文字にすると遅いので、まとめて1回で） */
+function sbDbfCol_(u8, decode, f) {
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const n = dv.getUint32(4, true), hl = dv.getUint16(8, true), rl = dv.getUint16(10, true);
+  const buf = new Uint8Array(n * (f.len + 1));
+  for (let i = 0; i < n; i++) {
+    const b = hl + i * rl + f.off;
+    for (let k = 0; k < f.len; k++) { const v = u8[b + k]; buf[i * (f.len + 1) + k] = v === 0x0A ? 0x20 : v; }
+    buf[i * (f.len + 1) + f.len] = 0x0A;
+  }
+  return String(decode(buf)).split('\n').slice(0, n);
+}
+/* 地番の列：名前で探す → 本番と枝番の2つの列 → 中身が「779-1」の形の列 */
+function sbDbfBan_(u8, decode, fields, azaName) {
+  const find = list => fields.filter(f => list.indexOf(f.name) >= 0).sort((a, b) => list.indexOf(a.name) - list.indexOf(b.name))[0];
+  let f = find(SB_BAN_COLS);
+  if (f) return { col: f.name, ban: sbDbfCol_(u8, decode, f).map(sbBan_) };
+  const h = find(SB_HON_COLS), e = find(SB_EDA_COLS);
+  if (h) {
+    const hs = sbDbfCol_(u8, decode, h), es = e ? sbDbfCol_(u8, decode, e) : null;
+    return { col: h.name + (e ? '＋' + e.name : ''), ban: hs.map((v, i) => {
+      const a = sbBan_(v), b = es ? sbBan_(es[i]) : '';
+      return a && b && b !== '0' ? a + '-' + b : a;
+    }) };
+  }
+  let best = null;
+  fields.forEach(c => {
+    if (c.name === azaName || c.len > 40) return;
+    const vs = sbDbfCol_(u8, decode, c), sample = vs.slice(0, 2000).map(sbBan_);
+    const ok = sample.filter(v => v && SB_BAN_RE.test(v)).length, dash = sample.filter(v => v.indexOf('-') > 0).length;
+    const raw = vs.slice(0, 2000).filter(v => String(v).normalize('NFKC').trim()).length;
+    const r = raw ? ok / raw : 0;
+    if (r >= 0.9 && dash >= sample.length * 0.05 && (!best || r > best.r)) best = { r: r, col: c.name, ban: vs.map(sbBan_) };
+  });
+  return best ? { col: best.col, ban: best.ban } : null;
+}
 function sbDbfAza_(u8, decode) {
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   const n = dv.getUint32(4, true), hl = dv.getUint16(8, true), rl = dv.getUint16(10, true);
-  let pos = 32, off = 1, fOff = -1, fLen = 0, rank = 99;
-  while (u8[pos] !== 0x0D && pos < hl) {
-    let e = pos; while (e < pos + 11 && u8[e] !== 0) e++;
-    const name = String(decode(u8.subarray(pos, e))).normalize('NFKC').trim().toUpperCase(), len = u8[pos + 16];
-    const k = SB_AZA_COLS.indexOf(name);
-    if (k >= 0 && k < rank) { fOff = off; fLen = len; rank = k; }
-    off += len; pos += 32;
-  }
-  if (fOff < 0) return null; // 字の列が無い：四角ごとに分ける
+  const fields = sbDbfFields_(u8, decode);
+  let fOff = -1, fLen = 0, rank = 99, azaName = '';
+  fields.forEach(f => { const k = SB_AZA_COLS.indexOf(f.name); if (k >= 0 && k < rank) { fOff = f.off; fLen = f.len; rank = k; azaName = f.name; } });
+  const bn = sbDbfBan_(u8, decode, fields, azaName);
+  const out = { names: null, idx: null, ban: bn ? bn.ban : null, banCol: bn ? bn.col : '' };
+  if (fOff < 0) return out; // 字の列が無い：四角ごとに分ける
   const names = [], idx = new Array(n), seen = {};
   for (let i = 0; i < n; i++) {
     const b = hl + i * rl + fOff; let key = '';
@@ -128,7 +183,8 @@ function sbDbfAza_(u8, decode) {
     if (v === undefined) { v = names.length; names.push(sbNorm_(decode(u8.subarray(b, b + fLen)).replace(/\u0000/g, ''))); seen[key] = v; }
     idx[i] = v;
   }
-  return { names: names, idx: idx };
+  out.names = names; out.idx = idx;
+  return out;
 }
 
 /* ---------- SHP：かたまりの中の、まるごと入っている筆を取り出す ---------- */
@@ -168,7 +224,7 @@ function sbParcel_(ctx, rings) {
   const c = sbCentroid_(ll);
   if (ctx.inMoj(c[0], c[1])) { ctx.stat.moj++; return null; }
   if (!(sbInside_(c[0], c[1], ctx.area) || sbNear_(c[0], c[1], ctx.area, SB_NEAR_M))) { ctx.stat.out++; return null; }
-  const cy = Math.round(c[0] * 1e6), cx = Math.round(c[1] * 1e6), e = ['', cy, cx]; // 地番は入れない
+  const cy = Math.round(c[0] * 1e6), cx = Math.round(c[1] * 1e6), e = ['', cy, cx]; // 地番は呼んだ所で入れる
   let py = null, px = null;
   ll.forEach(p => { const y = Math.round(p[0] * 1e6) - cy, x = Math.round(p[1] * 1e6) - cx; if (y === py && x === px) return; e.push(y, x); py = y; px = x; });
   return e.length >= 9 ? e : null;
@@ -236,7 +292,7 @@ function sbMuni_(configText) {
 }
 function sbSrc_(cities) {
   const c = (Array.isArray(cities) ? cities : [cities]).filter(Boolean);
-  return '「固定資産（土地）地番参考図」（' + (c.length ? c.join('・') : '市町村') + '）を加工して作成（線だけ。地番は入れていない）';
+  return '「固定資産（土地）地番参考図」（' + (c.length ? c.join('・') : '市町村') + '）を加工して作成';
 }
 /** 字の列が無いとき：およそ1km の四角の名前 */
 function sbGridName_(e) {
@@ -338,7 +394,7 @@ function sanBuildMenu() {
       const zone = sbZone_(sbRange_(x.shp.getId(), 0, 99), area);
       if (!zone) throw new Error((x.city || x.shp.getName()) + '：この SHP は、会衆の範囲（config.js の area）と重なりません。ちがう市町村のファイルではありませんか？');
       const az = sbDbfAza_(new Uint8Array(x.dbf.getBlob().getBytes()), sbSjis_);
-      return { shp: x.shp.getId(), size: x.shp.getSize(), city: x.city || def, zone: zone, names: az ? az.names : null, idx: az ? az.idx : null };
+      return { shp: x.shp.getId(), size: x.shp.getSize(), city: x.city || def, zone: zone, names: az.names, idx: az.idx, ban: az.ban, banCol: az.banCol };
     });
     work = { asof: asof, area: area, jobs: jobs, groups: {} };
   } catch (e) {
@@ -346,8 +402,8 @@ function sanBuildMenu() {
     return;
   }
   sbSaveWork_(folder, work);
-  props_().setProperty(SB_STATE, JSON.stringify({ jobs: work.jobs.map(x => ({ shp: x.shp, size: x.size, city: x.city })), j: 0, off: 100, asof: asof, done: false,
-    stat: { got: 0, moj: 0, out: 0 }, note: '', at: new Date().toISOString() }));
+  props_().setProperty(SB_STATE, JSON.stringify({ jobs: work.jobs.map(x => ({ shp: x.shp, size: x.size, city: x.city, banCol: x.banCol || '' })), j: 0, off: 100, asof: asof, done: false,
+    stat: { got: 0, moj: 0, out: 0, ban: 0 }, note: '', at: new Date().toISOString() }));
   sbEnsureTrigger_();
   ui.alert('作り始めました', '1回に4分半ずつ進み、5分ごとに自動で続きます（全部で10〜20分くらい）。\n' +
     'メニュー「地番参考図の作成の進み具合」で確かめられます。\n終わると、区域マップの土地の区切りが新しくなります。', ui.ButtonSet.OK);
@@ -392,6 +448,7 @@ function sanBuildRun() {
       const u8 = sbRange_(job.shp, st.off, end);
       const used = sbShpChunk_(u8, (recNo, rings) => {
         const e = sbParcel_(ctx, rings); if (!e) return;
+        if (job.ban && job.ban[recNo - 1]) { e[0] = job.ban[recNo - 1]; st.stat.ban = (st.stat.ban || 0) + 1; } // 地番（サーバーの中で位置を引くのにだけ使う）
         let a = job.names ? (job.names[job.idx[recNo - 1]] || '（字なし）') : sbGridName_(e);
         if (many) a = job.city + ' ' + a; // 市町村がちがえば、同じ字の名前でも別にする
         (work.groups[a] = work.groups[a] || []).push(e); st.stat.got++;
@@ -430,6 +487,8 @@ function sbSummary_(st) {
   return '進み具合：' + (st.done ? 100 : Math.min(99, Math.round(done / Math.max(1, total) * 100))) + '%' + (st.done ? '（終わりました）' : '') +
     (jobs.length > 1 && !st.done ? '（' + Math.min(jobs.length, (st.j || 0) + 1) + '／' + jobs.length + '：' + ((jobs[st.j] || {}).city || '') + '）' : '') +
     '\n入れた筆：' + ((st.stat && st.stat.got) || 0) + '（法務省の線がある所：' + ((st.stat && st.stat.moj) || 0) + '・範囲の外：' + ((st.stat && st.stat.out) || 0) + '）' +
+    '\n地番：' + (jobs.some(x => x.banCol) ? ((st.stat && st.stat.ban) || 0) + '筆に入れました（地番の列：' + jobs.map(x => x.banCol).filter(Boolean).join('・') + '）'
+      : '地番の列が見つかりませんでした（住所から位置を引くのには使えません。線だけ入れます）') +
     (st.done && st.azas ? '\n字の数：' + st.azas : '') + (st.note ? '\n\nお知らせ：' + st.note : '') +
     '\n\n出典：' + sbSrc_(cities);
 }
