@@ -175,7 +175,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (!('llat' in b)) { b.llat = b.lat; b.llng = b.lng; }
       if (!('oname' in b)) { b.oname = b.name || ''; b.oaddr = b.addr || ''; } // 一覧の値
       b.name = (b.ed && b.ed.name) || b.oname; b.addr = (b.ed && b.ed.addr) || b.oaddr; // 係が直した値を先に
-      b.dupPos = false; b.dupWith = []; b.sus = false; // 同じ位置になった、名前のちがう建物（画面で見せる）・あやしい位置
+      b.dupPos = false; b.dupWith = []; b.sus = false; b.rough = false; // 同じ位置になった、名前のちがう建物（画面で見せる）・あやしい位置
     });
     const pts = bl.filter(b => b.llat != null && b.llng != null && isFinite(b.llat) && isFinite(b.llng));
     for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
@@ -190,6 +190,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (b.fix && b.fix.lat != null) { b.lat = b.fix.lat; b.lng = b.fix.lng; b.pf = b.fix.from; }
       else if (b.llat != null) { b.lat = b.llat; b.lng = b.llng; b.pf = 'list'; b.sus = b.dupPos; } // あやしくても位置は出す（自動では使わない）
       else { b.lat = null; b.lng = null; b.pf = ''; }
+    });
+    // 地番の住所（丁目が無い。例：長後779-1）を国土地理院で調べた位置は、番地ごとの点ではなく、いくつもの番地で同じ点（数百mの幅）。
+    // 画面には出すが、自動では使わない（長後755番地と779番地が同じ点・長後677番地と700番地が同じ点だった）
+    bl.forEach(b => {
+      if (b.pf !== 'addr') return;
+      const as = [b.ed && b.ed.addr, b.laddr, b.addr].filter(Boolean).join(' ');
+      if (!/丁目/.test(as)) { b.rough = true; b.sus = true; }
     });
     // 住所で調べた位置（国土地理院の番地の点）も、名前のちがう建物と同じ点なら使わない（番地の点に何棟も集まったとき）
     const snap = bl.filter(b => b.lat != null && isFinite(b.lat)).map(b => ({ b, lat: b.lat, lng: b.lng }));
@@ -206,7 +213,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       }
     });
   }
-  const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（番地まで合った）', hand: '手で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
+  const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（国土地理院）', hand: '手で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
 
   /* 使える位置がない建物の位置を、住所で調べて覚える（この端末から。結果は gb_pos でサーバーに覚えさせる）
      住所：一覧のリンクに入っていた住所（laddr）→ 一覧の住所（addr）
@@ -1035,7 +1042,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       })()}
       ${b.ed ? `<p class="gb-src">直した値（一覧：${esc(b.oname || 'なし')}・${esc(b.oaddr || 'なし')}）</p>` : ''}
       ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
-      <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.sus ? '<br><b>あやしい（名前のちがう建物と同じ位置）ので、自動では結びません</b>' : ''}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
+      <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.rough ? '<br><b>番地のおおよその位置です（国土地理院は、いくつもの番地で同じ点を使っています。数百mずれることがあります）。自動では結びません</b>' : b.sus ? '<br><b>あやしい（名前のちがう建物と同じ位置）ので、自動では結びません</b>' : ''}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
       ${dupHtml(b)}
       <button type="button" class="btn${autoPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
       ${isTe(b) ? `<p class="gb-src">部屋：${esc((b.rooms || []).slice(0, 12).join('・'))}${(b.rooms || []).length > 12 ? '…' : ''}${b.ac === 'ev' ? '・エレベーターあり' : ''}${b.ban === 'no' ? '・立入禁止' : b.ban === 'letter' ? '・手紙のみ' : ''}</p>

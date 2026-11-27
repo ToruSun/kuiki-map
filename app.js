@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.211';
+var APP_JS_VER = '2026.13.212';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2848,6 +2848,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.212', items: [
+    ['係', '「集合住宅の一覧」で、地番の住所（例：長後779-1）を国土地理院で調べた位置は「番地のおおよその位置」として、画面には出しますが、自動では結ばないようにしました（国土地理院は、いくつもの番地で同じ点を使っていて、数百mずれることがあるため）。']
+  ], role: 'admin' },
   { v: '2026.13.211', items: [
     ['係', '「集合住宅の一覧」で位置が「あやしい」建物も、位置を消さずに出すようにしました（建物の画面・地図・候補で確かめられます）。自動で結ぶときだけ使いません。']
   ], role: 'admin' },
@@ -8109,8 +8112,8 @@ async function xlGeocode(qs, onProg) {
   return res;
 }
 /* 検索の答えから、いちばん合うものと、どれくらい正確かを決める */
-/* opt.banchi：地番の住所（「高倉2403-21」など）で、国土地理院が「○○番地」までしか答えないとき（枝番の位置は持っていない）、
-   番地が合っていれば使ってよい（集合住宅の一覧。町や丁目の代表点は、今までどおり使わない） */
+/* opt.banchi：地番の住所（「高倉2403-21」など）で、国土地理院が「○○番地」と答えたら、その点も返す（集合住宅の一覧）。
+   ただしその点は番地ごとではなく、いくつもの番地で同じ点（数百mの幅）なので、集合住宅の一覧は「おおよそ」として自動では使わない */
 function xlPick(entry, cands, opt) {
   if (cands && cands[0] && cands[0].cb) { const p = cands[0].cb.pos; return { lat: p.lat, lng: p.lng, good: !!p.exact }; } // 地番の地図で分かった
   const muniCore = entry.muni.replace(/[市町村]$/, '');
