@@ -58,14 +58,15 @@ function gbKeyOk_(key) {
 function gbRead_() { return readCol_(GB_SHEET); } // id / data / 更新日時 / 更新した人（journal には書かない）
 function gbWrite_(map, ups, uid) {
   if (!ups.length) return;
-  const sh = dataSheet_(GB_SHEET), now = new Date(), appends = [];
+  const sh = dataSheet_(GB_SHEET), now = new Date(), appends = [], put = [];
   ups.forEach(function (p) {
     const row = [p[0], JSON.stringify(p[1]), now, uid];
     const cur = map.get(p[0]);
-    if (cur && cur.row > 0) sh.getRange(cur.row, 1, 1, 4).setValues([row]);
+    if (cur && cur.row > 0) put.push([cur.row, row]);
     else appends.push(row);
     map.set(p[0], { row: cur ? cur.row : -1, data: p[1], at: now, by: uid });
   });
+  writeRowsAt_(sh, put); // 多いときはまとめて1回で書く
   if (appends.length) sh.getRange(sh.getLastRow() + 1, 1, appends.length, 4).setValues(appends);
 }
 
@@ -141,7 +142,8 @@ function gbSyncCore_(src, label, blds, dry) {
   const gm = gbRead_();
   const nowIso = nowIso_();
   const ctx = { cols: {}, hcache: new Map() };
-  // 結びついた家
+  // 結びついた家（多いときは家のシートを1回で読む。1軒ずつ探すと、建物の多い一覧で何十秒もかかる）
+  prefetchHouses_(ctx, blds.map(function (b) { const x = gm.get(src + '~' + b.k); return x && x.data && !x.data.skip && x.data.hid ? String(x.data.hid) : ''; }).filter(Boolean));
   const linked = []; // { b, row, hid, hd }
   const out = [];
   blds.forEach(function (b) {
@@ -365,6 +367,15 @@ function gbLink_(user, items) {
   if (!Array.isArray(items) || !items.length || items.length > 300) return { ok: false, error: 'bad_request' };
   const gm = gbRead_(), ups = [], bad = [], made = [], mk = [], madeIds = {}, prev = {};
   const terrs = readCol_('territories');
+  // 結ぶ先の家があるか：多いときは、家の番号の列を1回だけ読む（1軒ずつ探すと、100軒で何十秒もかかる）
+  let hidSet = null;
+  const want = items.filter(function (it) { return it && it.hid && !it.make; });
+  if (want.length > 3) {
+    hidSet = {};
+    const hsh = dataSheet_('houses'), hn = hsh.getLastRow();
+    if (hn >= 2) hsh.getRange(2, 1, hn - 1, 1).getValues().forEach(function (r) { if (r[0] !== '') hidSet[String(r[0])] = true; });
+  }
+  const hasHouse = function (hid) { return hidSet ? !!hidSet[hid] : !!findRow_('houses', hid); };
   items.forEach(function (it) { const x = gm.get(String(it && it.id || '')); if (x && x.data) prev[String(it.id)] = x.data; });
   items.forEach(function (it) {
     const id = String(it && it.id || ''), cur = gm.get(id);
@@ -382,7 +393,7 @@ function gbLink_(user, items) {
       mk.push(h);
       made.push(hid);
       madeIds[id] = hid;
-    } else if (hid && (!ID_RE.test(hid) || !findRow_('houses', hid))) { bad.push(id); return; }
+    } else if (hid && (!ID_RE.test(hid) || !hasHouse(hid))) { bad.push(id); return; }
     ups.push([id, Object.assign({}, cur.data, { hid: it.skip ? '' : hid, skip: !!it.skip, tmp: !!(it.tmp && hid && !it.skip) })]);
   });
   if (mk.length) {
@@ -396,6 +407,7 @@ function gbLink_(user, items) {
   gbWrite_(gm, ups, user.id);
   // apply：家の名前・部屋・オートロックを、すぐ一覧の建物に合わせる（取り込みを待たない）
   const hu = [], ctx = { cols: {}, hcache: new Map() };
+  prefetchHouses_(ctx, items.filter(function (it) { return it && it.hid && !it.skip && !it.make && !it.tmp; }).map(function (it) { return String(it.hid); })); // 多いときは1回で読む
   items.forEach(function (it) {
     // 手で登録した集合住宅は取り込みが無いので、仮から確定したときにも合わせる（取り込みの建物は、次の取り込みで合う）
     if (it && !it.apply && !it.skip && !it.make && !it.tmp && it.hid && prev[String(it.id)] && prev[String(it.id)].src === GB_TE &&
