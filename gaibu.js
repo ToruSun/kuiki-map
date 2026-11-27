@@ -292,7 +292,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* 一覧の画面：前に読んだものをすぐ出し、うしろで読み直す */
   async function open() {
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
-    mapOff();
+    mapOff(); st.from = null;
     if (st.data) { render(); refresh().then(cbAfter); return; }
     setSheet(headHtml(null, '集合住宅の一覧', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
@@ -450,13 +450,23 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   function bindRows() {
     const S = $('#sheet');
     $$('#gbRows [data-gb]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openBld(x.dataset.gb); });
-    $$('#gbRows [data-um]', S).forEach(x => x.onclick = () => {
-      st.back = S.scrollTop;
-      const h = houseById(x.dataset.um); if (!h) return;
-      if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false);
-    });
+    $$('#gbRows [data-um]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openHouse(houseById(x.dataset.um)); });
     $$('#gbRows [data-uz]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; peekHouse(houseById(x.dataset.uz)); });
   }
+
+  /* 地図の集合住宅を開く：地図で「集」を押したときと同じ画面（部屋があれば部屋ごとに入れる画面、なければ建物の画面）。
+     区域の確認は出さない（係が確かめるために開くので）。うしろの地図をその建物へ動かし、開いた画面に「集合住宅の一覧にもどる」を出す */
+  function openHouse(h) {
+    if (!h) return;
+    st.from = { hid: h.id, at: Date.now() };
+    if (h.lat != null && typeof map !== 'undefined') {
+      try { showView('map'); map.setView([h.lat, h.lng], Math.max(map.getZoom(), 18)); } catch (e) { /* 地図は動かなくてもよい */ }
+    }
+    if (h.type === 'apt') { if ((h.units || []).length) openAptSeq(h.id); else openBuilding(h.id); }
+    else openTarget(h.id, '', false);
+  }
+  const FROM_MS = 30 * 60000; // 一覧から開いてこの時間のあいだは、その家の画面に「一覧にもどる」を出す
+  const fromList = h => !!(st.from && st.from.hid === h.id && Date.now() - st.from.at < FROM_MS);
 
   /* 地図で見る（地図の集合住宅）：その建物に印をつけて寄せ、下に「建物を開く」「一覧へ」 */
   function peekHouse(h) {
@@ -477,7 +487,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     mapBar.onclick = e => {
       const a = e.target.closest('[data-a]'); if (!a) return;
       if (a.dataset.a === 'x') { mapOff(); return; }
-      if (a.dataset.a === 'open') { mapOff(); if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false); return; }
+      if (a.dataset.a === 'open') { mapOff(); openHouse(h); return; }
       if (a.dataset.a === 'list') { mapOff(); st.restore = st.back; open(); }
     };
   }
@@ -981,8 +991,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${linked.length > 1 ? '<p class="hint">2つ以上の一覧の建物が結ばれています。同じ建物でなければ、ちがう方を外してください。</p>' : ''}
       <small class="hint" style="display:block">区域係だけに出ます。</small></details>`;
   }
-  window.gaibuNotice = houseNotice;
+  window.gaibuNotice = h => (h && fromList(h) && typeof isAdmin === 'function' && isAdmin() ? '<button type="button" class="btn block" data-gbback="1">← 集合住宅の一覧にもどる</button>' : '') + houseNotice(h);
 
+  document.addEventListener('click', e => {
+    if (!e.target || !e.target.closest || !e.target.closest('[data-gbback]')) return;
+    st.from = null; st.restore = st.back; open();
+  });
   document.addEventListener('click', async e => {
     const a = e.target && e.target.closest ? e.target.closest('[data-gbn]') : null;
     if (!a) return;
