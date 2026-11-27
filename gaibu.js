@@ -79,6 +79,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\s・･\-ー―‐－〜~()（）]/g, '');
   const dist = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, x = (d - b) * r * Math.cos((a + c) / 2 * r), y = (c - a) * r; return Math.sqrt(x * x + y * y) * R; };
   const hasPos = b => b && b.lat != null && b.lng != null && isFinite(b.lat) && isFinite(b.lng);
+  /* 自動で結ぶ・決めるのに使ってよい位置か（あやしい位置は、画面には出すが、自動では使わない） */
+  const autoPos = b => hasPos(b) && !b.sus;
   const day = iso => { const t = Date.parse(iso); if (!isFinite(t)) return ''; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const stOf = b => b.skip ? 'skip' : b.gone ? 'gone' : b.hid ? (houseById(b.hid) ? (b.tmp ? 'tmp' : 'ok') : 'lost') : 'wait';
   const ST_LABEL = { ok: '結んだ', tmp: '仮', wait: 'まだ', skip: '取り込まない', gone: '一覧にない', lost: '家がない' };
@@ -128,9 +130,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
      または 30m 以内にアパートが1つだけで、60m 以内にほかのアパートがない */
   function sureMatch(b) {
     const cs = candidates(b);
-    const same = cs.filter(c => c.same && (!hasPos(b) || c.m <= 150));
+    const same = cs.filter(c => c.same && (!autoPos(b) || c.m <= 150));
     if (same.length === 1) return same[0].h;
-    if (same.length > 1 || !hasPos(b)) return null;
+    if (same.length > 1 || !autoPos(b)) return null;
     const apts = cs.filter(c => c.h.type === 'apt' && c.m <= 60);
     if (apts.length === 1 && apts[0].m <= 30) return apts[0].h;
     return null;
@@ -145,7 +147,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const taken = new Set((st.data.blds || []).filter(x => x.hid && !x.skip && !x.gone).map(x => x.hid));
     const pairs = [], near = new Map();
     list.forEach(b => {
-      if (!hasPos(b)) return;
+      if (!autoPos(b)) return;
       const nb = norm(b.name);
       D().houses.forEach(h => {
         if (!h || h.lat == null) return;
@@ -161,7 +163,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     pairs.sort((x, y) => (y.same - x.same) || ((x.how === 'apt' ? 0 : 1) - (y.how === 'apt' ? 0 : 1)) || (x.m - y.m));
     const got = new Map(), used = new Set();
     pairs.forEach(p => { if (!got.has(p.b.id) && !used.has(p.h.id)) { got.set(p.b.id, p); used.add(p.h.id); } });
-    return list.map(b => got.get(b.id) || (!hasPos(b) ? { b, how: 'nopos' } : near.get(b.id) ? { b, how: 'busy' } : { b, h: null, how: 'make' }));
+    return list.map(b => got.get(b.id) || (!autoPos(b) ? { b, how: 'nopos' } : near.get(b.id) ? { b, how: 'busy' } : { b, h: null, how: 'make' }));
   }
 
   /* 位置をそろえる：b.lat・b.lng を「使ってよい位置」にする（一覧から届いた位置は b.llat・b.llng に残す）
@@ -173,7 +175,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (!('llat' in b)) { b.llat = b.lat; b.llng = b.lng; }
       if (!('oname' in b)) { b.oname = b.name || ''; b.oaddr = b.addr || ''; } // 一覧の値
       b.name = (b.ed && b.ed.name) || b.oname; b.addr = (b.ed && b.ed.addr) || b.oaddr; // 係が直した値を先に
-      b.dupPos = false; b.dupWith = []; // 同じ位置になった、名前のちがう建物（画面で見せる）
+      b.dupPos = false; b.dupWith = []; b.sus = false; // 同じ位置になった、名前のちがう建物（画面で見せる）・あやしい位置
     });
     const pts = bl.filter(b => b.llat != null && b.llng != null && isFinite(b.llat) && isFinite(b.llng));
     for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
@@ -186,8 +188,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     }
     bl.forEach(b => {
       if (b.fix && b.fix.lat != null) { b.lat = b.fix.lat; b.lng = b.fix.lng; b.pf = b.fix.from; }
-      else if (b.llat != null && !b.dupPos) { b.lat = b.llat; b.lng = b.llng; b.pf = 'list'; }
-      else { b.lat = null; b.lng = null; b.pf = b.llat != null ? 'dup' : ''; }
+      else if (b.llat != null) { b.lat = b.llat; b.lng = b.llng; b.pf = 'list'; b.sus = b.dupPos; } // あやしくても位置は出す（自動では使わない）
+      else { b.lat = null; b.lng = null; b.pf = ''; }
     });
     // 住所で調べた位置（国土地理院の番地の点）も、名前のちがう建物と同じ点なら使わない（番地の点に何棟も集まったとき）
     const snap = bl.filter(b => b.lat != null && isFinite(b.lat)).map(b => ({ b, lat: b.lat, lng: b.lng }));
@@ -199,7 +201,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         return !((norm(a.name) && norm(a.name) === norm(c.name)) || (norm(a.addr) && norm(a.addr) === norm(c.addr)));
       });
       if (hit.length) {
-        a.lat = null; a.lng = null; a.pf = 'dup';
+        a.sus = true; // 位置は残す（画面・地図で確かめられるように）。自動では使わない
         hit.forEach(y => { if (!a.dupWith.includes(y.b.id)) a.dupWith.push(y.b.id); if (!y.b.dupWith.includes(a.id)) y.b.dupWith.push(a.id); });
       }
     });
@@ -245,7 +247,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         const es = (b.ed && b.ed.addr ? [b.ed.addr] : [b.laddr, b.addr]).filter(Boolean).map(a => { try { return window.chibanAddr(a); } catch (e) { return null; } }).filter(Boolean);
         let r = null;
         for (const e of es) { try { r = await window.chibanFind(e); } catch (err) { r = null; } if (r && r.pos) break; }
-        if (b.pf === 'list') { if (r && r.pos) { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); } continue; }
+        if (b.pf === 'list' && !b.sus) { if (r && r.pos) { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); } continue; }
         if (r && r.pos) { keep(b, r.pos, 'chiban'); continue; }
         if (es.length) gsi.push({ b, es });
       }
@@ -1008,7 +1010,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
   /* 「あやしい」とき：同じ位置になった建物を出す（同じ建物なら「同じらしい組をまとめる」、ちがう建物なら位置を地図で直す） */
   function dupHtml(b) {
-    if (b.pf !== 'dup' || !(b.dupWith || []).length) return '';
+    if (!b.sus || !(b.dupWith || []).length) return '';
     const all = (st.data && st.data.blds) || [];
     const os = b.dupWith.map(id => all.find(x => x.id === id)).filter(Boolean);
     if (!os.length) return '';
@@ -1033,9 +1035,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       })()}
       ${b.ed ? `<p class="gb-src">直した値（一覧：${esc(b.oname || 'なし')}・${esc(b.oaddr || 'なし')}）</p>` : ''}
       ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
-      <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
+      <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.sus ? '<br><b>あやしい（名前のちがう建物と同じ位置）ので、自動では結びません</b>' : ''}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
       ${dupHtml(b)}
-      <button type="button" class="btn${hasPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
+      <button type="button" class="btn${autoPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
       ${isTe(b) ? `<p class="gb-src">部屋：${esc((b.rooms || []).slice(0, 12).join('・'))}${(b.rooms || []).length > 12 ? '…' : ''}${b.ac === 'ev' ? '・エレベーターあり' : ''}${b.ban === 'no' ? '・立入禁止' : b.ban === 'letter' ? '・手紙のみ' : ''}</p>
         <button type="button" class="btn block" id="gbReg">登録した内容（名前・住所・部屋など）を直す</button>` : ''}
       <button type="button" class="btn block" id="gbEdit">${isTe(b) ? '位置（緯度・経度）を直す' : '名前・住所・位置（緯度・経度）を直す'}</button>
@@ -1126,7 +1128,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
   /* 位置が無く、まだ住所から調べていない建物なら、調べてから then を呼ぶ */
   function lookupThen(b, then) {
-    if (hasPos(b) || b.cbDone || !(b.laddr || b.addr)) return;
+    if (autoPos(b) || b.cbDone || !(b.laddr || b.addr)) return;
     chibanPass().then(n => { if (n && hasPos(b)) then(); }).catch(() => 0);
   }
 
