@@ -188,6 +188,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       else if (b.llat != null && !b.dupPos) { b.lat = b.llat; b.lng = b.llng; b.pf = 'list'; }
       else { b.lat = null; b.lng = null; b.pf = b.llat != null ? 'dup' : ''; }
     });
+    // 住所で調べた位置（国土地理院の番地の点）も、名前のちがう建物と同じ点なら使わない（番地の点に何棟も集まったとき）
+    const snap = bl.filter(b => b.lat != null && isFinite(b.lat)).map(b => ({ b, lat: b.lat, lng: b.lng }));
+    snap.filter(x => x.b.pf === 'addr').forEach(x => {
+      const a = x.b;
+      const hit = snap.some(y => {
+        const c = y.b;
+        if (c === a || Math.abs(y.lat - x.lat) > 0.0002 || Math.abs(y.lng - x.lng) > 0.0003 || dist(x.lat, x.lng, y.lat, y.lng) > DUP_M) return false;
+        return !((norm(a.name) && norm(a.name) === norm(c.name)) || (norm(a.addr) && norm(a.addr) === norm(c.addr)));
+      });
+      if (hit) { a.lat = null; a.lng = null; a.pf = 'dup'; }
+    });
   }
   const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（番地まで合った）', hand: '手で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
 
@@ -240,7 +251,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         let res = new Map();
         try { res = await xlGeocode(qs, d => setProg(`国土地理院に聞いています… ${d}／${qs.length}${found ? `・分かった ${found}棟` : ''}${tail}`)); } catch (e) { res = new Map(); }
         gsi.forEach(({ b, es }) => {
-          for (const e of es) { const p = xlPick(e, res.get(e.q)); if (p && p.good) { keep(b, p, 'addr'); break; } }
+          for (const e of es) { const p = xlPick(e, res.get(e.q), { banchi: true }); if (p && p.good) { keep(b, p, 'addr'); break; } }
         });
       }
       await flushSave();
