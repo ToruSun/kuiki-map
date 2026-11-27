@@ -595,6 +595,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!list.length) return;
     if (!await ask(`外の一覧の建物 ${list.length}件（手で登録・一覧にない）を、集合住宅の一覧から消します。地図の家はそのままです。元にはもどせません。よろしいですか？`, { ok: '消す' })) return;
     let bad = 0, one = false;
+    const why = {}; // 消せなかった理由ごとの件数
+    const note = (w, n) => { why[w] = (why[w] || 0) + n; };
     const ids = list.map(r => r.b.id);
     toast('消しています…');
     for (let i = 0; i < ids.length && !one; i += 500) { // まとめて送る（サーバーは 1回に 1000件まで）
@@ -602,18 +604,25 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       try {
         const r = await api('gb_del', { ids: part }, { timeout: 120000 });
         bad += (r.bad || []).length;
+        (r.bad || []).forEach(id => note((r.why && r.why[id]) || 'bad_request', 1));
       } catch (e) {
         if (e && e.code === 'bad_request' && i === 0) { one = true; break; } // 古いサーバーは ids を知らない
-        bad += part.length;
+        bad += part.length; note((e && e.code) || 'net', part.length);
       }
     }
     if (one) { // 古いサーバー：1件ずつ
       for (let i = 0; i < ids.length; i++) {
         if (i % 10 === 0) toast(`消しています… ${i}／${ids.length}`);
-        try { await api('gb_del', { id: ids[i] }, { timeout: 30000 }); } catch (e) { bad++; }
+        try { await api('gb_del', { id: ids[i] }, { timeout: 30000 }); } catch (e) { bad++; note((e && e.code) || 'net', 1); }
       }
     }
-    toast(bad ? `${list.length - bad}件を消しました（${bad}件は消せませんでした。サーバーが古いと、一覧にない建物は消せません）` : `${list.length}件を消しました`);
+    const WHY = {
+      linked: '地図の家に結んだままです。家を消したばかりなら、その送信が届くまで少し待って、もう一度',
+      busy: 'サーバーが前の操作を続けています。少し待って、もう一度',
+      bad_request: 'もう無いか、消せない建物です（一覧にまだある取り込みの建物は「取り込まない」にします）',
+    };
+    const whyText = Object.keys(why).map(w => `${why[w]}件：${WHY[w] || '通信できませんでした。もう一度'}`).join('。');
+    toast(bad ? `${list.length - bad}件を消しました。消せなかった ${whyText}` : `${list.length}件を消しました`);
     st.sel = new Set();
     await load(true); sheetKeep = true; render();
   }
