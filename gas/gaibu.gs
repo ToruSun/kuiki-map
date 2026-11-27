@@ -390,6 +390,7 @@ function gbLink_(user, items) {
       if (b.lock) h.lock = true;
       if (h.label) h.gbn = h.label; // 一覧から付けた名前
       if (b.src === GB_TE) gbTeHouse_(h, b); // 手で登録した集合住宅：登録した部屋・エレベーター・メモ・立ち入りも
+      else h.units = gbUnits_([], gbRooms_(b), {}); // 一覧の部屋も、取り込みを待たずに入れる（記録は次の取り込みで入る）
       mk.push(h);
       made.push(hid);
       madeIds[id] = hid;
@@ -407,7 +408,7 @@ function gbLink_(user, items) {
   gbWrite_(gm, ups, user.id);
   // apply：家の名前・部屋・オートロックを、すぐ一覧の建物に合わせる（取り込みを待たない）
   const hu = [], ctx = { cols: {}, hcache: new Map() };
-  prefetchHouses_(ctx, items.filter(function (it) { return it && it.hid && !it.skip && !it.make && !it.tmp; }).map(function (it) { return String(it.hid); })); // 多いときは1回で読む
+  prefetchHouses_(ctx, items.filter(function (it) { return it && it.hid && !it.skip && !it.make; }).map(function (it) { return String(it.hid); })); // 多いときは1回で読む
   items.forEach(function (it) {
     // 手で登録した集合住宅は取り込みが無いので、仮から確定したときにも合わせる（取り込みの建物は、次の取り込みで合う）
     if (it && !it.apply && !it.skip && !it.make && !it.tmp && it.hid && prev[String(it.id)] && prev[String(it.id)].src === GB_TE &&
@@ -419,6 +420,23 @@ function gbLink_(user, items) {
     if (!hd) return;
     const nh = gbFit_(hd, b);
     if (stable_(nh) !== stable_(hd)) hu.push(nh);
+  });
+  // 結んだだけ（仮・確定）のときも、部屋はすぐ一覧に合わせて足す（取り込みのときと同じ足し方。名前は変えない。記録は次の取り込みで入る）
+  const huId = {};
+  hu.forEach(function (h) { huId[h.id] = true; });
+  items.forEach(function (it) {
+    if (!it || it.skip || it.make || !it.hid || huId[String(it.hid)]) return;
+    const x = gm.get(String(it.id)), b = x && x.data;
+    if (!b || b.hid !== String(it.hid) || b.src === GB_TE) return; // 手で登録した建物は、確定のときに合わせる（apply）
+    const rooms = gbRooms_(b);
+    if (!rooms.length) return;
+    const hd = houseData_(ctx, b.hid);
+    if (!hd) return;
+    const frames = (hd.units || []).length > 0 && (hd.units || []).every(function (u) { return GB_FRAME_RE.test(String(u)); });
+    const nh = Object.assign({}, hd, { type: 'apt', units: gbUnits_(hd.units, rooms, frames ? gbAppUnits_(hd.id) : {}) });
+    if (b.lock) nh.lock = true;
+    delete nh.prov;
+    if (stable_(nh) !== stable_(hd)) { hu.push(nh); huId[nh.id] = true; }
   });
   let applied = 0;
   if (hu.length) {
@@ -628,6 +646,10 @@ function gbSrcDel_(user, src, dry) {
   return { ok: true, n: n };
 }
 
+/* 一覧の建物の部屋番号（家に入れてよいものだけ） */
+function gbRooms_(b) {
+  return (Array.isArray(b && b.rooms) ? b.rooms : []).map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }).slice(0, 300);
+}
 /* 新しく置く家に、手で登録した内容を入れる */
 function gbTeHouse_(h, b) {
   h.units = (Array.isArray(b.rooms) ? b.rooms : []).map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }).slice(0, 300);
