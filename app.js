@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.202';
+var APP_JS_VER = '2026.13.203';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.203', items: [
+    ['係', '「集合住宅の一覧」の「選んで、まとめて空にする・消す」を速くしました（何百件でも、まとめて1回で消します）。']
+  ], role: 'admin' },
   { v: '2026.13.202', items: [
     ['地', 'iPhone で「Googleマップで道順を見る」など、Googleマップを開くボタンを押すと、Googleマップのアプリが直接開くようにしました（家・集合住宅・メモ・長押しの道順・集まりの場所・区域の範囲など全部）。いままでは「アプリで開く」を押しても開かないことがありました。アプリが開かないときは、お知らせの「ウェブで開く」を押してください。']
   ] },
@@ -5550,12 +5553,18 @@ function deleteHouse(hid) {
   { const h = houseById(hid); if (!mgrCanDel(h)) { if (h) { if (isMgr()) toast('訪問しない印のある家は、区域係だけが消せます。削除の申請をしてください'); openDelRequest(h); } return; } } // 伝道者は申請だけ（区域係が確認して消す。家と拒否の管理を任された人は、そのまま消せる）
   commit('削除しました', () => deleteHouseData(hid));
 }
-function deleteHouseData(hid) {
-  const h = houseById(hid);
-  if (h) targets(h).concat(h.type === 'apt' ? [''] : []).forEach(u => dncDrop(K(hid, u), h, true)); // 拒否は、場所だけの拒否として残す（住所のない拒否も・係だけ。H8・D5）
-  D().houses = D().houses.filter(x => x.id !== hid);
-  D().visits = D().visits.filter(v => v.houseId !== hid);
-  if (h) targets(h).forEach(u => { const k = K(hid, u); delete D().follows[k]; delete D().released[k]; });
+function deleteHouseData(hid) { deleteHousesData([hid]); }
+/* 何軒かをまとめて消す（家と記録の一覧を1回ずつだけ見直す。1軒ずつだと、何百軒で遅くなる） */
+function deleteHousesData(hids) {
+  const set = new Set(hids.map(String));
+  set.forEach(hid => {
+    const h = houseById(hid);
+    if (!h) return;
+    targets(h).concat(h.type === 'apt' ? [''] : []).forEach(u => dncDrop(K(hid, u), h, true)); // 拒否は、場所だけの拒否として残す（住所のない拒否も・係だけ。H8・D5）
+    targets(h).forEach(u => { const k = K(hid, u); delete D().follows[k]; delete D().released[k]; });
+  });
+  D().houses = D().houses.filter(x => !set.has(x.id));
+  D().visits = D().visits.filter(v => !set.has(v.houseId));
 }
 /* ---------- 家の削除の申請（伝道者 → 区域係が確認して消す） ---------- */
 const delReqs = () => D().requests.filter(r => r.type === 'delHouse' && r.status === 'pending');

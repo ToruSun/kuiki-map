@@ -552,9 +552,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* 結んでいた外の一覧の建物を外す・もとにもどす（取り消したとき） */
   async function gbItems(items) {
     let bad = 0;
-    for (let i = 0; i < items.length; i += 100) {
-      try { const r = await api('gb_link', { items: items.slice(i, i + 100) }, { timeout: 120000 }); bad += (r.bad || []).length; }
-      catch (e) { bad += Math.min(100, items.length - i); }
+    for (let i = 0; i < items.length; i += 300) { // サーバーは 1回に 300件まで
+      try { const r = await api('gb_link', { items: items.slice(i, i + 300) }, { timeout: 180000 }); bad += (r.bad || []).length; }
+      catch (e) { bad += Math.min(300, items.length - i); }
     }
     return bad;
   }
@@ -573,12 +573,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!await selBackup()) return;
     const now = new Date().toISOString();
     commit(kara ? `${list.length}件を空の集にもどしました` : `${list.length}件を地図から消しました`, () => {
+      const add = [];
       list.forEach(r => {
-        const h = houseById(r.h.id); if (!h) return;
-        const nh = kara ? { id: 'h' + uid(), terrId: h.terrId || null, type: 'apt', lat: h.lat, lng: h.lng, label: '', units: [], createdAt: now, createdBy: me().id } : null;
-        deleteHouseData(h.id); // 記録も一緒に消える。拒否は場所だけの拒否にする（家を消すときと同じ）
-        if (nh && nh.lat != null) D().houses.push(nh);
+        const h = houseById(r.h.id); if (!h || !kara || h.lat == null) return;
+        add.push({ id: 'h' + uid(), terrId: h.terrId || null, type: 'apt', lat: h.lat, lng: h.lng, label: '', units: [], createdAt: now, createdBy: me().id });
       });
+      // まとめて消す（記録も一緒に消える。拒否は場所だけの拒否にする・家を消すときと同じ）。サーバーへも1回の保存で送る
+      if (typeof deleteHousesData === 'function') deleteHousesData(list.map(r => r.h.id));
+      else list.forEach(r => deleteHouseData(r.h.id));
+      add.forEach(h => D().houses.push(h));
     }, () => { if (links.length) gbItems(links.map(x => x.back)).then(() => load(true)); });
     st.sel = new Set();
     if (links.length) {
@@ -591,10 +594,24 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   async function selDelB(list) {
     if (!list.length) return;
     if (!await ask(`外の一覧の建物 ${list.length}件（手で登録・一覧にない）を、集合住宅の一覧から消します。地図の家はそのままです。元にはもどせません。よろしいですか？`, { ok: '消す' })) return;
-    let bad = 0;
-    for (let i = 0; i < list.length; i++) {
-      if (i % 10 === 0) toast(`消しています… ${i}／${list.length}`);
-      try { await api('gb_del', { id: list[i].b.id }, { timeout: 30000 }); } catch (e) { bad++; }
+    let bad = 0, one = false;
+    const ids = list.map(r => r.b.id);
+    toast('消しています…');
+    for (let i = 0; i < ids.length && !one; i += 500) { // まとめて送る（サーバーは 1回に 1000件まで）
+      const part = ids.slice(i, i + 500);
+      try {
+        const r = await api('gb_del', { ids: part }, { timeout: 120000 });
+        bad += (r.bad || []).length;
+      } catch (e) {
+        if (e && e.code === 'bad_request' && i === 0) { one = true; break; } // 古いサーバーは ids を知らない
+        bad += part.length;
+      }
+    }
+    if (one) { // 古いサーバー：1件ずつ
+      for (let i = 0; i < ids.length; i++) {
+        if (i % 10 === 0) toast(`消しています… ${i}／${ids.length}`);
+        try { await api('gb_del', { id: ids[i] }, { timeout: 30000 }); } catch (e) { bad++; }
+      }
     }
     toast(bad ? `${list.length - bad}件を消しました（${bad}件は消せませんでした。サーバーが古いと、一覧にない建物は消せません）` : `${list.length}件を消しました`);
     st.sel = new Set();
