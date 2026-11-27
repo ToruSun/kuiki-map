@@ -173,7 +173,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (!('llat' in b)) { b.llat = b.lat; b.llng = b.lng; }
       if (!('oname' in b)) { b.oname = b.name || ''; b.oaddr = b.addr || ''; } // 一覧の値
       b.name = (b.ed && b.ed.name) || b.oname; b.addr = (b.ed && b.ed.addr) || b.oaddr; // 係が直した値を先に
-      b.dupPos = false;
+      b.dupPos = false; b.dupWith = []; // 同じ位置になった、名前のちがう建物（画面で見せる）
     });
     const pts = bl.filter(b => b.llat != null && b.llng != null && isFinite(b.llat) && isFinite(b.llng));
     for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
@@ -182,6 +182,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (dist(a.llat, a.llng, c.llat, c.llng) > DUP_M) continue;
       if ((norm(a.name) && norm(a.name) === norm(c.name)) || (norm(a.addr) && norm(a.addr) === norm(c.addr))) continue; // 同じ建物（2つの一覧に載っている）
       a.dupPos = c.dupPos = true;
+      a.dupWith.push(c.id); c.dupWith.push(a.id);
     }
     bl.forEach(b => {
       if (b.fix && b.fix.lat != null) { b.lat = b.fix.lat; b.lng = b.fix.lng; b.pf = b.fix.from; }
@@ -192,12 +193,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const snap = bl.filter(b => b.lat != null && isFinite(b.lat)).map(b => ({ b, lat: b.lat, lng: b.lng }));
     snap.filter(x => x.b.pf === 'addr').forEach(x => {
       const a = x.b;
-      const hit = snap.some(y => {
+      const hit = snap.filter(y => {
         const c = y.b;
         if (c === a || Math.abs(y.lat - x.lat) > 0.0002 || Math.abs(y.lng - x.lng) > 0.0003 || dist(x.lat, x.lng, y.lat, y.lng) > DUP_M) return false;
         return !((norm(a.name) && norm(a.name) === norm(c.name)) || (norm(a.addr) && norm(a.addr) === norm(c.addr)));
       });
-      if (hit) { a.lat = null; a.lng = null; a.pf = 'dup'; }
+      if (hit.length) {
+        a.lat = null; a.lng = null; a.pf = 'dup';
+        hit.forEach(y => { if (!a.dupWith.includes(y.b.id)) a.dupWith.push(y.b.id); if (!y.b.dupWith.includes(a.id)) y.b.dupWith.push(a.id); });
+      }
     });
   }
   const PF_LABEL = { chiban: '地番の地図で調べた位置', addr: '住所で調べた位置（番地まで合った）', hand: '手で直した位置', list: '一覧のリンクの位置', dup: 'あやしい（名前のちがう建物と同じ位置）', '': '分かりません' };
@@ -1002,6 +1006,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     };
   }
 
+  /* 「あやしい」とき：同じ位置になった建物を出す（同じ建物なら「同じらしい組をまとめる」、ちがう建物なら位置を地図で直す） */
+  function dupHtml(b) {
+    if (b.pf !== 'dup' || !(b.dupWith || []).length) return '';
+    const all = (st.data && st.data.blds) || [];
+    const os = b.dupWith.map(id => all.find(x => x.id === id)).filter(Boolean);
+    if (!os.length) return '';
+    return `<div class="notice warn"><b>同じ位置になった建物（${os.length}棟）</b>
+      <div style="font-size:14px;margin:4px 0">住所が同じ番地・同じ区画だと、国土地理院の位置が同じ点になり、見分けられません。</div>
+      ${os.map(o => `<button type="button" class="btn small block gb-wrap" data-dupgo="${esc(o.id)}" style="margin:4px 0">${esc(o.name || '（名前なし）')}<br>${esc((o.label || o.src) + (o.addr || o.laddr ? '・' + (o.addr || o.laddr) : ''))}</button>`).join('')}
+      <div style="font-size:14px;margin:4px 0">同じ建物（名前の書き方がちがうだけ）なら、一覧の「同じらしい組をまとめる」でまとめます。ちがう建物なら、それぞれ「位置を地図で直す」で置いてください。</div></div>`;
+  }
   function openBld(id) {
     const b = (st.data.blds || []).find(x => x.id === id);
     if (!b) return;
@@ -1019,6 +1034,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${b.ed ? `<p class="gb-src">直した値（一覧：${esc(b.oname || 'なし')}・${esc(b.oaddr || 'なし')}）</p>` : ''}
       ${b.laddr && norm(b.laddr) !== norm(b.addr) ? `<p class="gb-src">一覧のリンクの住所：${esc(b.laddr)}</p>` : ''}
       <p class="gb-src">位置：${esc(PF_LABEL[b.pf || ''])}${b.far ? `<br><b>一覧の位置が、地番の地図の位置と ${b.far}m はなれています。</b>` : ''}</p>
+      ${dupHtml(b)}
       <button type="button" class="btn${hasPos(b) && !b.far ? '' : ' primary'} block" id="gbFix">位置を地図で直す</button>
       ${isTe(b) ? `<p class="gb-src">部屋：${esc((b.rooms || []).slice(0, 12).join('・'))}${(b.rooms || []).length > 12 ? '…' : ''}${b.ac === 'ev' ? '・エレベーターあり' : ''}${b.ban === 'no' ? '・立入禁止' : b.ban === 'letter' ? '・手紙のみ' : ''}</p>
         <button type="button" class="btn block" id="gbReg">登録した内容（名前・住所・部屋など）を直す</button>` : ''}
@@ -1048,6 +1064,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       await link([{ id: b.id, hid: x.dataset.gbl, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）');
     });
     $$('[data-gbmap]', S).forEach(x => x.onclick = () => showOnMap(b, houseById(x.dataset.gbmap)));
+    $$('[data-dupgo]', S).forEach(x => x.onclick = () => openBld(x.dataset.dupgo)); // 同じ位置になった建物を開く
     if ($('#gbOkTmp')) $('#gbOkTmp').onclick = async () => {
       const n = nextTmp(b.id); // 続けて次の仮へ
       await link([Object.assign({ id: b.id, hid: b.hid }, isTe(b) ? { apply: true } : {})], n ? '仮を外しました。次の建物です' : '仮を外しました', n ? () => openBld(n.id) : null); // 手で登録した建物は取り込みが無いので、ここで家を登録に合わせる
