@@ -49,6 +49,7 @@
 .gb-tabs button.on{border-color:var(--brand-ink);background:#E3ECF6;font-weight:700}
 .gb-key{width:100%;font:15px/1.4 ui-monospace,monospace;padding:10px;border:2px solid var(--brand-ink);border-radius:10px;background:#F5F8FC;word-break:break-all}
 .gb-src{font-size:14px;color:var(--ink2);margin:2px 0}
+.btn.gb-wrap{white-space:normal;height:auto;min-height:52px;line-height:1.35;padding-top:8px;padding-bottom:8px}
 .gb-mapbar{position:absolute;left:10px;right:10px;bottom:22px;z-index:700;background:var(--paper);border:3px solid var(--brand-ink);border-radius:var(--r);padding:10px 12px;box-shadow:0 4px 14px #0005}
 .gb-mapbar .t{font-size:15px;line-height:1.4;margin:0 36px 8px 0}
 .gb-mapbar .t b{font-size:16px}
@@ -325,16 +326,51 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const isTe = b => b && b.src === 'te'; // 区域係が手で登録した集合住宅（取り込みは無い）
   const roomsOf = b => b.fl ? `${b.n}階分` : `${b.n}部屋`;
   const subOf = b => isTe(b) ? `手で登録・${roomsOf(b)}` : `${b.label || b.src}・${b.n}部屋・記録${b.nv}件`;
+  /* 空の集：名前も部屋も無い地図の集合住宅（仮の家を集合住宅にしたばかりのときと同じ。「空の集にもどす」でもこの形になる） */
+  const isKara = h => !!h && h.type === 'apt' && !(h.units || []).length && !String(h.label || '').trim();
   function rowIn(r, tab) {
     const s = rowSt(r);
     if (tab === 'all') return s !== 'skip';
     if (tab === 'map') return r.k === 'm';
+    if (tab === 'kara') return r.k === 'm' && isKara(r.h);
     if (tab === 'reg') return r.k === 'r' && (s === 'wait' || s === 'lost');
     if (tab === 'tmp') return s === 'tmp';
     if (tab === 'ext') return r.k === 'r' ? !isTe(r.b) : r.links.some(b => !isTe(b));
     if (tab === 'te') return r.k === 'r' ? isTe(r.b) : r.links.some(isTe);
     if (tab === 'skip') return s === 'skip';
     if (tab === 'gone') return r.k === 'r' ? !!r.b.gone : r.links.some(b => b.gone);
+    return true;
+  }
+  /* 条件で しぼる（タブ・検索と一緒に使う） */
+  const NEAR_M = 10;
+  function nearSet() { // ほかの地図の集合住宅と NEAR_M 以内に重なっている集合住宅
+    const apts = (D().houses || []).filter(h => h && h.type === 'apt' && h.lat != null && isFinite(h.lat) && isFinite(h.lng));
+    const key = apts.length + ':' + apts.reduce((a, h) => a + h.lat + h.lng, 0);
+    if (st.nearK === key) return st.near;
+    const out = new Set(), cell = new Map(), g = h => Math.floor(h.lat * 2000) + ':' + Math.floor(h.lng * 2000); // 約50m の升目
+    apts.forEach(h => { const k = g(h); if (!cell.has(k)) cell.set(k, []); cell.get(k).push(h); });
+    apts.forEach(h => {
+      const a = Math.floor(h.lat * 2000), b = Math.floor(h.lng * 2000);
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) (cell.get((a + i) + ':' + (b + j)) || []).forEach(o => {
+        if (o !== h && dist(h.lat, h.lng, o.lat, o.lng) <= NEAR_M) out.add(h.id);
+      });
+    });
+    st.nearK = key; st.near = out;
+    return out;
+  }
+  function condOpts() {
+    const o = [['', '条件なし'], ['hgfree', '外の一覧から置いて、何も結んでいない集'], ['near', `ほかの集と重なっている（${NEAR_M}m 以内）`], ['norooms', '部屋が無い'], ['noname', '名前が無い']];
+    const seen = new Set();
+    (((st.data && st.data.blds) || [])).forEach(b => { if (b.src && b.src !== 'te' && !seen.has(b.src)) { seen.add(b.src); o.push(['src:' + b.src, `外の一覧「${b.label || b.src}」`]); } });
+    return o;
+  }
+  function rowCond(r, c) {
+    if (!c) return true;
+    if (c === 'hgfree') return r.k === 'm' && String(r.h.id).indexOf('hg') === 0 && !r.links.length;
+    if (c === 'near') return r.k === 'm' && nearSet().has(r.h.id);
+    if (c === 'norooms') return r.k === 'm' ? !(r.h.units || []).length : !(r.b.n > 0);
+    if (c === 'noname') return r.k === 'm' ? !String(r.h.label || '').trim() : !String(r.b.name || '').trim();
+    if (c.indexOf('src:') === 0) { const sc = c.slice(4); return r.k === 'm' ? r.links.some(b => b.src === sc) : r.b.src === sc || r.alias.some(x => x.src === sc); }
     return true;
   }
   function rowHit(r, q) {
@@ -378,7 +414,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!d) { setSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
     const rows = uniRows();
-    const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
+    const cnt = { all: 0, map: 0, kara: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
     rows.forEach(r => Object.keys(cnt).forEach(t => { if (rowIn(r, t)) cnt[t]++; }));
     const wait = blds.filter(b => stOf(b) === 'wait' && !b.same);
     const tmpB = blds.filter(b => stOf(b) === 'tmp');
@@ -402,15 +438,22 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
         ${(d.srcs || []).length ? d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(x => `<p class="gb-src">${esc(x.label || x.src)}：${x.n}棟・${esc(day(x.at))}</p>`).join('') : '<p class="hint">まだ一覧が届いていません。取り込み用のスプレッドシートで「今すぐ取り込む」をためしてください。</p>'}
       </details>
-      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
+      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${cnt.kara ? tab('kara', `空の集 ${cnt.kara}`) : ''}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="名前・住所・区域番号でさがす" aria-label="集合住宅をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
+      <select id="gbCond" aria-label="条件でしぼる" style="width:100%;min-height:48px;border-radius:12px;border:2px solid var(--line);padding:0 10px;font-size:16px;margin:0 0 8px;background:#fff">${condOpts().map(([v, t]) => `<option value="${esc(v)}"${(st.cond || '') === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>
+      <button type="button" class="btn block" id="gbSelOn">${st.sel ? '選ぶのをやめる' : '選んで、まとめて空にする・消す'}</button>
+      <div id="gbSelBar">${selBar()}</div>
       <div id="gbRows">${listRows()}</div>
       <button type="button" class="btn block" data-close>閉じる</button>`);
     const S = $('#sheet');
     $$('[data-gbt]', S).forEach(x => x.onclick = () => { st.utab = x.dataset.gbt; sheetKeep = true; render(); });
     bindRows();
     if (st.restore != null) { S.scrollTop = st.restore; st.restore = null; }
-    bindSearch($('#gbQ'), v => { st.q = v; const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } });
+    const reRows = () => { const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } const sb = $('#gbSelBar'); if (sb) { sb.innerHTML = selBar(); bindSel(); } };
+    bindSearch($('#gbQ'), v => { st.q = v; reRows(); });
+    $('#gbCond').onchange = e => { st.cond = e.target.value; reRows(); };
+    $('#gbSelOn').onclick = () => { st.sel = st.sel ? null : new Set(); st.restore = S.scrollTop; sheetKeep = true; render(); };
+    bindSel();
     $('#gbKey').onclick = makeKey;
     if ($('#gbKeyDel')) $('#gbKeyDel').onclick = async () => {
       if (!await ask('取り込みの鍵を止めます。取り込み用のプログラムからは送れなくなります（入れた記録は残ります）。よろしいですか？', { ok: '止める' })) return;
@@ -424,34 +467,159 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if ($('#gbKariOff')) $('#gbKariOff').onclick = () => kariOff(tmpB);
   }
 
-  /* 一覧の行（タブと検索で しぼる。名前の順。多すぎるときは先頭だけ） */
+  /* 一覧の行（タブ・条件・検索で しぼる。名前の順。多すぎるときは先頭だけ）。選ぶときは、行にチェックを出す */
+  const rkey = r => (r.k === 'm' ? 'm:' + r.h.id : 'r:' + r.b.id);
+  const shownRows = () => uniRows().filter(r => rowIn(r, st.utab || 'all') && rowCond(r, st.cond || '') && rowHit(r, norm(st.q)))
+    .sort((a, b) => rowName(a).localeCompare(rowName(b), 'ja'));
   function listRows() {
-    const q = norm(st.q);
-    const shown = uniRows().filter(r => rowIn(r, st.utab || 'all') && rowHit(r, q))
-      .sort((a, b) => rowName(a).localeCompare(rowName(b), 'ja'));
+    const shown = shownRows();
     const html = shown.slice(0, LIST_MAX).map(r => {
       const s = rowSt(r), cls = s === 'map' ? 'ok' : (s === 'wait' || s === 'lost' || s === 'tmp') ? 'wait' : '';
+      let tx, open, tail;
       if (r.k === 'm') {
         const h = r.h, t = h.terrId && terrById(h.terrId);
         const links = r.links.map(b => `${esc(b.name)}（${esc(b.label || b.src)}${stOf(b) === 'tmp' ? '・仮' : ''}）`).join('、');
-        return `<div class="gb-row"><button type="button" class="gb-open" data-um="${esc(h.id)}"><span class="tx"><b>${esc(rowName(r))}${h.lock ? '　🔒' : ''}</b>
-          <small>${t ? `区域${esc(t.no)}・` : ''}${h.type === 'apt' ? `${(h.units || []).length}部屋` : h.prov ? '仮の家' : '家'}</small>
-          ${links ? `<small>外の一覧：${links}</small>` : ''}</span></button>
-          <button type="button" class="btn small" data-uz="${esc(h.id)}">地図</button><span class="gb-st ${cls}">${U_LABEL[s]}</span></div>`;
-      }
-      const b = r.b;
-      return `<div class="gb-row"><button type="button" class="gb-open" data-gb="${esc(b.id)}"><span class="tx"><b>${esc(rowName(r))}${b.lock ? '　🔒' : ''}</b>
+        tx = `<b>${esc(rowName(r))}${h.lock ? '　🔒' : ''}</b>
+          <small>${t ? `区域${esc(t.no)}・` : ''}${h.type === 'apt' ? (isKara(h) ? '空の集' : `${(h.units || []).length}部屋`) : h.prov ? '仮の家' : '家'}</small>
+          ${links ? `<small>外の一覧：${links}</small>` : ''}`;
+        open = `data-um="${esc(h.id)}"`;
+        tail = `<button type="button" class="btn small" data-uz="${esc(h.id)}">地図</button>`;
+      } else {
+        const b = r.b;
+        tx = `<b>${esc(rowName(r))}${b.lock ? '　🔒' : ''}</b>
         <small>${esc(subOf(b))}</small>
-        <small>${esc(b.addr || '')}${r.alias.length ? `　＋同じ建物：${r.alias.map(x => esc(x.label || x.src)).join('、')}` : ''}</small></span></button>
-        <span class="gb-st ${cls}">${U_LABEL[s] || ''}</span></div>`;
+        <small>${esc(b.addr || '')}${r.alias.length ? `　＋同じ建物：${r.alias.map(x => esc(x.label || x.src)).join('、')}` : ''}</small>`;
+        open = `data-gb="${esc(b.id)}"`;
+        tail = '';
+      }
+      const label = `<span class="gb-st ${cls}">${U_LABEL[s] || ''}</span>`;
+      if (st.sel) {
+        const k = rkey(r);
+        return `<label class="gb-row"><input type="checkbox" data-sk="${esc(k)}"${st.sel.has(k) ? ' checked' : ''} style="width:24px;height:24px;flex:none"><span class="tx">${tx}</span>${label}</label>`;
+      }
+      return `<div class="gb-row"><button type="button" class="gb-open" ${open}><span class="tx">${tx}</span></button>${tail}${label}</div>`;
     }).join('');
-    return (html || '<div class="empty">ありません</div>') + (shown.length > LIST_MAX ? `<p class="hint">ほかに ${shown.length - LIST_MAX}棟あります。さがして しぼってください。</p>` : '');
+    return (html || '<div class="empty">ありません</div>') + (shown.length > LIST_MAX ? `<p class="hint">ほかに ${shown.length - LIST_MAX}棟あります。${st.sel ? '「表示中を全部選ぶ」で、見えていない分も選べます。' : 'さがして しぼってください。'}</p>` : '');
   }
   function bindRows() {
     const S = $('#sheet');
+    $$('#gbRows [data-sk]', S).forEach(x => x.onchange = () => {
+      if (!st.sel) return;
+      if (x.checked) st.sel.add(x.dataset.sk); else st.sel.delete(x.dataset.sk);
+      const sb = $('#gbSelBar'); if (sb) { sb.innerHTML = selBar(); bindSel(); }
+    });
     $$('#gbRows [data-gb]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openBld(x.dataset.gb); });
     $$('#gbRows [data-um]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; openHouse(houseById(x.dataset.um)); });
     $$('#gbRows [data-uz]', S).forEach(x => x.onclick = () => { st.back = S.scrollTop; peekHouse(houseById(x.dataset.uz)); });
+  }
+
+  /* ---------- 選んで、まとめて空にする・消す（区域係） ----------
+     地図の集：空の集にもどす（場所と区域だけ残し、名前・部屋・記録を消す。仮の家を集合住宅にしたばかりのときと同じ形）・地図から消す
+       どちらも、家を消すときと同じく、拒否は場所だけの拒否として残る。結んでいた外の一覧の建物は「まだ」にもどす
+     外の一覧の建物：手で登録・一覧にない は消す。ほかは消しても次の取り込みでまた届くので「取り込まない」にする */
+  function selPick() {
+    if (!st.sel) return null;
+    const rows = uniRows().filter(r => st.sel.has(rkey(r)));
+    st.sel = new Set(rows.map(rkey)); // もう無い行は外す
+    const ms = rows.filter(r => r.k === 'm');
+    return {
+      rows, ms,
+      kara: ms.filter(r => !(isKara(r.h) && !r.links.length)), // もう空で、何も結んでいない集は、そのまま
+      del: rows.filter(r => r.k === 'r' && (isTe(r.b) || r.b.gone)),
+      skip: rows.filter(r => r.k === 'r' && !isTe(r.b) && !r.b.gone && !r.b.skip),
+    };
+  }
+  function selBar() {
+    const p = selPick();
+    if (!p) return '';
+    const n = shownRows().length;
+    return `<div class="gb-more" style="padding:10px 12px">
+      <div class="row"><button type="button" class="btn small" id="gbSelAll">表示中の ${n}件を全部選ぶ</button>${p.rows.length ? '<button type="button" class="btn small" id="gbSelNone">選んだのを外す</button>' : ''}</div>
+      <div style="font-size:15px;margin:8px 0">選んだもの：<b>${p.rows.length}件</b>${p.rows.length ? `（地図の集 ${p.ms.length}・外の一覧 ${p.rows.length - p.ms.length}）` : '。行を押して選んでください'}</div>
+      ${p.kara.length ? `<button type="button" class="btn primary block gb-wrap" id="gbDoKara">地図の集 ${p.kara.length}件を<br>空の集にもどす</button>` : ''}
+      ${p.ms.length ? `<button type="button" class="btn block gb-wrap" id="gbDoDelH">地図の集 ${p.ms.length}件を<br>地図から消す</button>` : ''}
+      ${p.del.length ? `<button type="button" class="btn block gb-wrap" id="gbDoDelB">外の一覧の建物 ${p.del.length}件を<br>消す（手で登録・一覧にない）</button>` : ''}
+      ${p.skip.length ? `<button type="button" class="btn block gb-wrap" id="gbDoSkip">外の一覧の建物 ${p.skip.length}件を<br>「取り込まない」にする</button>` : ''}
+    </div>`;
+  }
+  function bindSel() {
+    const re = () => { const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } const sb = $('#gbSelBar'); if (sb) { sb.innerHTML = selBar(); bindSel(); } };
+    const on = (id, f) => { const el = $('#' + id); if (el) el.onclick = f; };
+    on('gbSelAll', () => { shownRows().forEach(r => st.sel.add(rkey(r))); re(); });
+    on('gbSelNone', () => { st.sel.clear(); re(); });
+    on('gbDoKara', () => selHouses(selPick().kara, true));
+    on('gbDoDelH', () => selHouses(selPick().ms, false));
+    on('gbDoDelB', () => selDelB(selPick().del));
+    on('gbDoSkip', () => selSkip(selPick().skip));
+  }
+  /* まとめて直す前に、スプレッドシートを丸ごとバックアップする（サーバーは、1時間以内にバックアップがあれば作らない） */
+  async function selBackup() {
+    toast('先に、スプレッドシートをバックアップしています…');
+    try { await api('gb_bk', {}, { timeout: 180000 }); return true; }
+    catch (e) {
+      return ask('スプレッドシートのバックアップを作れませんでした。このまま続けますか？（直したあとの「取り消す」は使えます）', { ok: '続ける' });
+    }
+  }
+  /* 結んでいた外の一覧の建物を外す・もとにもどす（取り消したとき） */
+  async function gbItems(items) {
+    let bad = 0;
+    for (let i = 0; i < items.length; i += 100) {
+      try { const r = await api('gb_link', { items: items.slice(i, i + 100) }, { timeout: 120000 }); bad += (r.bad || []).length; }
+      catch (e) { bad += Math.min(100, items.length - i); }
+    }
+    return bad;
+  }
+  async function selHouses(list, kara) {
+    if (!list.length) return;
+    const hids = new Set(list.map(r => r.h.id));
+    const vis = (D().visits || []).filter(v => hids.has(v.houseId)).length;
+    const dnc = Object.keys(D().dnc || {}).filter(k => hids.has(String(k).split('|')[0])).length;
+    const links = [];
+    list.forEach(r => r.links.forEach(b => links.push({ id: b.id, hid: '', back: { id: b.id, hid: b.hid, tmp: !!b.tmp } })));
+    const what = kara ? `地図の集 ${list.length}件を、空の集にもどします。地図の「集」の印は残り、名前・部屋・オートロック・メモが消えます。`
+      : `地図の集 ${list.length}件を、地図から消します。`;
+    if (!await ask(`${what}
+その建物の訪問の記録 ${vis}件も消えます。${dnc ? `拒否などの印 ${dnc}件は、場所だけの拒否として残ります（訪問しないの印は消えます）。` : ''}${links.length ? `結んでいた外の一覧の建物 ${links.length}件は「まだ」にもどります。` : ''}
+先にスプレッドシートをバックアップします。よろしいですか？`, { ok: kara ? '空にする' : '消す' })) return;
+    if (!await selBackup()) return;
+    const now = new Date().toISOString();
+    commit(kara ? `${list.length}件を空の集にもどしました` : `${list.length}件を地図から消しました`, () => {
+      list.forEach(r => {
+        const h = houseById(r.h.id); if (!h) return;
+        const nh = kara ? { id: 'h' + uid(), terrId: h.terrId || null, type: 'apt', lat: h.lat, lng: h.lng, label: '', units: [], createdAt: now, createdBy: me().id } : null;
+        deleteHouseData(h.id); // 記録も一緒に消える。拒否は場所だけの拒否にする（家を消すときと同じ）
+        if (nh && nh.lat != null) D().houses.push(nh);
+      });
+    }, () => { if (links.length) gbItems(links.map(x => x.back)).then(() => load(true)); });
+    st.sel = new Set();
+    if (links.length) {
+      const bad = await gbItems(links.map(x => ({ id: x.id, hid: '' })));
+      if (bad) toast(`外の一覧の建物 ${bad}件を外せませんでした。あとで一覧で確かめてください`);
+    }
+    await load(true);
+    if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); }
+  }
+  async function selDelB(list) {
+    if (!list.length) return;
+    if (!await ask(`外の一覧の建物 ${list.length}件（手で登録・一覧にない）を、集合住宅の一覧から消します。地図の家はそのままです。元にはもどせません。よろしいですか？`, { ok: '消す' })) return;
+    let bad = 0;
+    for (let i = 0; i < list.length; i++) {
+      if (i % 10 === 0) toast(`消しています… ${i}／${list.length}`);
+      try { await api('gb_del', { id: list[i].b.id }, { timeout: 30000 }); } catch (e) { bad++; }
+    }
+    toast(bad ? `${list.length - bad}件を消しました（${bad}件は消せませんでした。サーバーが古いと、一覧にない建物は消せません）` : `${list.length}件を消しました`);
+    st.sel = new Set();
+    await load(true); sheetKeep = true; render();
+  }
+  async function selSkip(list) {
+    if (!list.length) return;
+    if (!await ask(`外の一覧の建物 ${list.length}件を「取り込まない」にします。その建物から入れた記録は、次の取り込みで消えます。外の一覧から消しても次の取り込みでまた届くので、消すのではなく「取り込まない」にします。よろしいですか？`, { ok: '取り込まない' })) return;
+    const items = [];
+    list.forEach(r => [r.b].concat(r.alias).forEach(b => items.push({ id: b.id, hid: '', skip: true })));
+    const bad = await gbItems(items);
+    toast(bad ? `${items.length - bad}件を取り込まないにしました（${bad}件はできませんでした）` : `${items.length}件を取り込まないにしました`);
+    st.sel = new Set();
+    await load(true); sheetKeep = true; render();
   }
 
   /* 地図の集合住宅を開く：地図で「集」を押したときと同じ画面（部屋があれば部屋ごとに入れる画面、なければ建物の画面）。
