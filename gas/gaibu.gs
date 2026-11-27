@@ -39,6 +39,7 @@ const GB_SRC_RE = /^[A-Za-z0-9_\-]{1,12}$/;
 const GB_K_RE = /^[\w.\-]{1,40}$/;
 const GB_MAX_BLD = 200, GB_MAX_ROOMS = 300, GB_MAX_VIS = 60;
 const GB_FRAME_RE = /^(\d{1,2}階|\?|？)$/;   // 階の枠（apt-import.js が作る）
+const GB_BK_MS = 3600000;              // まとめて直す前のバックアップ：この時間以内にあれば、作らない
 const GB_TE = 'te';                    // 区域係が手で登録した集合住宅の元（取り込みでは送れない。一覧にない にならない）
 
 function gbH_(s, n) { return hash_(s).replace(/[^A-Za-z0-9]/g, '').slice(0, n); }
@@ -289,6 +290,12 @@ function gbApi_(user, req) {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
     try { return gbPos_(user, req.items); } finally { lock.releaseLock(); }
+  }
+  if (a === 'gb_bk') { // 集合住宅の一覧で、まとめて空にする・消す前のバックアップ（GB_BK_MS 以内にあれば作らない）
+    const last = Date.parse(props_().getProperty('BACKUP_LAST') || '');
+    if (isFinite(last) && Date.now() - last < GB_BK_MS) return { ok: true, made: false };
+    try { makeBackup_('まとめて直す前'); return { ok: true, made: true }; }
+    catch (e) { return { ok: false, error: 'backup', msg: str_((e && e.message) || e, 120) }; }
   }
   if (a === 'gb_add' || a === 'gb_del') {
     const lock = LockService.getScriptLock();
@@ -541,11 +548,14 @@ function gbAdd_(user, item) {
   gbWrite_(gm, [[id, row]], user.id);
   return { ok: true, id: id, bld: Object.assign({ id: id }, row) };
 }
-/* 手で登録した行を消す（地図の家は消さない）。この行に「同じ建物」とまとめていた行は分ける */
+/* 手で登録した行・一覧にない行を消す（地図の家は消さない）。この行に「同じ建物」とまとめていた行は分ける
+   取り込みの行は、一覧にまだある建物を消しても次の取り込みでまた届くので、一覧にない行だけ */
 function gbDel_(user, id) {
   id = String(id || '');
   const gm = gbRead_(), cur = gm.get(id);
-  if (!cur || !cur.data || cur.data.src !== GB_TE || !(cur.row > 0)) return { ok: false, error: 'bad_request' };
+  if (!cur || !cur.data || !(cur.data.src === GB_TE || cur.data.gone) || !(cur.row > 0)) return { ok: false, error: 'bad_request' };
+  // 一覧にない行で、地図の家に結んだままのものは消さない（取り込んだ記録が、だれにも消されずに残るため。先に外す）
+  if (cur.data.src !== GB_TE && cur.data.hid && findRow_('houses', String(cur.data.hid))) return { ok: false, error: 'linked' };
   const ups = [];
   gm.forEach(function (x, oid) { if (x.data && x.data.same === id) ups.push([oid, Object.assign({}, x.data, { same: '' })]); });
   gbWrite_(gm, ups, user.id);
