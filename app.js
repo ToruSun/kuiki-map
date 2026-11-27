@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.213';
+var APP_JS_VER = '2026.13.214';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2304,7 +2304,13 @@ function slotFast(s) {
     }
   } catch (e) { SLOT_OFF = null; }
 })();
+/* 外の一覧から取り込んだ記録（by・src が 'imp'。gaibu.gs）は日付だけで時刻がない（サーバーが正午にして入れる）。
+   時間帯は持たないことにして、会えた時間帯・試した時間帯・会える見込みには数えない（回数と会えた／留守には数える） */
+const noSlotVisit = v => !!v && (v.by === 'imp' || v.src === 'imp');
+const slotBitOf = v => slotBitOf(v) || 0;
+const metSlotTxt = v => noSlotVisit(v) ? '' : `（${slotShort(slotOf(new Date(v.at)))}）`;
 function slotOfVisit(v) {
+  if (noSlotVisit(v)) return null;
   if (SLOT_OFF !== null) { const f = slotFast(v.at); if (f) return f; }
   let s = SLOT_MEMO.get(v);
   if (!s) { s = slotOf(new Date(v.at)); SLOT_MEMO.set(v, s); }
@@ -2340,14 +2346,16 @@ function sumKey(k) {
   const s = { n: a.length, last: a[0], met: null, awayN: 0, slots: 0, metSlots: 0, awaySlots: 0, unmet: true, bestSlot: null };
   let cnt = null;
   for (let i = 0; i < a.length; i++) {
-    const v = a[i], sl = slotOfVisit(v), bit = SLOT_BIT[sl]; // 時間帯は記録ごとに1回だけ計算して覚えておく
+    const v = a[i], sl = slotOfVisit(v), bit = sl ? SLOT_BIT[sl] : 0; // 時間帯は記録ごとに1回だけ計算して覚えておく。取り込んだ記録は時間帯なし
     s.slots |= bit;
     if (v.result === 'met') {
       if (!s.met) s.met = v;
       s.unmet = false; s.metSlots |= bit;
-      cnt = cnt || {};
-      cnt[sl] = (cnt[sl] || 0) + 1;
-      if (!s.bestSlot || cnt[sl] > cnt[s.bestSlot]) s.bestSlot = sl;
+      if (sl) {
+        cnt = cnt || {};
+        cnt[sl] = (cnt[sl] || 0) + 1;
+        if (!s.bestSlot || cnt[sl] > cnt[s.bestSlot]) s.bestSlot = sl;
+      }
     } else if (v.result === 'away') { s.awayN++; s.awaySlots |= bit; }
     else s.unmet = false;
   }
@@ -2848,6 +2856,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.214', items: [
+    ['時', '外の一覧から取り込んだ記録は日付だけで時刻がないので、「会えた時間帯」「試した時間帯」「会える見込み」には数えないようにしました（今までは、どれも「昼」として数えていました）。訪問の回数や、会えた・留守には今までどおり数えます。'],
+  ] },
   { v: '2026.13.213', items: [
     ['係', '「集合住宅の一覧」で、法務省の地番の地図に無い土地を、市町村の地番参考図（取り込んである会衆だけ）の地番で引いて、正確な位置にするようにしました。国土地理院の「おおよそ」の位置の建物も、見つかれば置きかえます。地番は端末には渡さず、サーバーの中だけで使います。']
   ], role: 'admin' },
@@ -5236,7 +5247,7 @@ function openTarget(hid, unit, fromBuilding, review) {
             ? (v.result === 'met' ? `（${esc(ageName(v.age))}・${esc(intName(v.interest))}）` : (v.result === 'refused' && v.age ? `（${esc(ageName(v.age))}）` : ''))
             : (featFollow() && v.result === 'met' && INTERESTED.has(v.interest) ? ' ★' : '');
           const mine2 = window.canFixVisit ? window.canFixVisit(v) : (v.by === me().id || isAdmin()); // 直せる記録だけスワイプで取り消せる（naoshi.js）
-          const row = `<li class="vrow${mine2 ? ' swipe-body' : ''}"><i class="pin st-${v.result}">${ST_CHAR[v.result]}</i><span>${fmtDate(v.at)}　${slotOf(d)}<br>${RESULT_LABEL[v.result]}${extra}</span></li>`;
+          const row = `<li class="vrow${mine2 ? ' swipe-body' : ''}"><i class="pin st-${v.result}">${ST_CHAR[v.result]}</i><span>${fmtDate(v.at)}　${noSlotVisit(v) ? '（取り込み）' : slotOf(d)}<br>${RESULT_LABEL[v.result]}${extra}</span></li>`;
           // 自分でつけた記録は、左にスワイプすると取り消せる
           return mine2
             ? `<div class="swipe"><div class="swipe-acts"><button class="del" data-vdel="${esc(v.id)}">取り消し</button></div>${row}</div>`
@@ -5935,7 +5946,7 @@ function openMemo(k, back) {
     <div class="stamps"><button type="button" class="choice c-met" data-stamp="met"><i class="pin st-met">会</i>会えた</button>
       <button type="button" class="choice c-away" data-stamp="away"><i class="pin st-away">留</i>留守</button></div>
     <p class="hint">押すと訪問の記録になり（区域の地図にも反映）、メモのいちばん上に日時と結果が入ります。入った文字は消せます。</p>
-    ${met ? `<p class="metline">前回 会えた日：${fmtDate(met.at)}（${slotShort(slotOf(new Date(met.at)))}）</p>` : '<p class="muted">まだ会えた記録はありません。</p>'}
+    ${met ? `<p class="metline">前回 会えた日：${fmtDate(met.at)}${metSlotTxt(met)}</p>` : '<p class="muted">まだ会えた記録はありません。</p>'}
     ${last ? `<p class="muted">前回の記録：${fmtDate(last.at)}　${RESULT_LABEL[last.result]}</p>` : ''}
     <label class="field"><span>メモ（${memoScope()}）</span><textarea id="memoText" rows="8" maxlength="1000" placeholder="例：次は土曜の午前に。前回の話の続きから">${esc(m ? m.text : '')}</textarea></label>
     ${nextInputsHtml('memoNext', m && m.next)}
@@ -6449,7 +6460,7 @@ function followItem(k, f, mode) {
   }
   return `<article class="ritem f-s${stg}"><div>
       <p class="rt"><span class="stamp xs${t ? noCls(t.no) : ''}">${t ? esc(t.no) : '-'}</span> ${targetName(h, unit)}</p>
-      ${met ? `<p class="metline">前回 会えた日：${fmtDate(met.at)}（${slotShort(slotOf(new Date(met.at)))}）</p>` : '<p class="muted">まだ会えた記録はありません</p>'}
+      ${met ? `<p class="metline">前回 会えた日：${fmtDate(met.at)}${metSlotTxt(met)}</p>` : '<p class="muted">まだ会えた記録はありません</p>'}
       <p class="muted">${mode === 'admin' ? `受け持ち：${esc(uname(f.by))}さん　` : ''}最後の記録から ${d}日${state}</p>
       ${m ? `<p class="muted">★${YOUNG.has(m.age) ? '・若い世代' : ''}${bs ? `　会えた時間帯：${bs}` : ''}</p>` : ''}
       ${memo ? `<p class="memoline">メモ：${esc(memoShort(memo))}</p>` : ''}
@@ -8563,7 +8574,7 @@ function followCard(k, f, pinned) {
   return `<article class="fcard f-s${stg}${pinned ? ' pinned' : ''}">
     <div class="fhead"><button type="button" class="pinbtn" data-pin="${esc(k)}" aria-pressed="${pinned}" aria-label="${pinned ? 'ピン留めを外す' : 'いつも上に表示する'}">📌</button>
       <span class="stamp xs${t ? noCls(t.no) : ''}">${t ? esc(t.no) : '-'}</span><b>${targetName(h, unit)}</b></div>
-    ${met ? `<p class="metline">前回 会えた日：${fmtDate(met.at)}（${slotShort(slotOf(new Date(met.at)))}）</p>` : '<p class="muted">まだ会えた記録はありません</p>'}
+    ${met ? `<p class="metline">前回 会えた日：${fmtDate(met.at)}${metSlotTxt(met)}</p>` : '<p class="muted">まだ会えた記録はありません</p>'}
     <p class="muted">最後の記録から ${d}日${state}${myPos ? `　ここから約${fmtDist(distM(myPos, [h.lat, h.lng]))}` : ''}</p>
     <div class="stamps"><button type="button" class="choice c-met" data-fstamp="met" data-key="${esc(k)}"><i class="pin mini st-met">会</i>会えた</button>
       <button type="button" class="choice c-away" data-fstamp="away" data-key="${esc(k)}"><i class="pin mini st-away">留</i>留守</button></div>
@@ -9713,7 +9724,7 @@ function umItem(k, h, u, b, rl, now, gapMs) {
   for (const v of visitsOf(k)) { // 新しい順
     if (v.at < lo) break;
     if (v.at >= st0) { if (v.result !== 'away') { other = true; break; } seen = true; if (v.at >= capFrom) days.add(ymd(new Date(v.at))); else pre = true; }
-    if (v.result === 'away' && v.at >= sc) tried |= SLOT_BIT[slotOfVisit(v)];
+    if (v.result === 'away' && v.at >= sc) tried |= slotBitOf(v);
   }
   if (other || !(e ? seen : days.size)) return null; // 今回の巡回（完了した区域は終わった巡回から）で会えた家・留守の記録がない家は、対象外
   // 回り残し（完了の前に一度も訪ねていない家）を、おすすめで訪ねて留守だったとき：その日は、その家の1回目として、完了のあとの回数に数えない
@@ -9721,7 +9732,7 @@ function umItem(k, h, u, b, rl, now, gapMs) {
   let oldSlot = null;
   if (tried === FULL_SLOTS) { // いちばん前に試した時間帯（最後に留守だった日がいちばん古い時間帯）
     const at = {};
-    for (const v of visitsOf(k)) { if (v.result === 'away' && v.at >= sc) { const sl = slotOfVisit(v); if (!at[sl]) at[sl] = v.at; } }
+    for (const v of visitsOf(k)) { if (v.result === 'away' && v.at >= sc) { const sl = slotOfVisit(v); if (sl && !at[sl]) at[sl] = v.at; } }
     oldSlot = SLOTS.reduce((a, sl) => (!a || at[sl] < at[a] ? sl : a), null);
   }
   const first = visitsOf(k)[visitsOf(k).length - 1]; // いちばん古い記録（いつから会えていないか）
@@ -9951,7 +9962,7 @@ const otherDone = (h, k, since) => { const t = h && h.terrId ? terrById(h.terrId
 /* 自分の区域カード：受け取ってからの状況
    phase 'first'：1回目に回っている。 phase 'away'：1回目を回り終え、留守だった家を、違う日・時間帯に訪ね直している */
 const metBetween = (k, a, b) => visitsOf(k).some(v => v.result === 'met' && v.at >= a && v.at <= b);
-function slotsBetween(k, a, b) { let m = 0; visitsOf(k).forEach(v => { if (v.at >= a && v.at <= b) m |= SLOT_BIT[slotOfVisit(v)]; }); return m; }
+function slotsBetween(k, a, b) { let m = 0; visitsOf(k).forEach(v => { if (v.at >= a && v.at <= b) m |= slotBitOf(v); }); return m; }
 function roundInfo(tid, anyHolder) {
   const t = terrById(tid);
   if (!t || !t.holder || (!anyHolder && !myTerr(t))) return null;
@@ -10007,7 +10018,7 @@ function awayAgain(k, since) {
     const v = vs[i];
     if (ymd(new Date(v.at)) !== d0) { if (againOk(v, days0, s0)) return v.at; continue; } // 別の日：数える条件に合わなければ、次の記録を見る
     if (v.result === 'met') return null;
-    s0 |= SLOT_BIT[slotOfVisit(v)];
+    s0 |= slotBitOf(v);
   }
   return '';
 }
@@ -10018,7 +10029,7 @@ const againSlot = () => !Store.data || Number(D().settings.awayAgainSlot) !== 0;
 function againOk(v, days0, s0) {
   if (days0.has(ymd(new Date(v.at)))) return false;
   if (!againSlot() || v.result !== 'away') return true;
-  return !(s0 & SLOT_BIT[slotOfVisit(v)]);
+  return !(s0 & slotBitOf(v));
 }
 /* 1回目の段階（a〜b）のあとで、訪ね直したと数える最初の記録の日時（なければ ''）。
    別の日の決まりでは、今までどおり b のあとの記録なら何でも数える */
@@ -10026,7 +10037,7 @@ function revisitAt(k, a, b) {
   const vs = visitsOf(k); // 新しい順
   if (!againSlot()) { for (let i = vs.length - 1; i >= 0; i--) if (vs[i].at > b) return vs[i].at; return ''; }
   let s0 = 0; const days0 = new Set();
-  vs.forEach(v => { if (v.at >= a && v.at <= b) { s0 |= SLOT_BIT[slotOfVisit(v)]; days0.add(ymd(new Date(v.at))); } });
+  vs.forEach(v => { if (v.at >= a && v.at <= b) { s0 |= slotBitOf(v); days0.add(ymd(new Date(v.at))); } });
   for (let i = vs.length - 1; i >= 0; i--) { const v = vs[i]; if (v.at > b && againOk(v, days0, s0)) return v.at; }
   return '';
 }
@@ -11770,10 +11781,13 @@ function rateStats() {
   for (const v of D().visits) {
     if (v.at < cut) continue; // 日時の文字どうしで比べる（速い）
     const h = HID.get(v.houseId); if (!h || !h.terrId) continue;
-    const key = h.terrId + '|' + slotOfVisit(v);
-    const c = per.get(key) || { n: 0, m: 0 };
-    c.n++; if (v.result === 'met') c.m++;
-    per.set(key, c);
+    const sl = slotOfVisit(v);
+    if (sl) { // 取り込んだ記録（時間帯なし）は、全体の割合にだけ数える
+      const key = h.terrId + '|' + sl;
+      const c = per.get(key) || { n: 0, m: 0 };
+      c.n++; if (v.result === 'met') c.m++;
+      per.set(key, c);
+    }
     n++; if (v.result === 'met') m++;
   }
   const am = ageMap(), all = am && am.get('__all');
@@ -11786,10 +11800,13 @@ function rateStep(v, d) {
   const rc = RATE_CACHE;
   if (!rc || !v || !v.at || v.at < rc.cut) return;
   const h = HID.get(v.houseId); if (!h || !h.terrId) return;
-  const key = h.terrId + '|' + slotOfVisit(v), met = v.result === 'met' ? d : 0;
-  const c = rc.per.get(key) || { n: 0, m: 0 };
-  c.n += d; c.m += met;
-  if (c.n <= 0) rc.per.delete(key); else rc.per.set(key, c);
+  const sl = slotOfVisit(v), met = v.result === 'met' ? d : 0;
+  if (sl) { // rateStats と同じ：取り込んだ記録は、区域×時間帯には数えない
+    const key = h.terrId + '|' + sl;
+    const c = rc.per.get(key) || { n: 0, m: 0 };
+    c.n += d; c.m += met;
+    if (c.n <= 0) rc.per.delete(key); else rc.per.set(key, c);
+  }
   rc.n += d; rc.m += met;
   rc.R = rc.n >= 30 ? rc.m / rc.n : 0.35;
 }
@@ -12583,8 +12600,8 @@ function exportCsv() {
     const h = houseById(v.houseId), t = h && terrById(h.terrId), d = new Date(v.at);
     rows.push([t ? t.no : '', v.houseId, h ? (h.type === 'apt' ? '集合住宅' : '一戸建て') : '', v.unit ? uName(h, v.unit) : '',
       RESULT_LABEL[v.result], ageName(v.age), intName(v.interest),
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
-      dayTypeOf(d), bandOf(d), recoLabel(v.src)]);
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` + (noSlotVisit(v) ? '' : ` ${pad(d.getHours())}:${pad(d.getMinutes())}`),
+      dayTypeOf(d), noSlotVisit(v) ? '' : bandOf(d), noSlotVisit(v) ? '取り込み' : recoLabel(v.src)]);
   }
   const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = document.createElement('a');

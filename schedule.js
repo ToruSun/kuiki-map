@@ -1189,7 +1189,7 @@ button.ktag{cursor:pointer}
     const vs = D().visits;
     for (let i = 0; i < vs.length; i++) {
       const v = vs[i];
-      if (v.at < cut) continue;
+      if (v.at < cut || noSlotVisit(v)) continue; // 取り込んだ記録は時刻がないので、時間帯の表に入れない
       const h = HID.get(v.houseId);
       if (!h || !ok.has(h.terrId)) continue;
       const d = new Date(v.at);
@@ -2932,8 +2932,9 @@ body.duemode .terr-label:not(.duelab){display:none}
         if (!mo) continue;
         mo.first++;
         let away = 0;
-        for (let i = fi + 1; i < a.length; i++) if (a[i].result === 'away') away |= SLOT_BIT[slotOfVisit(a[i])];
-        if (away && !(away & SLOT_BIT[slotOfVisit(v)])) mo.changed++;
+        for (let i = fi + 1; i < a.length; i++) if (a[i].result === 'away') away |= slotBitOf(a[i]);
+        const vb = slotBitOf(v); // 取り込んだ記録は時間帯がないので、変えたかどうか分からない（数えない）
+        if (away && vb && !(away & vb)) mo.changed++;
       }
       return { months };
     });
