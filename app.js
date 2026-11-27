@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.207';
+var APP_JS_VER = '2026.13.208';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2848,6 +2848,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.208', items: [
+    ['係', '「集合住宅の一覧」から建物を開いたとき、うしろの地図のその建物に、点滅する輪と名前を付けるようにしました。画面を閉じると、建物が地図の真ん中に来ます（地図をさわると印は消えます）。']
+  ], role: 'admin' },
   { v: '2026.13.207', items: [
     ['係', '「集合住宅の一覧」の「全部、仮で結ぶ」で、結んだ家が消えた「家がない」の建物も結ぶようにしました。']
   ], role: 'admin' },
