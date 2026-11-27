@@ -423,7 +423,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <details class="gb-more"><summary>外の一覧の取り込み（鍵・届いた一覧）</summary>
         <p class="gb-src">取り込みの鍵：${d.key && d.key.has ? `あり（${esc(day(d.key.at))} に作成）` : 'まだありません'}</p>
         <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
-        ${(d.srcs || []).length ? d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(x => `<p class="gb-src">${esc(x.label || x.src)}：${x.n}棟・${esc(day(x.at))}</p>`).join('') : '<p class="hint">まだ一覧が届いていません。取り込み用のスプレッドシートで「今すぐ取り込む」をためしてください。</p>'}
+        ${(d.srcs || []).length ? d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(x => `<div class="row" style="align-items:center;justify-content:space-between;margin:4px 0"><span class="gb-src">${esc(x.label || x.src)}：${x.n}棟・${esc(day(x.at))}</span><button type="button" class="btn small" data-srcdel="${esc(x.src)}">やめる</button></div>`).join('') + '<p class="hint">取り込み用のスプレッドシートから外した一覧は、もう届かないので、ここで「やめる」を押すと、その一覧の建物と取り込んだ記録が消えます。</p>' : '<p class="hint">まだ一覧が届いていません。取り込み用のスプレッドシートで「今すぐ取り込む」をためしてください。</p>'}
       </details>
       <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
       ${nKara ? `<label class="check" style="margin:2px 0 6px"><input type="checkbox" id="gbKara"${showKara() ? ' checked' : ''}>空の集も出す（${nKara}件。名前も部屋も無く、外の一覧とも結んでいない集）</label>` : ''}
@@ -436,6 +436,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const S = $('#sheet');
     $$('[data-gbt]', S).forEach(x => x.onclick = () => { st.utab = x.dataset.gbt; sheetKeep = true; render(); });
     bindRows();
+    $$('[data-srcdel]', S).forEach(x => x.onclick = () => {
+      const sc = x.dataset.srcdel, it = ((st.data && st.data.srcs) || []).find(y => y.src === sc);
+      srcDel(sc, (it && it.label) || sc);
+    });
     if (st.restore != null) { S.scrollTop = st.restore; st.restore = null; }
     const reRows = () => { const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } const sb = $('#gbSelBar'); if (sb) { sb.innerHTML = selBar(); bindSel(); } };
     bindSearch($('#gbQ'), v => { st.q = v; reRows(); });
@@ -540,6 +544,28 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     on('gbDoDelH', () => selHouses(selPick().ms, false));
     on('gbDoDelB', () => selDelB(selPick().del));
     on('gbDoSkip', () => selSkip(selPick().skip));
+  }
+  /* 届いた一覧をやめる：取り込み用のスプレッドシートから外した一覧の、建物と取り込んだ記録を消す（地図の家は残す） */
+  async function srcDel(src, label) {
+    let n;
+    try { n = (await api('gb_src_del', { src, dry: true }, { timeout: 120000 })).n; }
+    catch (e) { toast(e && (e.code === 'unknown_action' || e.code === 'bad_request') ? 'サーバーがまだ新しくなっていません。少し待って、開き直してください' : 'できませんでした。もう一度ためしてください'); return; }
+    if (!await ask(`外の一覧「${label}」をやめます。` +
+      `この一覧の建物 ${n.blds}件を、集合住宅の一覧から消します。` +
+      (n.linked ? `そのうち ${n.linked}件は地図の集と結んでいます。地図の集は残ります（一覧から置いた集は、条件「外の一覧から置いて、何も結んでいない集」で消せます）。` : '') +
+      `この一覧から取り込んだ訪問の記録 ${n.vis}件も消します。アプリで入れた記録は残ります。` +
+      `取り込み用のスプレッドシートの「一覧」シートからも外してください（外さないと、次の取り込みでまた入ります）。` +
+      `先にスプレッドシートをバックアップします。よろしいですか？`, { ok: 'やめる' })) return;
+    if (!await selBackup()) return;
+    toast('消しています…（記録が多いと、1〜2分かかります）');
+    try {
+      const r = await api('gb_src_del', { src }, { timeout: 300000 });
+      toast(`「${label}」をやめました（建物 ${r.n.blds}件・記録 ${r.n.vis}件を消しました）`);
+    } catch (e) {
+      toast(e && e.code === 'busy' ? 'サーバーが前の操作を続けています。少し待って、もう一度' : 'できませんでした（途中まで消えたかもしれません）。もう一度押すと、残りを消します');
+    }
+    await load(true);
+    if ($('#gbQ')) { st.restore = $('#sheet').scrollTop; sheetKeep = true; render(); }
   }
   /* まとめて直す前に、スプレッドシートを丸ごとバックアップする（サーバーは、1時間以内にバックアップがあれば作らない） */
   async function selBackup() {
