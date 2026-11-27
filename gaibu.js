@@ -1098,4 +1098,6 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
 
   window.gaibu = { open };
+  // 入口：係の画面の「区域」タブのボタン
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#adGaibu')) open(); });
 })();

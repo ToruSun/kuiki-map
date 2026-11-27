@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="app-version" content="2026.13.198"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
+<meta name="app-version" content="2026.13.199"><!-- 更新したら、この番号を上げる（アプリはここを見て、新しい版があるか確かめる）。app.js の APP_JS_VER と sw.js の APP_CACHE（kuiki-app-v＋版の最後の番号）も合わせて上げる。版の最後の番号は、真ん中の番号を変えても続けて増やす（例：2026.14.105。そろわないと、新しい版の取りこみが失敗する。auto の tests/site/mamori-b-logic.test.js の T-B5-7 で確かめる） -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cyberjapandata.gsi.go.jp https://tile.openstreetmap.org; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cyberjapandata.gsi.go.jp https://msearch.gsi.go.jp https://tile.openstreetmap.org; media-src 'self'; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><!-- 読み込み先の制限（改善案C1）：スクリプトは自分のサイトのファイルだけ。宛先は自分のサイト・GAS・国土地理院・Googleフォントだけ（地図の画像は OpenStreetMap も。S-12 の印刷で OSM の画像を受け取るので connect-src にも）。版の確かめが最初の1,024バイトを読むので、app-version より下に置く -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>区域マップ</title>
@@ -1791,6 +1791,7 @@ body.renshu #btnUpd{display:none!important}
              並びは「区域の線・取り込み」（1行）→ S-13・S-12（KS-7）。「区域の決まり」は設定タブ（⚙）から -->
         <div class="tbar" id="adTerrTools">
           <button type="button" class="btn tbtn wide" id="adMake"><span>区域の線・取り込み</span><small>線を引く・直す・ファイル・特別区域</small></button>
+          <button type="button" class="btn tbtn wide" id="adGaibu"><span>集合住宅の一覧</span><small>地図の集合住宅・地図にまだ無い建物・外の一覧から取り込み</small></button>
           <button type="button" class="btn tbtn" id="adS13"><span>区域割り当ての記録（S-13）</span><small>見る・印刷する</small></button>
           <button type="button" class="btn tbtn" id="adS12"><span>区域カード（S-12）</span><small>印刷する</small></button>
         </div>
