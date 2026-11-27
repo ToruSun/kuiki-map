@@ -300,7 +300,7 @@ function gbApi_(user, req) {
   if (a === 'gb_add' || a === 'gb_del') {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
-    try { return a === 'gb_add' ? gbAdd_(user, req.item) : gbDel_(user, req.id); } finally { lock.releaseLock(); }
+    try { return a === 'gb_add' ? gbAdd_(user, req.item) : Array.isArray(req.ids) ? gbDelMany_(user, req.ids) : gbDel_(user, req.id); } finally { lock.releaseLock(); }
   }
   if (a === 'gb_link') {
     const lock = LockService.getScriptLock();
@@ -551,16 +551,32 @@ function gbAdd_(user, item) {
 /* 手で登録した行・一覧にない行を消す（地図の家は消さない）。この行に「同じ建物」とまとめていた行は分ける
    取り込みの行は、一覧にまだある建物を消しても次の取り込みでまた届くので、一覧にない行だけ */
 function gbDel_(user, id) {
-  id = String(id || '');
-  const gm = gbRead_(), cur = gm.get(id);
-  if (!cur || !cur.data || !(cur.data.src === GB_TE || cur.data.gone) || !(cur.row > 0)) return { ok: false, error: 'bad_request' };
-  // 一覧にない行で、地図の家に結んだままのものは消さない（取り込んだ記録が、だれにも消されずに残るため。先に外す）
-  if (cur.data.src !== GB_TE && cur.data.hid && findRow_('houses', String(cur.data.hid))) return { ok: false, error: 'linked' };
+  const r = gbDelMany_(user, [id]);
+  if (!r.ok) return r;
+  return r.n ? { ok: true } : { ok: false, error: r.why[String(id || '')] || 'bad_request' };
+}
+/* まとめて消す（集合住宅の一覧の「選んで消す」）。ids は 1回に GB_DEL_MAX まで。
+   消せない行（取り込みの行で一覧にまだある・結んだまま）は bad に入れて、ほかは消す */
+const GB_DEL_MAX = 1000;
+function gbDelMany_(user, ids) {
+  if (!Array.isArray(ids) || !ids.length || ids.length > GB_DEL_MAX) return { ok: false, error: 'bad_request' };
+  const gm = gbRead_(), del = {}, rows = [], bad = [], why = {};
+  ids.forEach(function (x) {
+    const id = String(x || ''), cur = gm.get(id);
+    if (del[id]) return;
+    if (!cur || !cur.data || !(cur.data.src === GB_TE || cur.data.gone) || !(cur.row > 0)) { bad.push(id); why[id] = 'bad_request'; return; }
+    // 一覧にない行で、地図の家に結んだままのものは消さない（取り込んだ記録が、だれにも消されずに残るため。先に外す）
+    if (cur.data.src !== GB_TE && cur.data.hid && findRow_('houses', String(cur.data.hid))) { bad.push(id); why[id] = 'linked'; return; }
+    del[id] = true;
+    rows.push(cur.row);
+  });
+  if (!rows.length) return { ok: true, n: 0, bad: bad, why: why };
+  // この行に「同じ建物」とまとめていた、消さない行は分ける
   const ups = [];
-  gm.forEach(function (x, oid) { if (x.data && x.data.same === id) ups.push([oid, Object.assign({}, x.data, { same: '' })]); });
+  gm.forEach(function (x, oid) { if (!del[oid] && x.data && x.data.same && del[x.data.same]) ups.push([oid, Object.assign({}, x.data, { same: '' })]); });
   gbWrite_(gm, ups, user.id);
-  dataSheet_(GB_SHEET).deleteRow(cur.row);
-  return { ok: true };
+  deleteRowsFast_(dataSheet_(GB_SHEET), rows);
+  return { ok: true, n: rows.length, bad: bad, why: why };
 }
 /* 新しく置く家に、手で登録した内容を入れる */
 function gbTeHouse_(h, b) {

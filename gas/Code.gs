@@ -23,6 +23,7 @@
 const DATA_COLS = ['territories', 'houses', 'visits', 'requests', 'awayCards', 'returns', 'schedules', 'dnc', 'follows', 'released', 's13', 'agedata', 'caution', 'holds', 'langs']; // langs＝外国語の家。holds＝おすすめの家の押さえ（今行く・予定に入れる）
 const MAP_COLS = ['dnc', 'follows', 'released', 'caution', 'langs']; // caution＝注意（！）の印。langs＝外国語の家の言語
 const PARTIAL_COLS = ['houses', 'visits']; // 件数が多いので、保存のときにシート全体を読まない
+const BULK_LOOK = 40; // 保存で、これより多い行を探すときは、シートの中身を1回で読む（まとめて消すときなど）
 const USERS = 'users';
 const JOURNAL = 'journal';
 const JOURNAL_MAX = 40000;
@@ -337,7 +338,7 @@ function writeCol_(name, map, ups, dels, uid, extraRows) {
     .filter(function (x) { return x && x.row > 0; })
     .map(function (x) { return x.row; })
     .concat(extraRows || [])
-    .filter(function (r, i, a) { return a.indexOf(r) === i; })
+    .filter(function (r) { if (this[r]) return false; this[r] = true; return true; }, {})
     .sort(function (a, b) { return b - a; });
   dels.forEach(function (id) { map.delete(id); });
   if (rows.length > 50 && !map.partial) {
@@ -355,6 +356,15 @@ function dupRows_(name, ids, map) {
   const sh = dataSheet_(name), n = sh.getLastRow();
   if (n < 2) return [];
   const col = sh.getRange(2, 1, n - 1, 1), out = [];
+  if (ids.length > BULK_LOOK) { // 多いときは、番号の列を1回だけ読む（1件ずつ探すと、何千件で何分もかかる）
+    const want = {};
+    ids.forEach(function (id) { want[String(id)] = map.get(id) ? map.get(id).row : 0; });
+    col.getValues().forEach(function (v, i) {
+      const id = String(v[0]), r = i + 2;
+      if (v[0] !== '' && Object.prototype.hasOwnProperty.call(want, id) && r !== want[id]) out.push(r);
+    });
+    return out;
+  }
   ids.forEach(function (id) {
     const keep = map.get(id) ? map.get(id).row : 0;
     col.createTextFinder(String(id)).matchEntireCell(true).findAll().forEach(function (c) {
@@ -494,16 +504,38 @@ function rewriteCol_(name, map) {
   if (n > rows.length + 1) sh.getRange(rows.length + 2, 1, n - rows.length - 1, 4).clearContent();
 }
 
-/** 行番号の一覧を、つながった行ごとにまとめて消す（1行ずつ消すと遅く、時間切れになる） */
+/** 行番号の一覧を、つながった行ごとにまとめて消す（1行ずつ消すと遅く、時間切れになる）。
+    まとまりが DEL_GROUPS_MAX より多いとき（集合住宅をまとめて消したときなど、ばらばらの行がたくさん）は、
+    消す行より下を1回で読み、残す行だけを上から書き直して、余った下の行を空にする（行の順は同じ。結果は行を消したのと同じ） */
+const DEL_GROUPS_MAX = 20;
 function deleteRowsFast_(sh, rows) {
-  const r = rows.slice().sort(function (a, b) { return b - a; });
+  const seen = {};
+  const r = rows.filter(function (x) { if (!(x >= 2) || seen[x]) return false; seen[x] = true; return true; }).sort(function (a, b) { return b - a; });
+  const groups = [];
   let i = 0;
   while (i < r.length) {
     let j = i;
     while (j + 1 < r.length && r[j + 1] === r[j] - 1) j++;
-    sh.deleteRows(r[j], j - i + 1);
+    groups.push([r[j], j - i + 1]);
     i = j + 1;
   }
+  if (groups.length > DEL_GROUPS_MAX) { rewriteRowsWithout_(sh, r); return; }
+  groups.forEach(function (g) { sh.deleteRows(g[0], g[1]); });
+}
+/* 行番号の一覧（rows）を除いて、その下を書き直す。先に書いてから余りを空にするので、途中で止まっても記録は消えない
+   （止まったときは、いちばん下の何行かが2回ずつ残るだけ。訪問記録の2行めは、消すときに一緒に消える） */
+function rewriteRowsWithout_(sh, rows) {
+  const n = sh.getLastRow();
+  let top = n + 1;
+  const drop = {};
+  rows.forEach(function (x) { drop[x] = true; if (x < top) top = x; });
+  if (top > n) return;
+  const nc = Math.max(4, sh.getLastColumn());
+  const vals = sh.getRange(top, 1, n - top + 1, nc).getValues();
+  const keep = vals.filter(function (v, k) { return !drop[top + k]; });
+  if (keep.length) sh.getRange(top, 1, keep.length, nc).setValues(keep);
+  const left = vals.length - keep.length;
+  if (left > 0) sh.getRange(top + keep.length, 1, left, nc).clearContent();
 }
 
 /* =========================================================
@@ -2200,16 +2232,19 @@ function applySet_(ctx, name, ch, rule, canDelete, reject) {
     // 決めつけると、一時保存（seen）が消えていた場合に同じ記録が2行になる（監査D3）
     if (!ctx.re) ch.up.forEach(function (x) { const id = String(x && x.id); const t = idTime_(id); if (t && now - t < VISIT_FRESH_MS) fresh[id] = true; });
   }
-  let idRows = null;
+  let idRows = null, allRows = null;
   const needLook = (ch.del || []).length + (ch.up || []).filter(function (x) {
     const id = String(x && x.id); return !(seen && seen['vi_' + id]) && !(fresh && fresh[id]);
   }).length;
   if (partial && needLook > 3) {
     const sh = dataSheet_(name), n = sh.getLastRow();
     idRows = new Map();
-    if (n >= 2) sh.getRange(2, 1, n - 1, 1).getValues().forEach(function (r, i) {
-      if (r[0] !== '') idRows.set(String(r[0]), i + 2);
-    });
+    // 多いとき（まとめて消すなど）は、行の中身も1回で読む（1行ずつ読むと、何千行で何分もかかる）
+    if (n >= 2) {
+      const vals = sh.getRange(2, 1, n - 1, needLook > BULK_LOOK ? 4 : 1).getValues();
+      if (needLook > BULK_LOOK) allRows = vals;
+      vals.forEach(function (r, i) { if (r[0] !== '') idRows.set(String(r[0]), i + 2); });
+    }
   }
   const get = function (id) {
     if (map.has(id)) return map.get(id);
@@ -2218,7 +2253,7 @@ function applySet_(ctx, name, ch, rule, canDelete, reject) {
     if (idRows) {
       const r = idRows.get(id);
       if (r) {
-        const v = dataSheet_(name).getRange(r, 1, 1, 4).getValues()[0];
+        const v = allRows ? allRows[r - 2] : dataSheet_(name).getRange(r, 1, 1, 4).getValues()[0];
         const data = parseJson_(v[1], undefined);
         if (data !== undefined) f = { row: r, data: data, at: v[2], by: String(v[3]) };
       }
