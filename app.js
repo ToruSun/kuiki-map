@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.201';
+var APP_JS_VER = '2026.13.202';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2844,6 +2844,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.202', items: [
+    ['地', 'iPhone で「Googleマップで道順を見る」など、Googleマップを開くボタンを押すと、Googleマップのアプリが直接開くようにしました（家・集合住宅・メモ・長押しの道順・集まりの場所・区域の範囲など全部）。いままでは「アプリで開く」を押しても開かないことがありました。アプリが開かないときは、お知らせの「ウェブで開く」を押してください。']
+  ] },
   { v: '2026.13.201', items: [
     ['係', '「集合住宅の一覧」では、空の集（名前も部屋も無く、外の一覧とも結んでいない集）を、まだ登録していないものとして、ふだんは出さないようにしました。「空の集も出す」で出せます。'],
     ['係', '「集合住宅の一覧」に、条件でしぼる欄（外の一覧から置いて何も結んでいない集・ほかの集と重なっている・部屋が無い・名前が無い・外の一覧ごと）を足しました。'],
@@ -3543,6 +3546,49 @@ function infoSheet(title, html) {
 }
 const headHtml = (t, title, sub) => `<div class="sheet-head">${t ? `<span class="stamp sm${noCls(t.no)}">${esc(t.no)}</span>` : ''}<div><h2 id="sheetTitle">${title}</h2>${sub ? `<p class="muted">${sub}</p>` : ''}</div><button class="icon-btn" data-close aria-label="閉じる">×</button></div>`;
 const navLink = h => `<a class="btn block" href="https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}" target="_blank" rel="noopener">Googleマップで道順を見る</a>`;
+
+/* ---------- Googleマップのリンク（iPhone・iPad） ----------
+   ホーム画面のアプリから https://www.google.com/maps/… を開くと、アプリ内のブラウザで開き、そこの「アプリで開く」が
+   App Store に飛んでしまうことがある。画面のどこの Googleマップのリンクでも（道順・場所・検索・短いURL）、
+   押したら Googleマップのアプリを直接呼ぶ（comgooglemaps://）。開かなかったとき（アプリが無いなど）は、
+   お知らせの「ウェブで開く」で今までのウェブを開く（時間がたってからの window.open は iPhone で止められるため、押してもらう） */
+const GMAP_LINK_RE = /^https:\/\/((www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)/i;
+function gmapAppUrl(web) {
+  let u;
+  try { u = new URL(web); } catch (e) { return ''; }
+  const p = u.searchParams, enc = v => encodeURIComponent(v).replace(/%2C/gi, ','); // 緯度,経度のカンマはそのまま
+  if (/google\./i.test(u.hostname)) {
+    if (/\/maps\/dir\/?$/.test(u.pathname) && p.get('destination')) { // 道順
+      const m = p.get('travelmode');
+      return 'comgooglemaps://?daddr=' + enc(p.get('destination')) + (/^(driving|walking|transit|bicycling)$/.test(m || '') ? '&directionsmode=' + m : '');
+    }
+    const q = p.get('query') || p.get('q'); // 場所・検索（/maps/search/?api=1&query= と /maps?q=）
+    if (q) return 'comgooglemaps://?q=' + enc(q);
+  }
+  return 'comgooglemapsurl://' + web.replace(/^https:\/\//i, ''); // そのほか（maps.app.goo.gl など）は、URL のままアプリにわたす
+}
+function openGmapApp(web) {
+  const app = gmapAppUrl(web);
+  if (!app) { window.open(web, '_blank', 'noopener'); return; }
+  let left = false;
+  const gone = () => { left = true; };
+  document.addEventListener('visibilitychange', gone, { once: true });
+  window.addEventListener('pagehide', gone, { once: true });
+  location.href = app;
+  setTimeout(() => {
+    document.removeEventListener('visibilitychange', gone);
+    window.removeEventListener('pagehide', gone);
+    if (!left && document.visibilityState === 'visible')
+      toast('Googleマップのアプリが開かないときは、ウェブで開けます', null, { label: 'ウェブで開く', fn: () => window.open(web, '_blank', 'noopener') });
+  }, 1800);
+}
+document.addEventListener('click', e => {
+  if (!isIOS() || e.defaultPrevented || e.button) return;
+  const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+  if (!a || !GMAP_LINK_RE.test(a.href)) return;
+  e.preventDefault();
+  openGmapApp(a.href);
+}, true); // 地図の吹き出し（長押しの道順）の中のリンクにも効くように、先に受ける
 
 /* ---------- 地図 ---------- */
 let dotRenderer = null;
