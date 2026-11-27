@@ -403,7 +403,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
     const nKara = rows.filter(karaRow).length;
     rows.forEach(r => Object.keys(cnt).forEach(t => { if (rowIn(r, t)) cnt[t]++; }));
-    const wait = blds.filter(b => stOf(b) === 'wait' && !b.same);
+    // 結ぶ相手のいない建物：まだ と、家がない（結んだ家が消えた。家を消したあとの「外す」が途中で止まったときなど）
+    const wait = blds.filter(b => (stOf(b) === 'wait' || stOf(b) === 'lost') && !b.same);
+    const nLost = wait.filter(b => stOf(b) === 'lost').length;
     const tmpB = blds.filter(b => stOf(b) === 'tmp');
     const sure = wait.map(b => ({ b, h: sureMatch(b) })).filter(x => x.h);
     const prs = pairsOf();
@@ -416,7 +418,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       ${prs.length ? `<button type="button" class="btn primary block" id="gbPairs">同じらしい組をまとめる（${prs.length}組）</button>` : ''}
       <details class="gb-more"><summary>まとめて結ぶ・外す</summary>
         ${sure.length ? `<button type="button" class="btn block" id="gbSure">候補が1つの建物をまとめて結ぶ（${sure.length}棟）</button>` : ''}
-        ${wait.length ? `<button type="button" class="btn block" id="gbKari">まだの ${wait.length}棟を全部、仮で結ぶ</button>` : ''}
+        ${wait.length ? `<button type="button" class="btn block" id="gbKari">まだ${nLost ? '・家がない' : ''}の ${wait.length}棟を全部、仮で結ぶ</button>` : ''}
         ${tmpB.length ? `<button type="button" class="btn block" id="gbKariOff">仮 ${tmpB.length}棟をまとめて外す</button>` : ''}
         ${!sure.length && !wait.length && !tmpB.length ? '<p class="hint">ありません</p>' : ''}
       </details>
@@ -771,7 +773,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const n = { apt: 0, prov: 0, make: 0, nopos: 0, busy: 0 };
     plan.forEach(x => { n[x.how]++; });
     setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + `
-      <p>まだ結んでいない建物を、まとめて仮で結びます。次の取り込みで、地図に記録が出ます。</p>
+      <p>まだ結んでいない建物（結んだ家が消えた「家がない」の建物も）を、まとめて仮で結びます。次の取り込みで、地図に記録が出ます。</p>
       <ul>
         <li>近く（${KARI_APT_M}m 以内）のアパートに結ぶ：<b>${n.apt}棟</b>（名前が同じものを先に）</li>
         <li>近く（${KARI_PROV_M}m 以内）の仮の家に結ぶ（アパートになります）：<b>${n.prov}棟</b></li>
