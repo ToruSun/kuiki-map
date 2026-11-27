@@ -2307,7 +2307,7 @@ function slotFast(s) {
 /* 外の一覧から取り込んだ記録（by・src が 'imp'。gaibu.gs）は日付だけで時刻がない（サーバーが正午にして入れる）。
    時間帯は持たないことにして、会えた時間帯・試した時間帯・会える見込みには数えない（回数と会えた／留守には数える） */
 const noSlotVisit = v => !!v && (v.by === 'imp' || v.src === 'imp');
-const slotBitOf = v => slotBitOf(v) || 0;
+const slotBitOf = v => SLOT_BIT[slotOfVisit(v)] || 0; // 時間帯のない記録は 0
 const metSlotTxt = v => noSlotVisit(v) ? '' : `（${slotShort(slotOf(new Date(v.at)))}）`;
 function slotOfVisit(v) {
   if (noSlotVisit(v)) return null;
