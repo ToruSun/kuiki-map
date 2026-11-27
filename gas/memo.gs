@@ -40,7 +40,10 @@ function memoVer_(uid) { try { return CacheService.getScriptCache().get('mv_' + 
 function memoTouch_(uid, t) { try { CacheService.getScriptCache().put('mv_' + uid, String(t), 21600); } catch (e) { /* 合図がなくても、端末は30分ごとに確かめる */ } }
 function memoKid_(key) { return hash_('mk:' + key).slice(0, 10); } // 鍵そのものは出さずに、鍵が同じかを見分ける印
 function memoDelRows_(sh, rows) {
-  rows.sort(function (a, b) { return b - a; }).forEach(function (r) {
+  try { deleteRowsFast_(sh, rows); return; } // まとめて消す（1行ずつだと、多いときに遅い）
+  catch (e) { console.warn('まとめて消せませんでした（1行ずつ消します）：' + e); }
+  rows.slice().sort(function (a, b) { return b - a; }).forEach(function (r) {
+    if (r > sh.getLastRow()) return;
     try { sh.deleteRow(r); } catch (e) { sh.getRange(r, 1, 1, MEMO_HEAD.length).clearContent(); } // 行を消せないシートでは中身だけ消す
   });
 }
@@ -126,15 +129,16 @@ function memoSync_(user, req) {
   });
 
   // 書く（行の番号がずれないように、書きかえ → 足す → 消す の順）
-  const appends = [];
+  const appends = [], put = [];
   let changed = false;
   mine.forEach(function (x, k) {
     if (!x.dirty) return;
     changed = true;
     const row = [uid, k, x.data, x.v, x.at, x.del ? 1 : ''];
-    if (x.row) sh.getRange(x.row, 1, 1, MEMO_HEAD.length).setValues([row]);
+    if (x.row) put.push([x.row, row]);
     else appends.push(row);
   });
+  writeRowsAt_(sh, put, MEMO_HEAD.length); // 多いときはまとめて1回で書く
   if (appends.length) sh.getRange(sh.getLastRow() + 1, 1, appends.length, MEMO_HEAD.length).setValues(appends);
   if (dels.length) memoDelRows_(sh, dels);
   if (changed) memoTouch_(uid, now);

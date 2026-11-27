@@ -389,12 +389,26 @@ function findRow_(name, id) {
   return data === undefined ? null : { row: r, data: data, at: v[2], by: String(v[3]) };
 }
 
+/* 家の中身（1軒）。1軒ずつ探すのが HOUSE_MISS_ALL 回をこえたら、家のシートの番号と中身の列を1回で読み、あとはそこから引く
+   （保存の決まりは1件ごとに家を見るので、100件の保存で100回シートを探すことがあった）。
+   この送信の中で書いた家は ctx.hcache が先なので、読んだあとに書きかえた家も正しく引ける */
+const HOUSE_MISS_ALL = 5;
 function houseData_(ctx, id) {
   id = String(id || '');
   if (!id) return null;
   if (ctx.hcache && ctx.hcache.has(id)) return ctx.hcache.get(id);
   const m = ctx.cols.houses;
   if (m && !m.partial && m.get(id)) return m.get(id).data;
+  if (!ctx.hraw && (ctx.hmiss = (ctx.hmiss || 0) + 1) > HOUSE_MISS_ALL) {
+    const hsh = dataSheet_('houses'), hn = hsh.getLastRow(), raw = {};
+    if (hn >= 2) hsh.getRange(2, 1, hn - 1, 2).getValues().forEach(function (r) { const k = String(r[0]); if (r[0] !== '' && !(k in raw)) raw[k] = r[1]; });
+    ctx.hraw = raw;
+  }
+  if (ctx.hraw) {
+    const d = Object.prototype.hasOwnProperty.call(ctx.hraw, id) ? parseJson_(ctx.hraw[id], null) : null;
+    (ctx.hcache || (ctx.hcache = new Map())).set(id, d);
+    return d;
+  }
   const f = findRow_('houses', id);
   const d = f ? f.data : null;
   (ctx.hcache || (ctx.hcache = new Map())).set(id, d);
@@ -508,14 +522,15 @@ function rewriteCol_(name, map) {
 /** 決まった行（[行番号, [4列]]）を書きかえる。多いときは、その範囲を1回で読み、行を入れかえて1回で書く
     （1行ずつ書くと、100行で何十秒もかかる。範囲のほかの行は、読んだ値をそのまま書きもどす） */
 const WRITE_ONE_MAX = 5;
-function writeRowsAt_(sh, put) {
+function writeRowsAt_(sh, put, width) {
   if (!put.length) return;
-  if (put.length <= WRITE_ONE_MAX) { put.forEach(function (x) { sh.getRange(x[0], 1, 1, 4).setValues([x[1]]); }); return; }
+  const w = width || 4;
+  if (put.length <= WRITE_ONE_MAX) { put.forEach(function (x) { sh.getRange(x[0], 1, 1, w).setValues([x[1]]); }); return; }
   let lo = put[0][0], hi = put[0][0];
   put.forEach(function (x) { if (x[0] < lo) lo = x[0]; if (x[0] > hi) hi = x[0]; });
-  const vals = sh.getRange(lo, 1, hi - lo + 1, 4).getValues();
+  const vals = sh.getRange(lo, 1, hi - lo + 1, w).getValues();
   put.forEach(function (x) { vals[x[0] - lo] = x[1]; });
-  sh.getRange(lo, 1, vals.length, 4).setValues(vals);
+  sh.getRange(lo, 1, vals.length, w).setValues(vals);
 }
 
 /** 行番号の一覧を、つながった行ごとにまとめて消す（1行ずつ消すと遅く、時間切れになる）。
