@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.204';
+var APP_JS_VER = '2026.13.205';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -1920,7 +1920,11 @@ async function flush(force) {
       if (sendRetry) body.re = 1;
       const keepalive = document.hidden && JSON.stringify(body).length < 50000; // 閉じる直前の送信
       sendRetry = true; // 返事が届くまでは「届いたかどうか分からない」
-      const j = await api('sync', body, { keepalive });
+      // 大きな変更（集合住宅をまとめて消したなど）は、サーバーの処理が長くなるので、返事を長めに待つ
+      // （60秒で待つのをやめると、サーバーは裏で終えていても、送り直しが続いた）
+      let big = false;
+      try { big = changeCount(body.changes) > SEND_BATCH * 2 || JSON.stringify(body).length > 100000; } catch (e) { big = false; }
+      const j = await api('sync', body, { keepalive, timeout: big ? 300000 : 60000 });
       sendRetry = false;
       flushFail = 0; headFail = 0; flushNextAt = 0;
       if (take >= 1) lsDel(HF_KEY); // 先頭が届いた
@@ -2844,6 +2848,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.205', items: [
+    ['係', '大きな変更（集合住宅をまとめて消したなど）を送るとき、「未送信・自動で再送」がくり返して終わらないことがあったのを直しました。']
+  ], role: 'admin' },
   { v: '2026.13.204', items: [
     ['係', '「集合住宅の一覧」で外の一覧の建物を消せなかったとき、その理由（家に結んだまま・サーバーが前の操作の途中 など）を出すようにしました。']
   ], role: 'admin' },
