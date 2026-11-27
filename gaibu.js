@@ -81,6 +81,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const hasPos = b => b && b.lat != null && b.lng != null && isFinite(b.lat) && isFinite(b.lng);
   /* 自動で結ぶ・決めるのに使ってよい位置か（あやしい位置は、画面には出すが、自動では使わない） */
   const autoPos = b => hasPos(b) && !b.sus;
+  /* 係が地図で置いた（数字で入れた）位置。その家をねらって置いたので、すぐそばの家を、種類にかかわらずいちばん先にする */
+  const HAND_NEAR_M = 10;
+  const handPos = b => hasPos(b) && !!(b.fix && b.fix.lat != null && b.fix.from === 'hand');
   const day = iso => { const t = Date.parse(iso); if (!isFinite(t)) return ''; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const stOf = b => b.skip ? 'skip' : b.gone ? 'gone' : b.hid ? (houseById(b.hid) ? (b.tmp ? 'tmp' : 'ok') : 'lost') : 'wait';
   const ST_LABEL = { ok: '結んだ', tmp: '仮', wait: 'まだ', skip: '取り込まない', gone: '一覧にない', lost: '家がない' };
@@ -114,7 +117,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* iPhone・iPad で Google マップのアプリを直接開くのは、app.js が画面のすべての Google マップのリンクでまとめて行う */
   const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
 
-  /* 候補：場所の近い家（60m 以内。アパートを先に）と、名前が同じ家（場所が分からないとき・遠くても） */
+  /* 候補：場所の近い家（60m 以内。アパートを先に）と、名前が同じ家（場所が分からないとき・遠くても）。
+     係が地図で置いた位置のときは、そのすぐそば（HAND_NEAR_M 以内）の家を、ふつうの家でもいちばん先に（近い順） */
   function candidates(b) {
     const out = [], seen = new Set(), nb = norm(b.name);
     D().houses.forEach(h => {
@@ -123,7 +127,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       const same = sameName(nb, h);
       if (m <= 60 || (same && (m <= 1000 || !hasPos(b)))) { out.push({ h, m, same }); seen.add(h.id); }
     });
-    out.sort((x, y) => (y.same - x.same) || ((y.h.type === 'apt') - (x.h.type === 'apt')) || (x.m - y.m));
+    const hand = handPos(b), nr = c => hand && c.m <= HAND_NEAR_M;
+    out.sort((x, y) => (nr(y) - nr(x)) || (nr(x) && nr(y) ? x.m - y.m : 0) || (y.same - x.same) || ((y.h.type === 'apt') - (x.h.type === 'apt')) || (x.m - y.m));
     return out.slice(0, 8);
   }
   /* 迷わない候補：名前が同じ家が1つだけ（場所が分かるときは 150m 以内）、
@@ -131,6 +136,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   function sureMatch(b) {
     const cs = candidates(b);
     const same = cs.filter(c => c.same && (!autoPos(b) || c.m <= 150));
+    if (handPos(b)) { // 係が置いた位置：その家の上（3m 以内）に置いてあり、ほかの家が5m 以上はなれていれば、その家（名前が同じ家がほかにあっても、置いた所を信じる）
+      const nr = cs.filter(c => c.m <= HAND_NEAR_M); // 近い順
+      if (nr.length && nr[0].m <= 3 && (nr.length === 1 || nr[1].m - nr[0].m >= 5)) return nr[0].h;
+      if (nr.length) return null;
+    }
     if (same.length === 1) return same[0].h;
     if (same.length > 1 || !autoPos(b)) return null;
     const apts = cs.filter(c => c.h.type === 'apt' && c.m <= 60);
@@ -142,13 +152,27 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
      ・使える位置がない建物（分からない・あやしい）は、まだ のまま
      ・ほかの一覧の建物を結んでいる家には結ばない。1つの家には1棟だけ（名前が同じ組 → 近い組の順に決める）
      ・近くのアパート（40m）→ 近くの仮の家（25m）。どちらもなく、近くに相手がとられた家もなければ、新しく置く
-     返す：[{ b, h, how: 'apt'|'prov'|'make'|'nopos'|'busy', m }] */
+     ・係が地図で置いた位置で、すぐそば（HAND_NEAR_M）に家があるときは、いちばん近い家だけを見る（ふつうの家でも結ぶ：how 'hand'。アパートになる。
+       その家がもうほかの一覧の建物に結ばれていれば、まだ のまま）
+     返す：[{ b, h, how: 'apt'|'prov'|'hand'|'make'|'nopos'|'busy', m }] */
   function kariPlan(list) {
     const taken = new Set((st.data.blds || []).filter(x => x.hid && !x.skip && !x.gone).map(x => x.hid));
     const pairs = [], near = new Map();
     list.forEach(b => {
       if (!autoPos(b)) return;
       const nb = norm(b.name);
+      if (handPos(b)) {
+        let hs = D().houses.filter(h => h && h.lat != null && dist(b.lat, b.lng, h.lat, h.lng) <= HAND_NEAR_M);
+        if (hs.length) {
+          hs = [hs.reduce((a, h) => dist(b.lat, b.lng, h.lat, h.lng) < dist(b.lat, b.lng, a.lat, a.lng) ? h : a)]; // いちばん近い家
+          near.set(b.id, true);
+          hs.forEach(h => {
+            if (taken.has(h.id)) return;
+            pairs.push({ b, h, m: dist(b.lat, b.lng, h.lat, h.lng), how: h.type === 'apt' ? 'apt' : h.prov ? 'prov' : 'hand', same: sameName(nb, h), hand: true });
+          });
+          return;
+        }
+      }
       D().houses.forEach(h => {
         if (!h || h.lat == null) return;
         const isApt = h.type === 'apt', ok = isApt || (h.type !== 'apt' && h.prov);
@@ -160,7 +184,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         pairs.push({ b, h, m, how: isApt ? 'apt' : 'prov', same: sameName(nb, h) });
       });
     });
-    pairs.sort((x, y) => (y.same - x.same) || ((x.how === 'apt' ? 0 : 1) - (y.how === 'apt' ? 0 : 1)) || (x.m - y.m));
+    pairs.sort((x, y) => (!!y.hand - !!x.hand) || (x.hand && y.hand ? x.m - y.m : 0) || (y.same - x.same) || ((x.how === 'apt' ? 0 : 1) - (y.how === 'apt' ? 0 : 1)) || (x.m - y.m));
     const got = new Map(), used = new Set();
     pairs.forEach(p => { if (!got.has(p.b.id) && !used.has(p.h.id)) { got.set(p.b.id, p); used.add(p.h.id); } });
     return list.map(b => got.get(b.id) || (!autoPos(b) ? { b, how: 'nopos' } : near.get(b.id) ? { b, how: 'busy' } : { b, h: null, how: 'make' }));
@@ -867,14 +891,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="notice" id="gbProg">住所から位置を調べています…</p><p class="hint">調べ終わると、結ぶ建物の数が出ます。</p>');
     await chibanPass().catch(() => 0);
     list = list.map(b => (st.data.blds || []).find(x => x.id === b.id) || b);
-    const plan = kariPlan(list), go = plan.filter(x => x.how === 'apt' || x.how === 'prov' || x.how === 'make');
-    const n = { apt: 0, prov: 0, make: 0, nopos: 0, busy: 0 };
+    const plan = kariPlan(list), go = plan.filter(x => x.how === 'apt' || x.how === 'prov' || x.how === 'hand' || x.how === 'make');
+    const n = { apt: 0, prov: 0, hand: 0, make: 0, nopos: 0, busy: 0 };
     plan.forEach(x => { n[x.how]++; });
     setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + `
       <p>まだ結んでいない建物（結んだ家が消えた「家がない」の建物も）を、まとめて仮で結びます。次の取り込みで、地図に記録が出ます。</p>
       <ul>
         <li>近く（${KARI_APT_M}m 以内）のアパートに結ぶ：<b>${n.apt}棟</b>（名前が同じものを先に）</li>
         <li>近く（${KARI_PROV_M}m 以内）の仮の家に結ぶ（アパートになります）：<b>${n.prov}棟</b></li>
+        ${n.hand ? `<li>地図で置いた位置のすぐそば（${HAND_NEAR_M}m 以内）の家に結ぶ（アパートになります）：<b>${n.hand}棟</b></li>` : ''}
         <li>建物の場所に新しいアパートを置いて結ぶ：<b>${n.make}棟</b></li>
         ${n.busy ? `<li>近くの家に、もうほかの一覧の建物が結ばれているので、まだ のまま：<b>${n.busy}棟</b></li>` : ''}
         ${n.nopos ? `<li>位置が分からない・あやしいので、まだ のまま：<b>${n.nopos}棟</b>（「位置を地図で直す」で置けます）</li>` : ''}
