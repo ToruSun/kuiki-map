@@ -191,8 +191,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       else if (b.llat != null) { b.lat = b.llat; b.lng = b.llng; b.pf = 'list'; b.sus = b.dupPos; } // あやしくても位置は出す（自動では使わない）
       else { b.lat = null; b.lng = null; b.pf = ''; }
     });
-    // 地番の住所（丁目が無い。例：長後779-1）を国土地理院で調べた位置は、番地ごとの点ではなく、いくつもの番地で同じ点（数百mの幅）。
-    // 画面には出すが、自動では使わない（長後755番地と779番地が同じ点・長後677番地と700番地が同じ点だった）
+    // 地番の住所（丁目が無い。例：〇〇123-4）を国土地理院で調べた位置は、番地ごとの点ではなく、いくつもの番地で同じ点（数百mの幅）。
+    // 画面には出すが、自動では使わない（同じ字の、20以上はなれた番地が同じ点になることがあった）
     bl.forEach(b => {
       if (b.pf !== 'addr') return;
       const as = [b.ed && b.ed.addr, b.laddr, b.addr].filter(Boolean).join(' ');
@@ -230,9 +230,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (cbRunning) return cbRunning;
     if (typeof window.chibanFind !== 'function' || typeof window.chibanAddr !== 'function' || !st.data) return Promise.resolve(0);
     cbRunning = (async () => {
-      const todo = (st.data.blds || []).filter(b => !b.gone && !b.cbDone && (b.laddr || b.addr) && !(b.fix && b.fix.lat != null));
+      // 調べるもの：位置を直していない建物と、地番の住所を国土地理院で調べた「おおよそ」の位置の建物（地番の地図で正確な位置にできるかもしれない）
+      const roughFix = b => b.fix && b.fix.from === 'addr' && !/丁目/.test([b.ed && b.ed.addr, b.laddr, b.addr].filter(Boolean).join(' '));
+      const todo = (st.data.blds || []).filter(b => !b.gone && !b.cbDone && (b.laddr || b.addr) && (!(b.fix && b.fix.lat != null) || roughFix(b)));
       if (!todo.length) return 0;
-      const save = [], gsi = [];
+      const save = [], gsi = [], san = [];
       let found = 0;
       const flushSave = async () => { // 見つかった位置は、少しずつサーバーへ（途中で閉じても、そこまでは残る）
         const part = save.splice(0, save.length);
@@ -256,7 +258,25 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         for (const e of es) { try { r = await window.chibanFind(e); } catch (err) { r = null; } if (r && r.pos) break; }
         if (b.pf === 'list' && !b.sus) { if (r && r.pos) { const m = dist(b.lat, b.lng, r.pos.lat, r.pos.lng); if (m >= 80) b.far = Math.round(m); } continue; }
         if (r && r.pos) { keep(b, r.pos, 'chiban'); continue; }
-        if (es.length) gsi.push({ b, es });
+        if (es.length) san.push({ b, es });
+      }
+      // 市町村の地番参考図（サーバーの中で地番を引く・区域係だけ）：法務省の地図に無い土地
+      if (san.length) {
+        const qs = [], who = [];
+        const jukyo = e => { const raw = String(e.raw || e.a || ''); return /丁目/.test(raw + (e.town || '')) && !/番地/.test(raw); }; // 住居表示（○丁目○番○号）は地番ではない
+        san.forEach((x, i) => x.es.forEach(e => { if (e && e.town && (e.nums || []).length && !jukyo(e)) { qs.push({ town: e.town, nums: e.nums.slice(0, 2), city: e.muni || '' }); who.push(i); } }));
+        const got = new Array(san.length).fill(null);
+        for (let i = 0; i < qs.length; i += 200) {
+          setProg(`地番参考図で調べています… ${Math.min(i + 200, qs.length)}／${qs.length}${found ? `・分かった ${found}棟` : ''}${tail}`);
+          let res = null;
+          try { res = await api('tks_find', { qs: qs.slice(i, i + 200) }, { timeout: 120000 }); } catch (e) { res = null; } // 古いサーバー・地番参考図が無い会衆は、使わない
+          if (!res || !Array.isArray(res.r) || res.none) break;
+          res.r.forEach((p, k) => { const j = who[i + k]; if (p && p.lat != null && !got[j]) got[j] = p; });
+        }
+        san.forEach((x, i) => {
+          if (got[i]) keep(x.b, got[i], 'chiban');
+          else if (!(x.b.fix && x.b.fix.lat != null)) gsi.push(x); // おおよその位置がもうある建物は、国土地理院に聞き直さない
+        });
       }
       // 国土地理院：まとめて聞き、番地まで合ったときだけ使う
       if (gsi.length && typeof xlGeocode === 'function' && typeof xlPick === 'function') {
