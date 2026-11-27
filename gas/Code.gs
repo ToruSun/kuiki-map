@@ -1959,6 +1959,7 @@ function applyChanges_(user, ch, opt) {
   //  ・係以外：記録・拒否・注意・受け持ち・引き継ぎのある家は消せない（記録のある家は区域係だけが消せる）。先に調べておく
   //  ・係：拒否を「場所だけの印」として先に残す。残せなかった家は消さない（拒否が消えないように）
   const hdel = ch.houses && Array.isArray(ch.houses.del) ? ch.houses.del.map(String) : [];
+  if (hdel.length > 3) prefetchHouses_(ctx, hdel); // 消す家が多いときは、家のシートを1回で読む（1軒ずつ探すと、まとめて消したときの送り直しで何分もかかる）
   if (hdel.length && !mgr) houseRecScan_(ctx, hdel);
   if (hdel.length && mgr) {
     // 同じ送信で、画面がもう拒否を移している（区域係の画面は、家を消すときに自分で場所だけの拒否にする）ものは、ここでは動かさない。
@@ -2239,11 +2240,22 @@ function applySet_(ctx, name, ch, rule, canDelete, reject) {
   if (partial && needLook > 3) {
     const sh = dataSheet_(name), n = sh.getLastRow();
     idRows = new Map();
-    // 多いとき（まとめて消すなど）は、行の中身も1回で読む（1行ずつ読むと、何千行で何分もかかる）
+    // まず番号の列だけを読む。シートにある行が多いとき（まとめて消すなど）だけ、その範囲の中身を1回で読む
+    // （1行ずつ読むと何千行で何分もかかる。すでに消えた分の送り直しでは、中身は読まない）
     if (n >= 2) {
-      const vals = sh.getRange(2, 1, n - 1, needLook > BULK_LOOK ? 4 : 1).getValues();
-      if (needLook > BULK_LOOK) allRows = vals;
-      vals.forEach(function (r, i) { if (r[0] !== '') idRows.set(String(r[0]), i + 2); });
+      sh.getRange(2, 1, n - 1, 1).getValues().forEach(function (r, i) { if (r[0] !== '') idRows.set(String(r[0]), i + 2); });
+      let lo = 0, hi = 0, hit = 0;
+      (ch.del || []).concat((ch.up || []).map(function (x) { return x && x.id; })).forEach(function (id) {
+        const r = idRows.get(String(id));
+        if (!r) return;
+        hit++;
+        if (!lo || r < lo) lo = r;
+        if (r > hi) hi = r;
+      });
+      if (hit > BULK_LOOK) {
+        const vals = sh.getRange(lo, 1, hi - lo + 1, 4).getValues();
+        allRows = { at: function (r) { return vals[r - lo]; } };
+      }
     }
   }
   const get = function (id) {
@@ -2253,7 +2265,7 @@ function applySet_(ctx, name, ch, rule, canDelete, reject) {
     if (idRows) {
       const r = idRows.get(id);
       if (r) {
-        const v = allRows ? allRows[r - 2] : dataSheet_(name).getRange(r, 1, 1, 4).getValues()[0];
+        const v = allRows ? allRows.at(r) : dataSheet_(name).getRange(r, 1, 1, 4).getValues()[0];
         const data = parseJson_(v[1], undefined);
         if (data !== undefined) f = { row: r, data: data, at: v[2], by: String(v[3]) };
       }
