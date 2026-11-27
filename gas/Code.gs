@@ -3874,6 +3874,7 @@ function onOpen() {
     .addItem(T_('年齢データを取り込む（毎月の自動取り込みも設定）', 'Importar datos de edad (y cada mes)'), 'ageAutoMenu')
     .addItem(T_('全員のスマホに、データを読み直してもらう', 'Pedir a todos los teléfonos que recarguen los datos'), 'refreshAllDevices')
     .addItem(T_('訪問の記録（会えた・留守）を消す（拒否・注意は残す）', 'Borrar registros de visitas (se conservan rechazos y avisos)'), 'clearVisitHistoryMenu')
+    .addItem(T_('集合住宅を空にもどす（外の一覧の取り込みをやり直す）', 'Vaciar edificios de apartamentos (rehacer la importación)'), 'gbResetMenu')
     .addSeparator()
     .addItem(T_('自動バックアップを始める（毎週）', 'Iniciar copia automática (semanal)'), 'backupInstallMenu')
     .addItem(T_('毎月の自動整理を始める（毎月1日）', 'Iniciar limpieza mensual automática'), 'cleanupInstallMenu')

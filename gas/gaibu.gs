@@ -559,3 +559,127 @@ function gbTeHouse_(h, b) {
   const bn = bldNote_(b.bn); if (bn) h.bn = bn;
   if (b.ban === 'no' || b.ban === 'letter') h.ban = b.ban;
 }
+
+/* =========================================================
+   集合住宅を空にもどす（メニュー「区域マップ」→「集合住宅を空にもどす」。区域係が実行する）
+   外の一覧の取り込みを、はじめからやり直すためのもの
+   ・地図の集合住宅（二世帯住宅・お店や会社の建物は除く）は、場所と区域だけを残し、名前も部屋も無い「集」にもどす
+   ・外の一覧から地図に置いた家（id が hg）は、地図から消す
+   ・その家の訪問の記録（取り込み・アプリとも。拒否も）と、部屋の印（拒否・注意・外国語・再訪問など）を消す
+   ・外の一覧の建物（シート gaibu。手で登録したものも）と、届いた一覧の名前を消す。取り込みの鍵は残す
+   ・消す前に、スプレッドシートを丸ごとバックアップする（戻すときは「バックアップから戻す」）
+   ========================================================= */
+const GB_RESET_KEEP = ['id', 'terrId', 'type', 'lat', 'lng', 'createdAt', 'createdBy', 'imp']; // 空の「集」に残す項目
+const GB_RESET_WORD = '空にする';
+
+/* 何をどうするかを数える（消す前の確かめと、消すときの両方で使う） */
+function gbResetPlan_() {
+  const p = { houses: readCol_('houses'), visits: readCol_('visits'), marks: {}, clear: {}, drop: {},
+    n: { clear: 0, drop: 0, other: 0, vis: 0, imp: 0, mark: 0, gb: 0, te: 0 } };
+  p.houses.forEach(function (x, id) {
+    const h = x && x.data;
+    if (!h || h.type !== 'apt') return;
+    if (id.indexOf('hg') === 0) { p.drop[id] = true; p.n.drop++; }
+    else if (!h.kind && !MU_UNITS[String(h.mu || '')]) { p.clear[id] = true; p.n.clear++; }
+    else p.n.other++; // 二世帯住宅・お店や会社の建物は、そのまま
+  });
+  const hit = function (hid) { return !!(p.clear[hid] || p.drop[hid]); };
+  p.visits.forEach(function (x) {
+    const v = x && x.data;
+    if (!v || !hit(String(v.houseId || ''))) return;
+    p.n.vis++;
+    if (v.by === GB_USER || v.src === GB_SRC) p.n.imp++;
+  });
+  MAP_COLS.forEach(function (c) {
+    const m = readCol_(c);
+    p.marks[c] = m;
+    m.forEach(function (x, id) { if (hit(String(id).split('|')[0])) p.n.mark++; });
+  });
+  gbRead_().forEach(function (x) { p.n.gb++; if (x.data && x.data.src === GB_TE) p.n.te++; });
+  return p;
+}
+
+function gbResetMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const n = gbResetPlan_().n;
+  if (!n.clear && !n.drop && !n.gb) { ui.alert(T_('集合住宅を空にもどす', 'Vaciar edificios'), T_('空にする集合住宅はありません。', 'No hay edificios que vaciar.'), ui.ButtonSet.OK); return; }
+  const r = ui.prompt(T_('集合住宅を空にもどす', 'Vaciar edificios de apartamentos'),
+    T_('次のとおりにします。元にもどすときは「バックアップから戻す」を使います。\n\n' +
+      '・地図の集合住宅 ' + n.clear + '件：場所だけ残し、名前・部屋・オートロック・メモなどの無い「集」にもどす\n' +
+      '・外の一覧から地図に置いた家 ' + n.drop + '件：地図から消す\n' +
+      '・その家の訪問の記録 ' + n.vis + '件（うち取り込み ' + n.imp + '件。拒否も）を消す\n' +
+      '・その家の部屋の印（拒否・注意・外国語・再訪問など）' + n.mark + '件を消す\n' +
+      '・外の一覧の建物 ' + n.gb + '件（うち手で登録 ' + n.te + '件）を消す（取り込みの鍵は残す）\n' +
+      (n.other ? '・二世帯住宅・お店や会社の建物 ' + n.other + '件は、そのまま残す\n' : '') +
+      '\n消す前に、このスプレッドシートを丸ごとバックアップします。だれもアプリを使っていないときに行ってください。\n\nよければ「' + GB_RESET_WORD + '」と入れて OK を押してください。',
+      'Se vaciarán ' + n.clear + ' edificios (solo queda la ubicación), se borrarán ' + n.drop + ' edificios colocados desde listas externas, ' + n.vis + ' visitas, ' + n.mark + ' marcas y ' + n.gb + ' edificios de listas externas.\nAntes se hará una copia de seguridad.\n\nEscriba «' + GB_RESET_WORD + '» y pulse OK.'),
+    ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK || r.getResponseText().trim() !== GB_RESET_WORD) return;
+  let res;
+  try { res = gbReset_(); }
+  catch (e) {
+    ui.alert(T_('できませんでした：', 'No se pudo: ') + ((e && e.message) || e) +
+      T_('\n\n変わっていないか、途中までです。もう一度実行してください。', '\n\nVuelva a intentarlo.'));
+    return;
+  }
+  ui.alert(T_('集合住宅を空にもどしました', 'Edificios vaciados'),
+    T_('空にした集合住宅 ' + res.clear + '件・消した家 ' + res.drop + '件・消した訪問の記録 ' + res.vis + '件・部屋の印 ' + res.mark + '件・外の一覧の建物 ' + res.gb + '件\n\n' +
+      '消す前のバックアップ：' + res.backup + '\n\nみんなのスマホは、次に開いたときに全部を読み直します。\n取り込み用のスプレッドシートで「今すぐ取り込む」を押すと、外の一覧がまた届きます。',
+      'Vaciados: ' + res.clear + ', borrados: ' + res.drop + ', visitas: ' + res.vis + ', marcas: ' + res.mark + ', lista externa: ' + res.gb + '\n\nCopia: ' + res.backup),
+    ui.ButtonSet.OK);
+}
+
+/** 本体（画面なし）。消す前にバックアップを作る（作れなければ、何もしないで止まる） */
+function gbReset_() {
+  const backup = makeBackup_('集合住宅を空にする前').getName();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(60000); // 保存・取り込みの最中に書きかえないように
+  let res;
+  try {
+    const p = gbResetPlan_(); // ロックの中で数え直す（確かめのあとに変わった分も入れる）
+    const hit = function (hid) { return !!(p.clear[hid] || p.drop[hid]); };
+    res = { clear: p.n.clear, drop: p.n.drop, vis: p.n.vis, mark: p.n.mark, gb: p.n.gb, backup: backup };
+    // 記録と印を先に消す（途中で止まっても、もう一度実行すれば残りが消える）
+    if (p.n.vis) {
+      const del = [];
+      p.visits.forEach(function (x, id) { if (x && x.data && hit(String(x.data.houseId || ''))) del.push(id); });
+      del.forEach(function (id) { p.visits.delete(id); });
+      rewriteCol_('visits', p.visits);
+    }
+    MAP_COLS.forEach(function (c) {
+      const m = p.marks[c], del = [];
+      m.forEach(function (x, id) { if (hit(String(id).split('|')[0])) del.push(id); });
+      if (!del.length) return;
+      del.forEach(function (id) { m.delete(id); });
+      rewriteCol_(c, m);
+    });
+    // 家：置いた家は消し、集合住宅は場所と区域だけの「集」にする
+    if (p.n.clear || p.n.drop) {
+      const now = new Date();
+      Object.keys(p.drop).forEach(function (id) { p.houses.delete(id); });
+      Object.keys(p.clear).forEach(function (id) {
+        const x = p.houses.get(id), o = {};
+        GB_RESET_KEEP.forEach(function (k) { if (x.data[k] !== undefined) o[k] = x.data[k]; });
+        o.type = 'apt'; o.label = ''; o.units = [];
+        x.data = o; x.at = now;
+      });
+      rewriteCol_('houses', p.houses);
+    }
+    // 外の一覧の建物と、届いた一覧の名前（鍵は残す）
+    if (p.n.gb) rewriteCol_(GB_SHEET, new Map());
+    const sp = props_();
+    Object.keys(sp.getProperties()).forEach(function (k) { if (k.indexOf('GB_SRC_') === 0) sp.deleteProperty(k); });
+    resetJournal_(); // みんなのスマホに、全部を読み直してもらう
+    if (typeof shrinkSheets_ === 'function') { try { shrinkSheets_(); } catch (e) { console.warn(e); } }
+    props_().setProperty('GB_RESET', JSON.stringify({ at: nowIso_(), clear: res.clear, drop: res.drop, vis: res.vis, mark: res.mark, gb: res.gb }));
+  } finally {
+    lock.releaseLock();
+  }
+  // はじめて開くときに使う、家と記録の一覧（ドライブのファイル）も作り直す
+  try { if (typeof houseSnapBuild_ === 'function') houseSnapBuild_(); } catch (e) { console.warn(e); }
+  if (typeof visitSnapBuild_ === 'function') {
+    try { if (!visitSnapBuild_()) visitSnapSoon_(); } catch (e) { console.warn(e); try { visitSnapSoon_(); } catch (e2) { /* 1時間ごとの見直しで作られる */ } }
+  }
+  console.log('集合住宅を空にもどしました：' + JSON.stringify(res));
+  return res;
+}
