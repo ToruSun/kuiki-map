@@ -326,13 +326,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const isTe = b => b && b.src === 'te'; // 区域係が手で登録した集合住宅（取り込みは無い）
   const roomsOf = b => b.fl ? `${b.n}階分` : `${b.n}部屋`;
   const subOf = b => isTe(b) ? `手で登録・${roomsOf(b)}` : `${b.label || b.src}・${b.n}部屋・記録${b.nv}件`;
-  /* 空の集：名前も部屋も無い地図の集合住宅（仮の家を集合住宅にしたばかりのときと同じ。「空の集にもどす」でもこの形になる） */
+  /* 空の集：名前も部屋も無い地図の集合住宅（仮の家を集合住宅にしたばかりのときと同じ。「空の集にもどす」でもこの形になる）。
+     まだ登録していないのと同じなので、ふだんは一覧に出さない（「空の集も出す」で出す）。外の一覧と結んでいる集は、空でも出す */
   const isKara = h => !!h && h.type === 'apt' && !(h.units || []).length && !String(h.label || '').trim();
+  const karaRow = r => r.k === 'm' && isKara(r.h) && !r.links.length;
+  const KARA_LS = 'kuiki_gb_kara';
+  const showKara = () => lsGet(KARA_LS) === '1';
   function rowIn(r, tab) {
+    if (karaRow(r) && !showKara()) return false;
     const s = rowSt(r);
     if (tab === 'all') return s !== 'skip';
     if (tab === 'map') return r.k === 'm';
-    if (tab === 'kara') return r.k === 'm' && isKara(r.h);
     if (tab === 'reg') return r.k === 'r' && (s === 'wait' || s === 'lost');
     if (tab === 'tmp') return s === 'tmp';
     if (tab === 'ext') return r.k === 'r' ? !isTe(r.b) : r.links.some(b => !isTe(b));
@@ -414,7 +418,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!d) { setSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
     const rows = uniRows();
-    const cnt = { all: 0, map: 0, kara: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
+    const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
+    const nKara = rows.filter(karaRow).length;
     rows.forEach(r => Object.keys(cnt).forEach(t => { if (rowIn(r, t)) cnt[t]++; }));
     const wait = blds.filter(b => stOf(b) === 'wait' && !b.same);
     const tmpB = blds.filter(b => stOf(b) === 'tmp');
@@ -438,7 +443,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <div class="row"><button type="button" class="btn small" id="gbKey">${d.key && d.key.has ? '作り直す' : '鍵を作る'}</button>${d.key && d.key.has ? '<button type="button" class="btn small" id="gbKeyDel">止める</button>' : ''}</div>
         ${(d.srcs || []).length ? d.srcs.sort((a, b) => String(a.label).localeCompare(String(b.label), 'ja')).map(x => `<p class="gb-src">${esc(x.label || x.src)}：${x.n}棟・${esc(day(x.at))}</p>`).join('') : '<p class="hint">まだ一覧が届いていません。取り込み用のスプレッドシートで「今すぐ取り込む」をためしてください。</p>'}
       </details>
-      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${cnt.kara ? tab('kara', `空の集 ${cnt.kara}`) : ''}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
+      <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
+      ${nKara ? `<label class="check" style="margin:2px 0 6px"><input type="checkbox" id="gbKara"${showKara() ? ' checked' : ''}>空の集も出す（${nKara}件。名前も部屋も無く、外の一覧とも結んでいない集）</label>` : ''}
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="名前・住所・区域番号でさがす" aria-label="集合住宅をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
       <select id="gbCond" aria-label="条件でしぼる" style="width:100%;min-height:48px;border-radius:12px;border:2px solid var(--line);padding:0 10px;font-size:16px;margin:0 0 8px;background:#fff">${condOpts().map(([v, t]) => `<option value="${esc(v)}"${(st.cond || '') === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>
       <button type="button" class="btn block" id="gbSelOn">${st.sel ? '選ぶのをやめる' : '選んで、まとめて空にする・消す'}</button>
@@ -452,6 +458,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const reRows = () => { const el = $('#gbRows'); if (el) { el.innerHTML = listRows(); bindRows(); } const sb = $('#gbSelBar'); if (sb) { sb.innerHTML = selBar(); bindSel(); } };
     bindSearch($('#gbQ'), v => { st.q = v; reRows(); });
     $('#gbCond').onchange = e => { st.cond = e.target.value; reRows(); };
+    if ($('#gbKara')) $('#gbKara').onchange = e => { lsSet(KARA_LS, e.target.checked ? '1' : '0'); st.restore = S.scrollTop; sheetKeep = true; render(); };
     $('#gbSelOn').onclick = () => { st.sel = st.sel ? null : new Set(); st.restore = S.scrollTop; sheetKeep = true; render(); };
     bindSel();
     $('#gbKey').onclick = makeKey;
