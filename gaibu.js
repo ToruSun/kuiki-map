@@ -63,6 +63,9 @@
 .gb-hrow .tx small{display:block;font-size:13px;color:var(--ink2)}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 .gb-pin-h{background:var(--brand-ink,#1d3a5a);color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
+.gb-hl{animation:gbHl 1.2s ease-in-out infinite}
+@keyframes gbHl{0%,100%{stroke-opacity:1;stroke-width:7px}50%{stroke-opacity:.35;stroke-width:12px}}
+@media (prefers-reduced-motion:reduce){.gb-hl{animation:none}}
 .gb-cross{position:absolute;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;z-index:650;pointer-events:none}
 .gb-cross::before,.gb-cross::after{content:'';position:absolute;background:#C0392B;box-shadow:0 0 0 2px #fff}
 .gb-cross::before{left:20px;top:0;width:4px;height:44px}
@@ -396,6 +399,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
 
   function render() {
+    hlOff(); // 一覧にもどったら、開いていた建物の印は消す
     const d = st.data;
     if (!d) { setSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
@@ -675,6 +679,56 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     }
     if (h.type === 'apt') { if ((h.units || []).length) openAptSeq(h.id); else openBuilding(h.id); }
     else openTarget(h.id, '', false);
+    hlShow(h);
+  }
+  /* 一覧から開いた建物に、うしろの地図で印（点滅する輪と名前）を付ける。
+     ・下の画面が低くて地図が見えるときは、見えている部分の真ん中へ寄せる
+     ・下の画面を閉じたら、建物を地図の真ん中にもどす。印は、地図をさわる・ほかの建物を開く・一覧にもどる・HL_MS たつと消す */
+  const HL_MS = 3 * 60000;
+  let hl = null, hlObs = null, hlTimer = null, hlTap = null;
+  function hlOff() {
+    if (hl && typeof map !== 'undefined') { try { map.removeLayer(hl); } catch (e) { /* そのまま */ } }
+    hl = null;
+    if (hlObs) { hlObs.disconnect(); hlObs = null; }
+    clearTimeout(hlTimer); hlTimer = null;
+    if (hlTap && typeof map !== 'undefined') { try { map.off('click', hlTap); } catch (e) { /* そのまま */ } }
+    hlTap = null;
+  }
+  function hlShow(h) {
+    hlOff();
+    if (!h || h.lat == null || typeof L === 'undefined' || typeof map === 'undefined') return;
+    const name = h.label || (h.type === 'apt' ? '名前のない集合住宅' : '名前のない家');
+    hl = L.layerGroup([
+      L.circleMarker([h.lat, h.lng], { radius: 28, color: '#E8590C', weight: 7, fill: false, className: 'gb-hl', interactive: false }),
+      L.circleMarker([h.lat, h.lng], { radius: 28, opacity: 0, fillOpacity: 0, interactive: false })
+        .bindTooltip(esc(name), { permanent: true, direction: 'top', offset: [0, -26], className: 'gb-pin-h', opacity: 1 }),
+    ]).addTo(map);
+    const fit = () => {
+      try {
+        const sheet = document.getElementById('sheet'), mel = document.getElementById('map');
+        if (!sheet || !mel || !hl) return;
+        map.invalidateSize();
+        const mr = mel.getBoundingClientRect();
+        const top = sheet.hidden ? mr.bottom : Math.min(mr.bottom, sheet.getBoundingClientRect().top);
+        if (top - mr.top < 160) return; // 下の画面で地図がほとんど見えないときは、閉じたときのために真ん中のまま
+        const want = (top - mr.top) / 2; // 見えている部分の真ん中
+        const at = map.latLngToContainerPoint([h.lat, h.lng]);
+        map.panBy([0, Math.round(at.y - want)], { animate: false });
+      } catch (e) { /* 寄せられなくても、印は出ている */ }
+    };
+    setTimeout(fit, 350); // 下の画面が出そろってから
+    const sheet = document.getElementById('sheet');
+    if (sheet && typeof MutationObserver !== 'undefined') {
+      hlObs = new MutationObserver(() => {
+        if (!sheet.hidden || !hl) return;
+        hlObs.disconnect(); hlObs = null;
+        try { map.invalidateSize(); map.panTo([h.lat, h.lng]); } catch (e) { /* そのまま */ } // 閉じたら、建物を地図の真ん中に
+        hlTap = () => hlOff();
+        setTimeout(() => { if (hl && hlTap) map.on('click', hlTap); }, 400); // 閉じたときのタップで消えないように、少しあとから
+      });
+      hlObs.observe(sheet, { attributes: true, attributeFilter: ['hidden'] });
+    }
+    hlTimer = setTimeout(hlOff, HL_MS);
   }
   const FROM_MS = 30 * 60000; // 一覧から開いてこの時間のあいだは、その家の画面に「一覧にもどる」を出す
   const fromList = h => !!(st.from && st.from.hid === h.id && Date.now() - st.from.at < FROM_MS);
