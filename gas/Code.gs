@@ -23,7 +23,7 @@
 const DATA_COLS = ['territories', 'houses', 'visits', 'requests', 'awayCards', 'returns', 'schedules', 'dnc', 'follows', 'released', 's13', 'agedata', 'caution', 'holds', 'langs']; // langs＝外国語の家。holds＝おすすめの家の押さえ（今行く・予定に入れる）
 const MAP_COLS = ['dnc', 'follows', 'released', 'caution', 'langs']; // caution＝注意（！）の印。langs＝外国語の家の言語
 const PARTIAL_COLS = ['houses', 'visits']; // 件数が多いので、保存のときにシート全体を読まない
-const BULK_LOOK = 40; // 保存で、これより多い行を探すときは、シートの中身を1回で読む（まとめて消すときなど）
+const BULK_LOOK = 10; // 保存で、これより多い行を探すときは、シートの中身を1回で読む（まとめて消すときなど）
 const USERS = 'users';
 const JOURNAL = 'journal';
 const JOURNAL_MAX = 40000;
@@ -312,14 +312,14 @@ function writeCol_(name, map, ups, dels, uid, extraRows) {
   if (!ups.length && !dels.length) return;
   const sh = dataSheet_(name);
   const now = new Date();
-  const appends = [];
+  const appends = [], put = [];
   const start = sh.getLastRow() + 1;
   ups.forEach(function (p) {
     const id = p[0], data = p[1];
     const row = [id, JSON.stringify(data), now, uid];
     const cur = map.get(id);
     if (cur && cur.row > 0) {
-      sh.getRange(cur.row, 1, 1, 4).setValues([row]);
+      put.push([cur.row, row]);
       cur.data = data; cur.at = now; cur.by = uid;
     } else if (cur) {
       appends[cur.appendIndex] = row;
@@ -329,6 +329,7 @@ function writeCol_(name, map, ups, dels, uid, extraRows) {
       appends.push(row);
     }
   });
+  writeRowsAt_(sh, put);
   if (appends.length) {
     sh.getRange(start, 1, appends.length, 4).setValues(appends);
     map.forEach(function (x) { if (x.row === -1) { x.row = start + x.appendIndex; delete x.appendIndex; } });
@@ -502,6 +503,19 @@ function rewriteCol_(name, map) {
     sh.getRange(2, 1, rows.length, 4).setValues(rows);
   }
   if (n > rows.length + 1) sh.getRange(rows.length + 2, 1, n - rows.length - 1, 4).clearContent();
+}
+
+/** 決まった行（[行番号, [4列]]）を書きかえる。多いときは、その範囲を1回で読み、行を入れかえて1回で書く
+    （1行ずつ書くと、100行で何十秒もかかる。範囲のほかの行は、読んだ値をそのまま書きもどす） */
+const WRITE_ONE_MAX = 5;
+function writeRowsAt_(sh, put) {
+  if (!put.length) return;
+  if (put.length <= WRITE_ONE_MAX) { put.forEach(function (x) { sh.getRange(x[0], 1, 1, 4).setValues([x[1]]); }); return; }
+  let lo = put[0][0], hi = put[0][0];
+  put.forEach(function (x) { if (x[0] < lo) lo = x[0]; if (x[0] > hi) hi = x[0]; });
+  const vals = sh.getRange(lo, 1, hi - lo + 1, 4).getValues();
+  put.forEach(function (x) { vals[x[0] - lo] = x[1]; });
+  sh.getRange(lo, 1, vals.length, 4).setValues(vals);
 }
 
 /** 行番号の一覧を、つながった行ごとにまとめて消す（1行ずつ消すと遅く、時間切れになる）。
