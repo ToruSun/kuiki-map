@@ -1258,6 +1258,20 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
   /* ---------- 位置を地図で直す：地図を動かして、建物を十字の真ん中に合わせ「ここにする」 ---------- */
   let cross = null, baseBefore = null;
+  /* 十字の真下にある家（画面の上で ON_HOUSE_PX 以内。いちばん近い家）。なければ null */
+  const ON_HOUSE_PX = 16;
+  function houseUnderCross() {
+    try {
+      const c = map.getCenter(), cp = map.latLngToContainerPoint(c);
+      let best = null, bd = ON_HOUSE_PX;
+      D().houses.forEach(h => {
+        if (!h || h.lat == null || dist(c.lat, c.lng, h.lat, h.lng) > 60) return; // 遠い家は先に外す（速く）
+        const p = map.latLngToContainerPoint([h.lat, h.lng]), d = Math.hypot(p.x - cp.x, p.y - cp.y);
+        if (d <= bd) { bd = d; best = h; }
+      });
+      return best;
+    } catch (e) { return null; }
+  }
   function fixPos(b, back) {
     if (typeof L === 'undefined' || typeof map === 'undefined') return;
     mapOff();
@@ -1276,7 +1290,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     mapBar = document.createElement('div');
     mapBar.className = 'gb-mapbar';
     mapBar.innerHTML = `<button type="button" class="x" data-a="x" aria-label="やめる">×</button>
-      <p class="t"><b>${esc(b.name || '（名前なし）')}</b> の位置<br>地図を動かして、建物を十字の真ん中に合わせてください。</p>
+      <p class="t"><b>${esc(b.name || '（名前なし）')}</b> の位置<br>地図を動かして、建物を十字の真ん中に合わせてください。${isTe(b) ? '' : '<br><small>家や「集」の印の真上に合わせると、その家に結べます。</small>'}</p>
       <div class="acts">
         <button type="button" class="btn primary" data-a="set">ここにする</button>
         ${typeof setBase === 'function' ? '<button type="button" class="btn" data-a="photo">写真／地図</button>' : ''}
@@ -1304,13 +1318,27 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       }
       if (act === 'set') {
         const c = map.getCenter(), lat = Math.round(c.lat * 1e6) / 1e6, lng = Math.round(c.lng * 1e6) / 1e6;
+        const on = b.skip ? null : houseUnderCross(); // 家の印の真上に合わせたか（地図を閉じる前に調べる）
         b.fix = { lat, lng, from: 'hand' }; prep();
         a.disabled = true;
         try { await api('gb_pos', { items: [{ id: b.id, lat, lng, from: 'hand' }] }, { timeout: 30000 }); toast('位置を直しました'); }
         catch (err) { toast('位置を送れませんでした。あとでもう一度ためしてください'); }
         done();
+        if (on && on.id !== b.hid) await linkOnFix(b, on);
       }
     };
+  }
+  /* 位置を家の印の真上に置いたとき：その場で、その家に結ぶか聞く（候補の「結ぶ」と同じ。名前と部屋を一覧に合わせる） */
+  async function linkOnFix(b, h) {
+    const apt = h.type === 'apt', kind = apt ? 'アパート' : '家', name = h.label || `名前のない${kind}`;
+    const other = (st.data.blds || []).find(x => x.id !== b.id && x.hid === h.id && !x.skip && !x.gone && x.same !== b.id && b.same !== x.id);
+    const body = [
+      b.hid ? '今結んでいる家からは外れます。' : '',
+      apt ? '' : 'この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。',
+      other ? `この${kind}には、ほかの一覧の「${other.name || '（名前なし）'}」も結ばれています。` : ''
+    ].join('');
+    if (!await ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', danger: false })) return;
+    await link([{ id: b.id, hid: h.id, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）', () => openBld(b.id));
   }
 
   /* ---------- 家や「集」の画面（区域係だけ）：結んでいる一覧の建物 ---------- */
