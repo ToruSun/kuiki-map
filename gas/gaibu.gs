@@ -297,6 +297,11 @@ function gbApi_(user, req) {
     try { makeBackup_('まとめて直す前'); return { ok: true, made: true }; }
     catch (e) { return { ok: false, error: 'backup', msg: str_((e && e.message) || e, 120) }; }
   }
+  if (a === 'gb_src_del') { // 届いた一覧をやめる（取り込み用のスプレッドシートから外した一覧の、建物と取り込んだ記録を消す）
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
+    try { return gbSrcDel_(user, req.src, !!req.dry); } finally { lock.releaseLock(); }
+  }
   if (a === 'gb_add' || a === 'gb_del') {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(25000)) return { ok: false, error: 'busy' };
@@ -578,6 +583,39 @@ function gbDelMany_(user, ids) {
   deleteRowsFast_(dataSheet_(GB_SHEET), rows);
   return { ok: true, n: rows.length, bad: bad, why: why };
 }
+/* 届いた一覧をやめる。取り込み用のスプレッドシートから一覧を外しても、その一覧はもう届かないので、
+   「一覧にない」の印も、取り込んだ記録の片づけも起きない。それを区域係が画面から行う。
+   ・その一覧の建物の行（シート gaibu の src~…）を消す。「同じ建物」とまとめていたほかの行は分ける
+   ・その一覧から取り込んだ訪問の記録（id が imp.<src>.…）を消す。アプリで入れた記録は残す
+   ・地図の家は消さない（一覧から置いた家は、集合住宅の一覧の条件でしぼって消せる）
+   dry のときは、数えるだけ。もう一度取り込めば、はじめから入り直す */
+function gbSrcDel_(user, src, dry) {
+  src = String(src || '');
+  if (!GB_SRC_RE.test(src) || src === GB_TE) return { ok: false, error: 'bad_request' };
+  const gm = gbRead_(), rows = [], del = {};
+  let linked = 0;
+  gm.forEach(function (x, id) {
+    if (id.indexOf(src + '~') !== 0 || !(x.row > 0)) return;
+    rows.push(x.row); del[id] = true;
+    if (x.data && x.data.hid) linked++;
+  });
+  const pre = 'imp.' + src + '.', vids = [];
+  const vsh = dataSheet_('visits'), vn = vsh.getLastRow();
+  if (vn >= 2) vsh.getRange(2, 1, vn - 1, 1).getValues().forEach(function (r) { const id = String(r[0]); if (id.indexOf(pre) === 0) vids.push(id); });
+  const n = { blds: rows.length, linked: linked, vis: vids.length };
+  if (dry) return { ok: true, dry: true, n: n };
+  if (vids.length) { // 記録を先に消す（途中で止まっても、もう一度押せば残りが消える）
+    const res = applyChanges_({ id: GB_USER, role: 'admin', name: '取り込み', active: true }, { visits: { del: vids } }, { re: true, gb: true });
+    n.rej = (res.rejected || []).length;
+  }
+  const ups = [];
+  gm.forEach(function (x, oid) { if (!del[oid] && x.data && x.data.same && del[x.data.same]) ups.push([oid, Object.assign({}, x.data, { same: '' })]); });
+  gbWrite_(gm, ups, user.id);
+  if (rows.length) deleteRowsFast_(dataSheet_(GB_SHEET), rows);
+  props_().deleteProperty('GB_SRC_' + src);
+  return { ok: true, n: n };
+}
+
 /* 新しく置く家に、手で登録した内容を入れる */
 function gbTeHouse_(h, b) {
   h.units = (Array.isArray(b.rooms) ? b.rooms : []).map(String).filter(function (r) { return r && !UNIT_BAD_RE.test(r); }).slice(0, 300);
