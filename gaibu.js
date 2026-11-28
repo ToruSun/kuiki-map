@@ -1512,10 +1512,21 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const more = [own ? `アプリで入れた訪問の記録 ${own}件` : '', c.dnc ? `拒否 ${c.dnc}件（場所だけの印として残ります）` : '', c.cau ? `注意 ${c.cau}件` : '', c.fol + c.rel ? `再訪問の受け持ち ${c.fol + c.rel}件` : ''].filter(Boolean);
     const msg = `前の場所に残っていた「${name}」の印を、地図から消しました`;
     if (String(oid).indexOf('hg') === 0 && !more.length) { commit(msg, () => deleteHouseData(oid)); return; }
-    const body = `結び直したので、一覧の建物と記録は、今の${kind}に移りました。前の場所には、${kind}の印（アイコン）だけが残っています。消すと、その印ごと地図からなくなります。`
-      + (more.length ? `その印にある、一緒に消えるもの：${more.join('、')}。` : '')
-      + 'そこに本当に別の建物があるときは「残す」にしてください。消したあとの「取り消す」で戻せます。';
-    if (!await ask('', { title: `前の場所の印（アイコン）も消しますか？`, body, ok: '印を消す', cancel: '残す', danger: true })) return;
+    if (!more.length) { // 記録が無い：印ごと消すか、ふつうの家の印にもどすか（集合住宅の名前・部屋・オートロックは今の方に移ったので、ここには残さない）
+      const body = `結び直したので、一覧の建物と記録は、今の${kind}に移りました。前の場所には印（アイコン）だけが残っています。そこに建物が無いなら「印を消す」、ふつうの家があるなら「家の印にする」を選んでください。消したあとも「取り消す」で戻せます。`;
+      const r = await ask('', { title: '前の場所の印（アイコン）をどうしますか？', body, ok: '印を消す', cancel: '家の印にする', danger: true });
+      if (!houseById(oid)) return;
+      if (r) { commit(msg, () => deleteHouseData(oid)); return; }
+      if (!apt) return;
+      commit('前の場所の印を、ふつうの家の印にしました', () => {
+        const x = houseById(oid); if (!x) return;
+        x.type = 'house'; x.units = []; x.label = '';
+        ['lock', 'uk', 'ul', 'kind', 'ban', 'gbn', 'imp', 'cid'].forEach(k => delete x[k]);
+      });
+      return;
+    }
+    const body = `結び直したので、一覧の建物と取り込みの記録は、今の${kind}に移りました。前の場所の印（アイコン）には、まだ次のものが残っています：${more.join('、')}。消すと、印ごとこれも消えます。残すときは、あとで家の画面から直してください。消したあとの「取り消す」で戻せます。`;
+    if (!await ask('', { title: '前の場所の印（アイコン）も消しますか？', body, ok: '印を消す', cancel: '残す', danger: true })) return;
     if (!houseById(oid)) return;
     commit(msg, () => deleteHouseData(oid));
   }
