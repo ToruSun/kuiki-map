@@ -912,18 +912,22 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       $('#gbKariGo').disabled = true;
       const items = go.map(x => x.h ? { id: x.b.id, hid: x.h.id, tmp: true }
         : { id: x.b.id, make: true, tmp: true, terrId: typeof terrOf === 'function' ? terrOf(x.b.lat, x.b.lng) : null });
-      let ok = 0, bad = 0, made = 0;
+      let ok = 0, bad = 0, made = 0, applied = 0;
       for (let i = 0; i < items.length; i += 100) {
         toast(`仮で結んでいます… ${i}／${items.length}（終わるまで、アプリを閉じずにお待ちください）`);
+        const part = items.slice(i, i + 100);
         try {
-          const r = await api('gb_link', { items: items.slice(i, i + 100) }, { timeout: 120000 });
-          ok += r.n || 0; bad += (r.bad || []).length; made += (r.made || []).length;
-        } catch (e) { bad += Math.min(100, items.length - i); }
+          const r = await api('gb_link', { items: part }, { timeout: 120000 });
+          ok += r.n || 0; bad += (r.bad || []).length; made += (r.made || []).length; applied += r.applied || 0;
+          const bs = new Set((r.bad || []).map(String)), md = r.madeIds || {};
+          part.forEach(it => { if (!bs.has(String(it.id))) setBld(it.id, it.make ? md[it.id] : it.hid, true, false); }); // 画面の中で書きかえる
+        } catch (e) { bad += part.length; }
       }
-      if (made) await pullNow(); // サーバーで作ったアパートを読みにいく
+      if (made || applied) { try { await pullNow(); } catch (e) { /* 次の読み込みで入る */ } } // 新しく置いた集・入れた部屋を1回だけ読みにいく
       toast(`${ok}棟を仮で結びました${bad ? `（${bad}棟は結べませんでした）` : ''}。次の取り込みで記録が入ります`);
       st.utab = 'tmp';
-      await load(); await linkAliases(); sheetKeep = true; render();
+      if (bad) await load(); else prep(); // うまくいかなかった分があるときだけ、一覧を読み直す
+      await linkAliases(); sheetKeep = true; render();
     };
   }
 
@@ -949,9 +953,19 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const items = bl.filter(x => x.same && !x.skip).map(x => ({ x, p: bl.find(y => y.id === x.same) }))
       .filter(o => o.p && o.p.hid && houseById(o.p.hid) && o.x.hid !== o.p.hid).map(o => ({ id: o.x.id, hid: o.p.hid, tmp: !!o.p.tmp }));
     if (!items.length) return;
-    try { await api('gb_link', { items }, { timeout: 60000 }); await load(true); } catch (e) { /* 次にまた */ }
+    try {
+      const r = await api('gb_link', { items }, { timeout: 60000 });
+      const bs = new Set((r.bad || []).map(String));
+      items.forEach(it => { if (!bs.has(String(it.id))) setBld(it.id, it.hid, it.tmp, false); }); // 一覧は読み直さない
+      if (r.applied) { try { await pullNow(); } catch (e) { /* 次の読み込みで入る */ } }
+    } catch (e) { /* 次にまた */ }
   }
 
+  /* 一覧の建物の結びを、画面の中で書きかえる（結んだあとに一覧を丸ごと読み直さない。gb_list はサーバーで全部を組み立てるので重い） */
+  function setBld(id, hid, tmp, skip) {
+    const b = ((st.data && st.data.blds) || []).find(x => x.id === id);
+    if (b) Object.assign(b, { hid: skip ? '' : (hid || ''), skip: !!skip, tmp: !!(tmp && hid && !skip) });
+  }
   /* 結ぶ・外す。新しく置くとき以外は、手元の一覧をすぐ直して先へ進み、サーバーへはうしろで送る
      next：手元を直したあとにすること（なければ一覧の画面） */
   async function link(items, msg, next) {
@@ -964,28 +978,40 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (it.make) { al.forEach(x => later.push({ from: it.id, id: x.id, tmp: !!it.tmp })); return [it]; }
       return [it].concat(al.map(x => Object.assign({}, it, { id: x.id, apply: false })));
     });
+    const setB = setBld;
     if (items.some(it => it.make || it.apply)) { // 新しく置く・家を一覧に合わせる：サーバーの返事を待って、家を読み直す
       toast('結んでいます…（少し待ってください）');
       try {
-        const r = await api('gb_link', { items }, { timeout: 60000 });
-        toast(r.bad && r.bad.length ? `${r.n}棟を結びました（${r.bad.length}棟は結べませんでした）` : msg);
-        if (r.applied) await pullNow();
-        if (later.length && r.madeIds) {
-          const more = later.filter(x => r.madeIds[x.from]).map(x => ({ id: x.id, hid: r.madeIds[x.from], tmp: x.tmp }));
-          if (more.length) { try { await api('gb_link', { items: more }, { timeout: 60000 }); } catch (e) { /* 次に一覧を開いたとき、結び直せる */ } }
+        const r = await api('gb_link', { items }, { timeout: 90000 });
+        const bad = new Set((r.bad || []).map(String)), md = r.madeIds || {};
+        items.forEach(it => { if (!bad.has(String(it.id))) setB(it.id, it.make ? md[it.id] : it.hid, it.tmp, it.skip); });
+        if (later.length) { // 同じ建物とまとめた行を、新しく置いた家にも結ぶ（めったに無い）
+          const more = later.filter(x => md[x.from]).map(x => ({ id: x.id, hid: md[x.from], tmp: x.tmp }));
+          if (more.length) {
+            try {
+              const r2 = await api('gb_link', { items: more }, { timeout: 60000 });
+              const bad2 = new Set((r2.bad || []).map(String));
+              more.forEach(m => { if (!bad2.has(String(m.id))) setB(m.id, m.hid, m.tmp, false); });
+            } catch (e) { /* 次に一覧を開いたとき、結び直せる */ }
+          }
         }
-        if (r.made && r.made.length) await pullNow(); // サーバーで作ったアパートを読みにいく
-      } catch (e) { toast('結べませんでした。あとでもう一度ためしてください'); }
-      await load(true); go(); return;
+        if (r.applied || (r.made && r.made.length)) { try { await pullNow(); } catch (e) { /* 次の読み込みで入る */ } } // 家（名前・部屋・新しく置いた家）を1回だけ読みにいく
+        toast(bad.size ? `${r.n}棟を結びました（${bad.size}棟は結べませんでした）` : msg);
+        prep();
+      } catch (e) {
+        toast('結べませんでした。あとでもう一度ためしてください');
+        await load(true); // うまくいかなかったときだけ、一覧を読み直して本当の状態にもどす
+      }
+      go(); return;
     }
-    items.forEach(it => {
-      const b = (st.data.blds || []).find(x => x.id === it.id);
-      if (b) Object.assign(b, { hid: it.skip ? '' : (it.hid || ''), skip: !!it.skip, tmp: !!(it.tmp && it.hid && !it.skip) });
-    });
+    items.forEach(it => setB(it.id, it.hid, it.tmp, it.skip));
     toast(msg);
     go();
     api('gb_link', { items }, { timeout: 60000 })
-      .then(r => { if (r.bad && r.bad.length) { toast(`${r.bad.length}棟は結べませんでした`); refresh(); } })
+      .then(r => {
+        if (r.bad && r.bad.length) { toast(`${r.bad.length}棟は結べませんでした`); refresh(); }
+        else if (r.applied) pullNow(); // サーバーが家に部屋を入れた：すぐ読みにいく（次の自動の読み込みを待たない）
+      })
       .catch(() => { toast('結べませんでした。あとでもう一度ためしてください'); refresh(); });
   }
 
