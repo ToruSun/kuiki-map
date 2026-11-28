@@ -379,10 +379,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   async function open() {
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
     mapOff(); st.from = null;
-    if (st.data) { render(); refresh().then(cbAfter); return; }
+    if (st.data) { render(); refresh().then(() => { pendCheck().catch(() => 0); return cbAfter(); }); return; }
     setSheet(headHtml(null, '集合住宅の一覧', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
     render();
+    pendCheck().catch(() => 0);
     cbAfter();
   }
 
@@ -998,9 +999,68 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const b = ((st.data && st.data.blds) || []).find(x => x.id === id);
     if (b) Object.assign(b, { hid: skip ? '' : (hid || ''), skip: !!skip, tmp: !!(tmp && hid && !skip) });
   }
+  /* ---------- 結んでいるあいだの帯：終わるまで消えない。終わったら緑になる ----------
+     サーバーは、届いた結びを、画面を閉じても最後までする。閉じたときのために、送ったものを端末に残し（PEND）、
+     次に一覧を読んだとき（アプリを開いて少しあと）に、終わったかを確かめて知らせる */
+  const PEND = 'gbPend', PEND_WAIT = 5 * 60000; // 5分たっても結べていなければ、届かなかったとみなす
+  const pendGet = () => { try { const a = JSON.parse(lsGet(PEND) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+  const pendSet = a => { if (a.length) lsSet(PEND, JSON.stringify(a)); else { try { localStorage.removeItem(nsKey(PEND)); } catch (e) { /* そのまま */ } } };
+  const pendDel = key => pendSet(pendGet().filter(p => p.key !== key));
+  let busyEl = null, busyTimer = null;
+  function busyBar(state, text, onTap) {
+    clearInterval(busyTimer); busyTimer = null;
+    if (!busyEl) {
+      busyEl = document.createElement('div');
+      busyEl.setAttribute('role', 'status'); busyEl.setAttribute('aria-live', 'polite');
+      busyEl.style.cssText = 'position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:4650;border-radius:14px;padding:10px 14px;font-size:16px;line-height:1.45;box-shadow:0 4px 14px #0005;cursor:pointer';
+      document.body.appendChild(busyEl);
+    }
+    if (!state) { busyEl.hidden = true; return; }
+    busyEl.hidden = false;
+    const ok = state === 'ok', ng = state === 'ng';
+    busyEl.style.background = ok ? '#1E7A3C' : ng ? '#9A2B1F' : 'var(--brand)';
+    busyEl.style.color = '#fff';
+    const t0 = Date.now();
+    const paint = () => {
+      busyEl.innerHTML = state === 'run'
+        ? `<b>${esc(text)}…（${Math.round((Date.now() - t0) / 1000)}秒）</b><br><small>終わると、ここが緑になります。画面を閉じても、サーバーで最後まで続きます（次に開いたとき、終わったかをお知らせします）</small>`
+        : `<b>${ok ? '✓ ' : ''}${esc(text)}</b><br><small>さわると閉じます</small>`;
+    };
+    paint();
+    if (state === 'run') busyTimer = setInterval(paint, 1000);
+    busyEl.onclick = state === 'run' ? null : () => { busyEl.hidden = true; if (onTap) onTap(); };
+  }
+  /* 前に送った結びが、終わったかを確かめる（一覧 st.data を読んだあと） */
+  let pendBusy = false;
+  const inflight = new Set(); // この画面で、いま返事を待っている結び（ここでは確かめない）
+  async function pendCheck() {
+    const ps = pendGet().filter(p => !inflight.has(p.key));
+    if (!ps.length || !st.data || pendBusy) return;
+    pendBusy = true;
+    try {
+      const bl = st.data.blds || [], done = [], fail = [];
+      let wait = false;
+      ps.forEach(p => {
+        const b = bl.find(x => x.id === p.id);
+        if (b && (p.make ? !!b.hid : b.hid === p.hid)) done.push(Object.assign({ nid: b.hid }, p));
+        else if (Date.now() - p.at > PEND_WAIT || !b) fail.push(p);
+        else wait = true;
+      });
+      if (!done.length && !fail.length) { if (wait) setTimeout(() => load(true).then(pendCheck), 60000); return; }
+      const gone = new Set(done.concat(fail).map(p => p.key));
+      pendSet(pendGet().filter(p => !gone.has(p.key)));
+      if (done.length) { try { await pullNow(); } catch (e) { /* 次の読み込みで入る */ } }
+      const nm = a => a.map(p => `「${p.name}」`).join('');
+      const ngT = fail.length ? `${nm(fail)}は、結べていませんでした。もう一度選んでください` : '';
+      if (done.length) busyBar(fail.length ? 'ng' : 'ok', `前に選んだ${nm(done)}は、結び終わっていました。${ngT}`);
+      else busyBar('ng', `前に選んだ${ngT}`);
+      for (const p of done) if (p.was) { try { await dropOld(p.was, p.id, p.nid); } catch (e) { /* そのまま */ } }
+      if (wait) setTimeout(() => load(true).then(pendCheck), 60000);
+    } finally { pendBusy = false; }
+  }
   /* 結ぶ・外す。新しく置くとき以外は、手元の一覧をすぐ直して先へ進み、サーバーへはうしろで送る
      next：手元を直したあとにすること（なければ一覧の画面） */
-  async function link(items, msg, next) {
+  async function link(items, msg, next, info) {
     const go = next || (() => { st.restore = st.back; sheetKeep = true; render(); });
     // 同じ建物とまとめた行（same）も、一緒に結ぶ・外す。新しく置くときは、置いた家の id が分かってから
     const bl = (st.data && st.data.blds) || [], later = [];
@@ -1012,9 +1072,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     });
     const setB = setBld;
     if (items.some(it => it.make || it.apply)) { // 新しく置く・家を一覧に合わせる：サーバーの返事を待って、家を読み直す
-      toast('結んでいます…（少し待ってください）');
+      const it0 = items[0], b0 = bl.find(x => x.id === it0.id) || {};
+      const nm = (info && info.name) || b0.name || '一覧の建物';
+      const pkey = `${it0.id}|${Date.now()}`;
+      pendSet(pendGet().filter(p => p.id !== it0.id).concat([{ key: pkey, id: it0.id, hid: it0.hid || '', make: !!it0.make, name: nm, was: (info && info.was) || '', at: Date.now() }]));
+      inflight.add(pkey);
+      busyBar('run', `「${nm}」を結んでいます`);
       try {
         const r = await api('gb_link', { items }, { timeout: 90000 });
+        pendDel(pkey);
         const bad = new Set((r.bad || []).map(String)), md = r.madeIds || {};
         items.forEach(it => { if (!bad.has(String(it.id))) setB(it.id, it.make ? md[it.id] : it.hid, it.tmp, it.skip); });
         if (later.length) { // 同じ建物とまとめた行を、新しく置いた家にも結ぶ（めったに無い）
@@ -1028,12 +1094,22 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
           }
         }
         if (r.applied || (r.made && r.made.length)) { try { await pullNow(); } catch (e) { /* 次の読み込みで入る */ } } // 家（名前・部屋・新しく置いた家）を1回だけ読みにいく
-        toast(bad.size ? `${r.n}棟を結びました（${bad.size}棟は結べませんでした）` : msg);
+        if (bad.has(String(it0.id))) busyBar('ng', `「${nm}」は結べませんでした。もう一度選んでください`);
+        else busyBar('ok', bad.size ? `${r.n}棟を結びました（${bad.size}棟は結べませんでした）` : `終わりました。${msg}`);
         prep();
       } catch (e) {
-        toast('結べませんでした。あとでもう一度ためしてください');
-        await load(true); // うまくいかなかったときだけ、一覧を読み直して本当の状態にもどす
+        // 返事が来なかっただけで、サーバーでは結べていることがある：一覧を読み直して確かめる
+        busyBar('run', `「${nm}」が結べたか確かめています`);
+        await load(true); // 一覧を読み直して本当の状態にもどす
+        const b1 = ((st.data && st.data.blds) || []).find(x => x.id === it0.id);
+        if (b1 && (it0.make ? !!b1.hid : b1.hid === it0.hid)) {
+          pendDel(pkey);
+          try { await pullNow(); } catch (e2) { /* 次の読み込みで入る */ }
+          busyBar('ok', `終わりました。${msg}`);
+        } else if (e && e.code === 'busy') { pendDel(pkey); busyBar('ng', 'サーバーがほかの操作を続けていて、結べませんでした。少し待って、もう一度選んでください'); }
+        else { busyBar('ng', `「${nm}」は、まだ結べていません。サーバーで続いていることがあるので、1分ごとに確かめて、終わったらお知らせします`); setTimeout(() => load(true).then(pendCheck), 60000); }
       }
+      inflight.delete(pkey);
       go(); return;
     }
     items.forEach(it => setB(it.id, it.hid, it.tmp, it.skip));
@@ -1399,14 +1475,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!await ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', danger: false })) return;
     const was = b.hid && b.hid !== h.id ? b.hid : '';
     await link([{ id: b.id, hid: h.id, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）',
-      async () => { openBld(b.id); await dropOld(was, b.id, h.id); });
+      async () => { openBld(b.id); await dropOld(was, b.id, h.id); }, { name: b.name, was });
   }
 
   /* ---------- 家や「集」の画面（区域係だけ）：結んでいる一覧の建物 ---------- */
   let preloading = null;
   function preload() {
     if (preloading || st.data || typeof isAdmin !== 'function' || !isAdmin()) return;
-    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) { st.raw = JSON.stringify(d); st.data = d; prep(); chibanPass().catch(() => 0); } }) // 住所から位置を調べておく.catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
+    preloading = api('gb_list', {}, { timeout: 45000 }).then(d => { if (d && d.ok) { st.raw = JSON.stringify(d); st.data = d; prep(); chibanPass().catch(() => 0); pendCheck().catch(() => 0); } }) // 住所から位置を調べておく・前に送った結びが終わったか確かめる
+      .catch(() => { /* 古いサーバー・練習モード */ }).finally(() => { preloading = null; });
   }
   setTimeout(() => { try { if (typeof LIVE !== 'undefined' && LIVE) preload(); } catch (e) { /* そのまま */ } }, 8000);
   const backTo = h => () => { if (!houseById(h.id)) { closeSheet(); return; } if (h.type === 'apt') openBuilding(h.id); else openTarget(h.id, '', false); };
@@ -1499,7 +1576,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     mapOff();
     await link([{ id: b.id, hid: h.id, apply: true }].concat(drop.map(c => ({ id: c.id, hid: '' }))),
       `「${b.name}」に${drop.length ? '切り替えて' : '結んで'}確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります${drop.length ? '。前の建物の記録は消えます' : ''}）`,
-      async () => { backTo(h)(); await dropOld(was, b.id, h.id); });
+      async () => { backTo(h)(); await dropOld(was, b.id, h.id); }, { name: b.name, was });
   }
 
   /* 結び直したあと、前の家（まちがった場所に残った印）が、もうどの一覧の建物とも結んでいなければ、印ごと消す。
