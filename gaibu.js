@@ -102,6 +102,43 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   window.setSheet = function (html) { const r = _setSheet.apply(this, arguments); document.body.classList.toggle('gbwide', gbMark); gbMark = false; return r; };
   const gbSheet = html => { gbMark = true; window.setSheet(html); };
   const st = { data: null, tab: 'wait', q: '' };
+
+  /* ---------- 地図の上の「← 集合住宅の一覧」：一覧を閉じたり、ほかの家を開いたりしても、すぐ一覧にもどれる ----------
+     一覧を開くと出す準備をし（st.on）、一覧が見えていないあいだ地図の画面に出す。× で出さなくする。
+     もどると、前に見ていた所（タブ・検索・スクロール）から開く */
+  const listShown = () => { const S = document.getElementById('sheet'); return !!(S && !S.hidden && S.querySelector('#gbQ')); };
+  const keepTop = () => { if (listShown()) st.listTop = document.getElementById('sheet').scrollTop; };
+  let backBtn = null;
+  function paintBack() {
+    const show = st.on && typeof currentView !== 'undefined' && currentView === 'map' && !mapBar && !listShown() &&
+      !(document.body.classList.contains('gbwide') && document.body.classList.contains('sheet-open'));
+    if (!show) { if (backBtn) backBtn.hidden = true; return; }
+    if (!backBtn) {
+      backBtn = document.createElement('div');
+      backBtn.style.cssText = 'position:fixed;z-index:2050;display:flex;align-items:stretch;border-radius:24px;overflow:hidden;box-shadow:0 4px 14px #0005;background:var(--brand);zoom:var(--z,1)';
+      backBtn.innerHTML = '<button type="button" data-gbl="go" style="min-height:48px;border:0;background:transparent;color:#fff;font:inherit;font-size:16px;font-weight:700;padding:0 6px 0 16px;cursor:pointer">← 集合住宅の一覧</button>' +
+        '<button type="button" data-gbl="x" aria-label="このボタンを消す" style="min-width:44px;min-height:48px;border:0;background:transparent;color:#fff;font-size:20px;cursor:pointer">×</button>';
+      backBtn.onclick = e => {
+        const a = e.target.closest('[data-gbl]'); if (!a) return;
+        if (a.dataset.gbl === 'x') { st.on = false; paintBack(); return; }
+        st.from = null; st.restore = st.listTop != null ? st.listTop : null; open();
+      };
+      document.body.appendChild(backBtn);
+    }
+    const m = document.getElementById('map'), r = m ? m.getBoundingClientRect() : null;
+    const open1 = document.body.classList.contains('sheet-open');
+    backBtn.style.top = Math.round((r ? r.top : 60) + (open1 ? 8 : 64)) + 'px'; // 画面が出ているときは、上のはし（下から出た画面にかくれない）
+    backBtn.style.right = Math.round(r ? Math.max(10, innerWidth - r.right + 10) : 10) + 'px';
+    backBtn.hidden = false;
+  }
+  const paintSoon = () => setTimeout(() => { try { paintBack(); } catch (e) { /* 見た目だけ */ } }, 0);
+  { // 画面の出し入れ・タブの切りかえのたびに、出すか決め直す（一覧を離れる前に、見ていた所を覚える）
+    const s0 = window.setSheet, c0 = window.closeSheet, v0 = window.showView;
+    window.setSheet = function () { keepTop(); const r = s0.apply(this, arguments); paintSoon(); return r; };
+    window.closeSheet = function () { keepTop(); const r = c0.apply(this, arguments); paintSoon(); return r; };
+    if (typeof v0 === 'function') window.showView = function () { keepTop(); const r = v0.apply(this, arguments); paintSoon(); return r; };
+    window.addEventListener('resize', paintSoon);
+  }
   const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\s・･\-ー―‐－〜~()（）]/g, '');
   const dist = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, x = (d - b) * r * Math.cos((a + c) / 2 * r), y = (c - a) * r; return Math.sqrt(x * x + y * y) * R; };
   const hasPos = b => b && b.lat != null && b.lng != null && isFinite(b.lat) && isFinite(b.lng);
@@ -390,7 +427,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* 一覧の画面：前に読んだものをすぐ出し、うしろで読み直す */
   async function open() {
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
-    mapOff(); st.from = null;
+    mapOff(); st.from = null; st.on = true;
     if (st.data) { render(); refresh().then(() => { pendCheck().catch(() => 0); return cbAfter(); }); return; }
     gbSheet(headHtml(null, '集合住宅の一覧', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
@@ -1141,6 +1178,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (mapLayer) { try { map.removeLayer(mapLayer); } catch (e) { /* もう無い */ } mapLayer = null; }
     if (mapBar) { mapBar.remove(); mapBar = null; }
     if (cross) { cross.remove(); cross = null; }
+    paintSoon();
   }
   const nextTmp = after => (st.data.blds || []).find(x => x.id !== after && stOf(x) === 'tmp');
   function showOnMap(b, h) {
