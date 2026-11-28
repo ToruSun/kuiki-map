@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.225';
+var APP_JS_VER = '2026.13.226';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2856,6 +2856,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.226', items: [
+    ['係', '「集合住宅の一覧」の「Google」「Yahoo!」のボタンを、どの画面でも同じ、つながった細いボタン1本にそろえました（建物の画面・地図の下の欄・家の画面の外の一覧の欄など）。']
+  ], role: 'admin' },
   { v: '2026.13.225', items: [
     ['係', '結び直したあと、前の場所に残った印（記録の無いもの）は、「印を消す」か「家の印にする」を選べるようにしました。「家の印にする」と、集合住宅の名前・部屋・オートロックを外して、ふつうの家の印にします。']
   ], role: 'admin' },

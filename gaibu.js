@@ -66,10 +66,13 @@
 .gb-cand{flex-direction:column;align-items:stretch;gap:8px;cursor:default}
 .gb-cand .hd{display:flex;gap:10px;align-items:center}
 .gb-cand .hd .btn{flex:none}
-.gb-seg{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
-.gb-seg .btn{flex:1 1 0;min-width:0;min-height:40px;padding:0 6px;border:0;border-radius:0;font-size:14px;font-weight:600;color:var(--ink2);gap:4px}
-.gb-seg .btn+.btn{border-left:1.5px solid var(--line)}
-.gb-seg .btn svg{width:16px;height:16px;flex:none}
+.gb-seg{display:flex;width:100%;max-width:460px;margin:6px 0;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.gb-seg>.btn.btn{flex:1 1 0;min-width:0;min-height:42px;margin:0;padding:0 6px;border:0;border-radius:0;font-size:14px;font-weight:600;color:var(--ink2);background:#fff;gap:4px}
+.gb-seg>.btn.btn+.btn{border-left:1.5px solid var(--line)}
+.gb-seg>.btn svg{width:16px;height:16px;flex:none}
+.gb-mapbar .acts .gb-seg,.gb-hrow .gb-seg{flex:1 1 100%;margin:0}
+.gb-mapbar .acts .gb-seg{max-width:none}
+.gb-cand .gb-seg{margin:0}
 .gb-hrow .tx{flex:1 1 180px;min-width:0;line-height:1.35}
 .gb-hrow .tx small{display:block;font-size:13px;color:var(--ink2)}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
@@ -136,11 +139,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
      （各社のロゴは使わない。読み上げ・長押しの説明には正しい名前） */
   const PIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
   const MAP_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M15 4 9 2 3 4v18l6-2 6 2 6-2V2zM10 4.4l4 1.3v13.9l-4-1.3zM5 5.4l3-1v13.9l-3 1zm11 14.2V5.7l3-1v13.9z"/></svg>';
-  const gmapBtn = (b, cls) => {
-    const c = `btn ${cls == null ? 'small' : cls} gb-map`, g = gmapUrl(b), y = ymapUrl(b);
-    return (g ? `<a class="${c}" href="${esc(g)}" target="_blank" rel="noopener noreferrer" data-gmap="1" aria-label="Google マップで見る" title="Google マップで見る">${PIN_SVG}Google</a>` : '')
-      + (y ? `<a class="${c}" href="${esc(y)}" target="_blank" rel="noopener noreferrer" data-ymap="1" aria-label="Yahoo!マップで見る" title="Yahoo!マップで見る">${PIN_SVG}Yahoo!</a>` : '');
+  const mapLinks = b => {
+    const g = gmapUrl(b), y = ymapUrl(b);
+    return (g ? `<a class="btn gb-map" href="${esc(g)}" target="_blank" rel="noopener noreferrer" data-gmap="1" aria-label="Google マップで見る" title="Google マップで見る">${PIN_SVG}Google</a>` : '')
+      + (y ? `<a class="btn gb-map" href="${esc(y)}" target="_blank" rel="noopener noreferrer" data-ymap="1" aria-label="Yahoo!マップで見る" title="Yahoo!マップで見る">${PIN_SVG}Yahoo!</a>` : '');
   };
+  /* 地図のボタンを、つながった細いボタン1本（.gb-seg）にまとめて出す。front は前に足すボタン（「地図」など） */
+  const mapSeg = (b, front) => { const in_ = (front || '') + mapLinks(b); return in_ ? `<div class="gb-seg">${in_}</div>` : ''; };
   /* iPhone・iPad で Google マップのアプリを直接開くのは、app.js が画面のすべての Google マップのリンクでまとめて行う */
   const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
 
@@ -1085,7 +1090,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         ${tmp ? '<button type="button" class="btn primary" data-a="ok">これでよい</button>' : ''}
         ${!isCur ? '<button type="button" class="btn primary" data-a="link">ここに結ぶ</button>' : ''}
         ${h.type === 'apt' && typeof openBuilding === 'function' ? '<button type="button" class="btn" data-a="room">部屋</button>' : ''}
-        ${gmapBtn(b, '')}
+        ${mapSeg(b)}
         <button type="button" class="btn" data-a="pos">位置を直す</button>
         <button type="button" class="btn" data-a="bld">ほかを選ぶ</button>
         <button type="button" class="btn" data-a="list">一覧へ</button>
@@ -1131,7 +1136,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const cs = candidates(b).filter(c => !cur || c.h.id !== cur.id);
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
     setSheet(headHtml(null, esc(b.name || '（名前なし）'), esc(subOf(b))) + `
-      <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}　${gmapBtn(b)}</p>
+      <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}</p>
+      ${mapSeg(b)}
       ${(() => {
         const bl = st.data.blds || [], p = b.same ? bl.find(x => x.id === b.same) : null, al = bl.filter(x => x.same === b.id);
         if (p) return `<div class="notice">「${esc(p.name)}」（${esc(p.label || p.src)}）と同じ建物としてまとめています。結ぶときは一緒に結ばれます。<button type="button" class="btn small" data-gbun="${esc(b.id)}">分ける</button></div>`;
@@ -1347,7 +1353,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <div class="acts">
         <button type="button" class="btn primary" data-a="set">ここにする</button>
         ${typeof setBase === 'function' ? '<button type="button" class="btn" data-a="photo">写真／地図</button>' : ''}
-        ${gmapBtn(b, '')}
+        ${mapSeg(b)}
         ${b.fix && b.fix.from === 'hand' ? '<button type="button" class="btn" data-a="clear">手で直した位置を消す（自動の位置にもどす）</button>' : ''}
       </div>`;
     host.appendChild(mapBar);
@@ -1412,7 +1418,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const tmp = linked.some(b => stOf(b) === 'tmp');
     const rows = linked.map(b => `<div class="gb-hrow"><span class="tx"><b>${esc(b.name || '（名前なし）')}</b>${stOf(b) === 'tmp' ? ' <span class="gb-st wait">仮</span>' : ' <span class="gb-st ok">確定</span>'}
         <small>${esc(b.label || b.src)}・${b.n}部屋・記録${b.nv}件${b.gone ? '・今の一覧にない' : ''}${hasPos(b) && h.lat != null ? `・一覧の位置から${fmtM(dist(b.lat, b.lng, h.lat, h.lng))}` : ''}</small></span>
-        ${stOf(b) === 'tmp' ? `<button type="button" class="btn small primary" data-gbn="ok" data-b="${esc(b.id)}">これでよい</button>` : ''}${gmapBtn(b)}<button type="button" class="btn small" data-gbn="un" data-b="${esc(b.id)}">外す</button></div>`).join('');
+        ${stOf(b) === 'tmp' ? `<button type="button" class="btn small primary" data-gbn="ok" data-b="${esc(b.id)}">これでよい</button>` : ''}<button type="button" class="btn small" data-gbn="un" data-b="${esc(b.id)}">外す</button>${mapSeg(b)}</div>`).join('');
     const sum = linked.length ? `外の一覧：${esc(linked.map(b => b.name || '（名前なし）').join('、'))}${tmp ? ' <span class="gb-st wait">仮</span>' : ' <span class="gb-st ok">確定</span>'}` : '外の一覧：結んでいません';
     // 1行目の「切り替える」は、閉じたままでも押せる（押しても開け閉めしない）
     return `<details class="notice gb-hn" data-gbn-h="${esc(h.id)}"${tmp ? ' open' : ''}><summary><span style="flex:1 1 auto">${sum}</span>
@@ -1479,7 +1485,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     return rows.map(x => `<div class="gb-row gb-cand"><div class="hd"><span class="tx"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
         <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
         <button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></div>
-        <div class="gb-seg">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn" data-gbpm="${esc(x.b.id)}">${MAP_SVG}地図</button>` : ''}${gmapBtn(x.b, '')}</div></div>`).join('') || '<div class="empty">ありません</div>';
+        ${mapSeg(x.b, (hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn" data-gbpm="${esc(x.b.id)}">${MAP_SVG}地図</button>` : '')}</div>`).join('') || '<div class="empty">ありません</div>';
   }
 
   /* この家を、一覧の建物 b に切り替えて確定する。家の名前・部屋・オートロックは、すぐ一覧に合わせる（apply） */
@@ -1567,7 +1573,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         <br>今の結び先：${b.hid === h.id ? '<b>この家</b>' : o ? `<b>${esc(o.label || '名前のない家')}</b>（この家から ${fmtM(dist(o.lat, o.lng, h.lat, h.lng))}）${stOf(b) === 'tmp' ? '・仮' : ''}` : 'まだ結んでいません'}</p>
       <div class="acts">
         ${b.hid !== h.id ? '<button type="button" class="btn primary" data-a="go">この家に切り替える</button>' : ''}
-        ${gmapBtn(b, '')}
+        ${mapSeg(b)}
         <button type="button" class="btn" data-a="back">選ぶ画面へ</button>
       </div>`;
     host.appendChild(mapBar);
