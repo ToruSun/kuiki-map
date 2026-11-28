@@ -52,6 +52,7 @@
 .gb-src{font-size:14px;color:var(--ink2);margin:2px 0}
 .gb-row .tx small.gb-gap{color:var(--ink2)}
 .gb-row .tx small.gb-gap.far{color:#9A5B12;font-weight:700}
+.gb-thead{margin:14px 0 2px;font-size:16px}
 .btn.gb-wrap{white-space:normal;height:auto;min-height:52px;line-height:1.35;padding-top:8px;padding-bottom:8px}
 .gb-mapbar{position:absolute;left:10px;right:10px;bottom:22px;z-index:700;background:var(--paper);border:3px solid var(--brand-ink);border-radius:var(--r);padding:10px 12px;box-shadow:0 4px 14px #0005}
 .gb-mapbar .t{font-size:15px;line-height:1.4;margin:0 36px 8px 0}
@@ -470,12 +471,14 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const KARA_LS = 'kuiki_gb_kara';
   const showKara = () => lsGet(KARA_LS) === '1';
 
-  /* ---------- 並び：名前の順・位置の近い順 ----------
-     近い順は、地図の真ん中にいちばん近い行から始めて、まだ並べていない行のうち いちばん近い行を次々につなぐ（となりの行が近い）。
+  /* ---------- 並び：名前の順・位置の近い順・区域番号の順 ----------
+     近い順：地図の真ん中にいちばん近い行から始めて、まだ並べていない行のうち いちばん近い行を次々につなぐ（となりの行が近い）。
+     区域番号の順：区域ごとに分けて番号の順に。区域の中は、はしの行から近い順につなぐ。
+       地図の集は家の区域。まだ地図に無い建物は、位置（リンクのピン・住所から調べた位置・手で直した位置）がどの区域の線の中かで決める
      続けて結んでいるあいだに順が入れかわらないよう、順は一覧を開いているあいだ覚えておく（st.rank）。
-     あとから出てきた行（新しく置いた家など）は、いちばん近い行のすぐうしろに入れる。位置の分からない行は最後（名前の順） */
+     あとから出てきた行（新しく置いた家など）は、同じ区域の いちばん近い行のすぐうしろに入れる。位置・区域の分からない行は最後（名前の順） */
   const ORDER_LS = 'kuiki_gb_order';
-  const nearOn = () => lsGet(ORDER_LS) === 'near';
+  const orderOf = () => { const v = lsGet(ORDER_LS); return v === 'near' || v === 'terr' ? v : 'name'; };
   function rowPos(r) {
     if (r.k === 'm') return r.h && r.h.lat != null && isFinite(r.h.lat) ? r.h : null;
     if (hasPos(r.b)) return r.b;
@@ -483,40 +486,87 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const h = r.b.hid && houseById(r.b.hid); // 家がない・取り込まないの行でも、結んでいた家の位置があれば
     return h && h.lat != null ? h : null;
   }
+  /* 位置から区域を決める（区域の四角の範囲で先に絞る。並べ直すときに1回だけ作る） */
+  let terrBox = null;
+  function terrAt(p) {
+    if (!p || typeof inPoly !== 'function' || typeof polyTerrs !== 'function') return null;
+    if (!terrBox) terrBox = polyTerrs().map(t => ({ t, b: bboxOf(t.polygon) })).sort((a, b) => (a.t.rest ? 1 : 0) - (b.t.rest ? 1 : 0)); // 親の残りの部分は最後に見る
+    for (const x of terrBox) {
+      const b = x.b;
+      if (p.lat < b[0] || p.lat > b[1] || p.lng < b[2] || p.lng > b[3]) continue;
+      if (inPoly(p.lat, p.lng, x.t.polygon)) return x.t.id;
+    }
+    return null;
+  }
+  /* 行の区域：{ id, guess（位置から決めた）, rough（位置がおおよそ・あやしい） } */
+  function rowTerr(r) {
+    if (r.k === 'm') return r.h.terrId ? { id: r.h.terrId } : null;
+    const h = r.b.hid && houseById(r.b.hid);
+    if (h && h.terrId) return { id: h.terrId };
+    const p = rowPos(r), id = terrAt(p);
+    return id ? { id, guess: true, rough: !!(p && (p.rough || p.sus)) } : null;
+  }
+  const terrNo = id => { const t = id && terrById(id); return t ? String(t.no) : ''; };
   const XY_R = 6371000 * Math.PI / 180;
   const toXY = (p, c) => [(p.lng - c[1]) * XY_R * Math.cos(c[0] * Math.PI / 180), (p.lat - c[0]) * XY_R];
-  function buildRank(rows) {
-    let c = null;
-    try { if (typeof map !== 'undefined' && map.getCenter) { const m = map.getCenter(); c = [m.lat, m.lng]; } } catch (e) { /* 地図が無い */ }
-    const pts = rows.map(r => ({ k: rkey(r), p: rowPos(r) })).filter(x => x.p);
-    if (!c && pts.length) c = [pts[0].p.lat, pts[0].p.lng];
-    pts.forEach(x => { x.xy = toXY(x.p, c); x.d = Math.hypot(x.xy[0], x.xy[1]); });
-    const rank = new Map(), left = pts.slice();
-    let cur = [0, 0], i = 0;
-    while (left.length) { // まだ並べていない行のうち、いちばん近い行を次に（1000件ほどなら一瞬）
+  /* 点をつなぐ：start から、まだつないでいない いちばん近い点を次々に（1000件ほどなら一瞬） */
+  function chain(pts, start) {
+    const left = pts.slice(), out = [];
+    let cur = start;
+    while (left.length) {
       let bj = 0, bd = Infinity;
       for (let j = 0; j < left.length; j++) { const dx = left[j].xy[0] - cur[0], dy = left[j].xy[1] - cur[1], d = dx * dx + dy * dy; if (d < bd) { bd = d; bj = j; } }
       const x = left.splice(bj, 1)[0];
-      rank.set(x.k, i++); cur = x.xy;
+      out.push(x); cur = x.xy;
     }
-    st.rank = { map: rank, c, pts: pts.map(x => ({ k: x.k, xy: x.xy })) };
+    return out;
+  }
+  function buildRank(rows, mode) {
+    terrBox = null; // 区域の線が変わっていることがあるので作り直す
+    let c = null;
+    try { if (typeof map !== 'undefined' && map.getCenter) { const m = map.getCenter(); c = [m.lat, m.lng]; } } catch (e) { /* 地図が無い */ }
+    const all = rows.map(r => ({ k: rkey(r), p: rowPos(r), t: mode === 'terr' ? rowTerr(r) : null }));
+    const pts = all.filter(x => x.p);
+    if (!c && pts.length) c = [pts[0].p.lat, pts[0].p.lng];
+    pts.forEach(x => { x.xy = toXY(x.p, c); });
+    const rank = new Map(), terr = new Map();
+    let i = 0;
+    if (mode === 'terr') {
+      all.forEach(x => terr.set(x.k, x.t));
+      const groups = new Map();
+      all.forEach(x => { const no = x.t ? terrNo(x.t.id) : ''; if (!no) return; if (!groups.has(no)) groups.set(no, []); groups.get(no).push(x); });
+      [...groups.keys()].sort((a, b) => a.localeCompare(b, 'ja', { numeric: true })).forEach(no => {
+        const g = groups.get(no), gp = g.filter(x => x.xy);
+        let start = [0, 0];
+        if (gp.length) { // 区域のまん中からいちばん遠い点（はし）から始める
+          const mx = gp.reduce((s, x) => s + x.xy[0], 0) / gp.length, my = gp.reduce((s, x) => s + x.xy[1], 0) / gp.length;
+          const far = gp.reduce((a, x) => (Math.hypot(x.xy[0] - mx, x.xy[1] - my) > Math.hypot(a.xy[0] - mx, a.xy[1] - my) ? x : a));
+          start = far.xy;
+        }
+        chain(gp, start).forEach(x => rank.set(x.k, i++));
+        g.filter(x => !x.xy).forEach(x => rank.set(x.k, i++)); // 区域は分かるが位置の無い行（めったに無い）
+      });
+    } else chain(pts, [0, 0]).forEach(x => rank.set(x.k, i++));
+    st.rank = { mode, map: rank, terr, c, pts: pts.filter(x => rank.has(x.k)).map(x => ({ k: x.k, xy: x.xy, no: x.t ? terrNo(x.t.id) : '' })) };
   }
   function rankOf(r) {
     const R = st.rank, k = rkey(r);
     if (R.map.has(k)) return R.map.get(k);
-    const p = rowPos(r);
-    if (!p) return Infinity;
+    const p = rowPos(r), t = R.mode === 'terr' ? rowTerr(r) : null, no = t ? terrNo(t.id) : '';
+    if (R.mode === 'terr') R.terr.set(k, t);
+    if (!p || (R.mode === 'terr' && !no)) { R.map.set(k, Infinity); return Infinity; }
     const xy = toXY(p, R.c);
     let bk = null, bd = Infinity;
-    R.pts.forEach(x => { const d = Math.hypot(x.xy[0] - xy[0], x.xy[1] - xy[1]); if (d < bd) { bd = d; bk = x.k; } });
+    R.pts.forEach(x => { if (R.mode === 'terr' && x.no !== no) return; const d = Math.hypot(x.xy[0] - xy[0], x.xy[1] - xy[1]); if (d < bd) { bd = d; bk = x.k; } });
     const v = bk != null ? R.map.get(bk) + 0.5 : Infinity;
-    R.map.set(k, v); R.pts.push({ k, xy });
+    R.map.set(k, v); if (bk != null) R.pts.push({ k, xy, no });
     return v;
   }
   function sortRows(rows) {
     const byName = (a, b) => rowName(a).localeCompare(rowName(b), 'ja');
-    if (!nearOn()) return rows.sort(byName);
-    if (!st.rank) buildRank(uniRows());
+    const mode = orderOf();
+    if (mode === 'name') return rows.sort(byName);
+    if (!st.rank || st.rank.mode !== mode) buildRank(uniRows(), mode);
     const rk = new Map(rows.map(r => [r, rankOf(r)]));
     return rows.sort((a, b) => (rk.get(a) - rk.get(b)) || byName(a, b));
   }
@@ -637,8 +687,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       <div class="gb-tabs">${tab('all', `全部 ${cnt.all}`)}${tab('map', `地図にある ${cnt.map}`)}${tab('reg', `地図にまだ無い ${cnt.reg}`)}${cnt.tmp ? tab('tmp', `仮 ${cnt.tmp}`) : ''}${tab('ext', `外の一覧から ${cnt.ext}`)}${cnt.te ? tab('te', `手で登録 ${cnt.te}`) : ''}${cnt.skip ? tab('skip', `取り込まない ${cnt.skip}`) : ''}${cnt.gone ? tab('gone', `一覧にない ${cnt.gone}`) : ''}</div>
       ${nKara ? `<label class="check" style="margin:2px 0 6px"><input type="checkbox" id="gbKara"${showKara() ? ' checked' : ''}>空の集も出す（${nKara}件。名前も部屋も無く、外の一覧とも結んでいない集）</label>` : ''}
       <input type="search" id="gbQ" value="${esc(st.q)}" placeholder="名前・住所・区域番号でさがす" aria-label="集合住宅をさがす" style="width:100%;min-height:50px;border-radius:12px;border:2px solid var(--ink2);padding:0 12px;font-size:17px;margin:4px 0 8px">
-      <div class="row" style="align-items:center;margin:0 0 8px;gap:8px"><select id="gbOrder" aria-label="並び" style="flex:1;min-height:48px;border-radius:12px;border:2px solid var(--line);padding:0 10px;font-size:16px;background:#fff"><option value="name"${nearOn() ? '' : ' selected'}>並び：名前の順</option><option value="near"${nearOn() ? ' selected' : ''}>並び：位置の近い順（となりの行が近い）</option></select>${nearOn() ? '<button type="button" class="btn small" id="gbReorder">地図の真ん中から<br>並べ直す</button>' : ''}</div>
-      ${nearOn() ? '<p class="hint" style="margin:0 0 8px">地図の真ん中に近い建物から始めて、近い建物を順につないでいます。結んでも順は変わりません。ほかの所から始めるときは、地図を動かしてから「並べ直す」を押してください。位置の分からない建物は最後です。</p>' : ''}
+      <div class="row" style="align-items:center;margin:0 0 8px;gap:8px"><select id="gbOrder" aria-label="並び" style="flex:1;min-height:48px;border-radius:12px;border:2px solid var(--line);padding:0 10px;font-size:16px;background:#fff">${[['name', '並び：名前の順'], ['near', '並び：位置の近い順（となりの行が近い）'], ['terr', '並び：区域番号の順（区域の中は近い順）']].map(([v, t]) => `<option value="${v}"${orderOf() === v ? ' selected' : ''}>${t}</option>`).join('')}</select>${orderOf() !== 'name' ? `<button type="button" class="btn small" id="gbReorder">${orderOf() === 'near' ? '地図の真ん中から<br>並べ直す' : '並べ直す'}</button>` : ''}</div>
+      ${orderOf() === 'near' ? '<p class="hint" style="margin:0 0 8px">地図の真ん中に近い建物から始めて、近い建物を順につないでいます。結んでも順は変わりません。ほかの所から始めるときは、地図を動かしてから「並べ直す」を押してください。位置の分からない建物は最後です。</p>' : orderOf() === 'terr' ? '<p class="hint" style="margin:0 0 8px">区域番号の順です。区域の中は、はしの建物から近い順につないでいます。まだ地図に無い建物は、位置（リンクのピン・住所から調べた位置・手で直した位置）がどの区域の線の中かで決めています。結んでも順は変わりません。区域の線を直したあとは「並べ直す」を押してください。</p>' : ''}
       <select id="gbCond" aria-label="条件でしぼる" style="width:100%;min-height:48px;border-radius:12px;border:2px solid var(--line);padding:0 10px;font-size:16px;margin:0 0 8px;background:#fff">${condOpts().map(([v, t]) => `<option value="${esc(v)}"${(st.cond || '') === v ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>
       <button type="button" class="btn block" id="gbSelOn">${st.sel ? '選ぶのをやめる' : '選んで、まとめて空にする・消す'}</button>
       <div id="gbSelBar">${selBar()}</div>
@@ -656,7 +706,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     bindSearch($('#gbQ'), v => { st.q = v; reRows(); });
     $('#gbCond').onchange = e => { st.cond = e.target.value; reRows(); };
     $('#gbOrder').onchange = e => { lsSet(ORDER_LS, e.target.value); st.rank = null; st.restore = 0; sheetKeep = true; render(); };
-    if ($('#gbReorder')) $('#gbReorder').onclick = () => { st.rank = null; st.restore = 0; sheetKeep = true; render(); toast('地図の真ん中から並べ直しました'); };
+    if ($('#gbReorder')) $('#gbReorder').onclick = () => { st.rank = null; st.restore = 0; sheetKeep = true; render(); toast(orderOf() === 'near' ? '地図の真ん中から並べ直しました' : '並べ直しました'); };
     if ($('#gbKara')) $('#gbKara').onchange = e => { lsSet(KARA_LS, e.target.checked ? '1' : '0'); st.restore = S.scrollTop; sheetKeep = true; render(); };
     $('#gbSelOn').onclick = () => { st.sel = st.sel ? null : new Set(); st.restore = S.scrollTop; sheetKeep = true; render(); };
     bindSel();
@@ -677,12 +727,17 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const rkey = r => (r.k === 'm' ? 'm:' + r.h.id : 'r:' + r.b.id);
   const shownRows = () => sortRows(uniRows().filter(r => rowIn(r, st.utab || 'all') && rowCond(r, st.cond || '') && rowHit(r, norm(st.q))));
   function listRows() {
-    const shown = shownRows(), near = nearOn();
-    let prev = null;
+    const shown = shownRows(), mode = orderOf(), near = mode !== 'name', byT = mode === 'terr';
+    let prev = null, prevNo = null;
     const html = shown.slice(0, LIST_MAX).map(r => {
-      // 近い順のときは、上の行からの道のりの目安（まっすぐの長さ）を出す。大きくとんだ所が分かる
-      const p = near ? rowPos(r) : null, gap = p && prev ? Math.round(dist(prev.lat, prev.lng, p.lat, p.lng)) : null;
+      // 区域番号の順のときは、区域が変わる所に見出し。まだ地図に無い建物の区域は、位置から決めたもの
+      const tr = byT ? (st.rank && st.rank.terr.get(rkey(r))) || null : null, no = tr ? terrNo(tr.id) : '';
+      let headT = '';
+      if (byT && no !== prevNo) { headT = `<h3 class="sub gb-thead">${no ? `区域${esc(no)}` : '区域が分からない建物（位置が無い・区域の線の外）'}</h3>`; prevNo = no; prev = null; }
+      // 近い順・区域番号の順のときは、上の行からの道のりの目安（まっすぐの長さ）を出す。大きくとんだ所が分かる
+      const p = near ? rowPos(r) : null, gap = p && prev && !(byT && !no) ? Math.round(dist(prev.lat, prev.lng, p.lat, p.lng)) : null;
       if (p) prev = p;
+      const guessT = tr && tr.guess ? `<small class="gb-gap">区域${esc(no)}（位置から${tr.rough ? '・位置がおおよそなので、ちがうことがあります' : ''}）</small>` : '';
       const gapT = gap == null ? '' : `<small class="gb-gap${gap >= 300 ? ' far' : ''}">↑ 上から ${gap >= 1000 ? (gap / 1000).toFixed(1) + 'km' : gap + 'm'}</small>`;
       const s = rowSt(r), cls = s === 'map' ? 'ok' : (s === 'wait' || s === 'lost' || s === 'tmp') ? 'wait' : '';
       let tx, open, tail;
@@ -698,16 +753,16 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         const b = r.b;
         tx = `<b>${esc(rowName(r))}${b.lock ? '　🔒' : ''}</b>
         <small>${esc(subOf(b))}</small>
-        <small>${esc(b.addr || '')}${r.alias.length ? `　＋同じ建物：${r.alias.map(x => esc(x.label || x.src)).join('、')}` : ''}</small>${near && !p ? '<small class="gb-gap">位置が分かりません</small>' : gapT}`;
+        <small>${esc(b.addr || '')}${r.alias.length ? `　＋同じ建物：${r.alias.map(x => esc(x.label || x.src)).join('、')}` : ''}</small>${guessT}${near && !p ? '<small class="gb-gap">位置が分かりません</small>' : gapT}`;
         open = `data-gb="${esc(b.id)}"`;
         tail = '';
       }
       const label = `<span class="gb-st ${cls}">${U_LABEL[s] || ''}</span>`;
       if (st.sel) {
         const k = rkey(r);
-        return `<label class="gb-row"><input type="checkbox" data-sk="${esc(k)}"${st.sel.has(k) ? ' checked' : ''} style="width:24px;height:24px;flex:none"><span class="tx">${tx}</span>${label}</label>`;
+        return headT + `<label class="gb-row"><input type="checkbox" data-sk="${esc(k)}"${st.sel.has(k) ? ' checked' : ''} style="width:24px;height:24px;flex:none"><span class="tx">${tx}</span>${label}</label>`;
       }
-      return `<div class="gb-row"><button type="button" class="gb-open" ${open}><span class="tx">${tx}</span></button>${tail}${label}</div>`;
+      return headT + `<div class="gb-row"><button type="button" class="gb-open" ${open}><span class="tx">${tx}</span></button>${tail}${label}</div>`;
     }).join('');
     return (html || '<div class="empty">ありません</div>') + (shown.length > LIST_MAX ? `<p class="hint">ほかに ${shown.length - LIST_MAX}棟あります。${st.sel ? '「表示中を全部選ぶ」で、見えていない分も選べます。' : 'さがして しぼってください。'}</p>` : '');
   }
