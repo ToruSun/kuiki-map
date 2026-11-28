@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.219';
+var APP_JS_VER = '2026.13.220';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2856,6 +2856,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.220', items: [
+    ['係', 'iPhone で「集合住宅の一覧」の「Yahoo!マップ」を押すと、Yahoo!マップのアプリが直接開くようにしました（アプリが無いときは、お知らせの「ウェブで開く」でウェブを開けます）。']
+  ], role: 'admin' },
   { v: '2026.13.219', items: [
     ['係', '「集合住宅の一覧」の「Google マップ」「Yahoo!マップ」のボタンは、住所だけで検索するようにしました（建物名を前に付けると、正しく見つからないことがありました）。住所が無い建物だけ、建物名で検索します。']
   ], role: 'admin' },
@@ -3630,8 +3633,21 @@ function gmapAppUrl(web) {
   }
   return 'comgooglemapsurl://' + web.replace(/^https:\/\//i, ''); // そのほか（maps.app.goo.gl など）は、URL のままアプリにわたす
 }
-function openGmapApp(web) {
-  const app = gmapAppUrl(web);
+/* Yahoo!マップのリンク（集合住宅の一覧の「Yahoo!マップ」）も、iPhone・iPad ではアプリ（yjmap://）を直接呼ぶ。
+   アプリの検索は、会衆の会館（config.js の hall）のあたりで住所を検索する。開かなかったときは「ウェブで開く」 */
+const YMAP_LINK_RE = /^https:\/\/map\.yahoo\.co\.jp\/search\?/i;
+function ymapAppUrl(web) {
+  let u;
+  try { u = new URL(web); } catch (e) { return ''; }
+  const q = u.searchParams.get('q');
+  if (!q) return '';
+  const h = window.KUIKI_CONFIG && window.KUIKI_CONFIG.hall;
+  const near = Array.isArray(h) && h.length === 2 && isFinite(h[0]) && isFinite(h[1]) && (Number(h[0]) || Number(h[1]))
+    ? `lat=${Number(h[0]).toFixed(6)}&lon=${Number(h[1]).toFixed(6)}&zoom=15&` : '';
+  return 'yjmap://search?' + near + 'query=' + encodeURIComponent(q);
+}
+/* アプリを直接呼び、開かなかったとき（アプリが無いなど）は、お知らせの「ウェブで開く」で今までのウェブを開く */
+function openMapApp(web, app, name) {
   if (!app) { window.open(web, '_blank', 'noopener'); return; }
   let left = false;
   const gone = () => { left = true; };
@@ -3642,15 +3658,16 @@ function openGmapApp(web) {
     document.removeEventListener('visibilitychange', gone);
     window.removeEventListener('pagehide', gone);
     if (!left && document.visibilityState === 'visible')
-      toast('Googleマップのアプリが開かないときは、ウェブで開けます', null, { label: 'ウェブで開く', fn: () => window.open(web, '_blank', 'noopener') });
+      toast(name + 'のアプリが開かないときは、ウェブで開けます', null, { label: 'ウェブで開く', fn: () => window.open(web, '_blank', 'noopener') });
   }, 1800);
 }
+function openGmapApp(web) { openMapApp(web, gmapAppUrl(web), 'Googleマップ'); }
 document.addEventListener('click', e => {
   if (!isIOS() || e.defaultPrevented || e.button) return;
   const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
-  if (!a || !GMAP_LINK_RE.test(a.href)) return;
-  e.preventDefault();
-  openGmapApp(a.href);
+  if (!a) return;
+  if (GMAP_LINK_RE.test(a.href)) { e.preventDefault(); openGmapApp(a.href); }
+  else if (YMAP_LINK_RE.test(a.href)) { e.preventDefault(); openMapApp(a.href, ymapAppUrl(a.href), 'Yahoo!マップ'); }
 }, true); // 地図の吹き出し（長押しの道順）の中のリンクにも効くように、先に受ける
 
 /* ---------- 地図 ---------- */
