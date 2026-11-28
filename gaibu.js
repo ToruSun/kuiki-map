@@ -102,7 +102,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* この画面（集合住宅の一覧など）を出すときは gbSheet。ほかの画面が出たら、右に出す印（gbwide）を外す */
   let gbMark = false;
   const _setSheet = window.setSheet;
-  window.setSheet = function (html) { const r = _setSheet.apply(this, arguments); document.body.classList.toggle('gbwide', gbMark); gbMark = false; return r; };
+  window.setSheet = function (html) { uiGen++; const r = _setSheet.apply(this, arguments); document.body.classList.toggle('gbwide', gbMark); gbMark = false; return r; };
+  /* 画面が変わった回数（ほかの画面を開いた・閉じた・地図の帯を閉じた）。結ぶ返事を待つあいだに係が画面を閉じたり移ったりしたら、
+     返事が来ても前の画面を開き直さない（お知らせの帯だけ出す） */
+  let uiGen = 0;
+  const _closeSheet = window.closeSheet;
+  if (typeof _closeSheet === 'function') window.closeSheet = function () { uiGen++; return _closeSheet.apply(this, arguments); };
   const gbSheet = html => { gbMark = true; window.setSheet(html); };
   const st = { data: null, tab: 'wait', q: '' };
 
@@ -1228,7 +1233,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     } finally { pendBusy = false; }
   }
   /* 結ぶ・外す。新しく置くとき以外は、手元の一覧をすぐ直して先へ進み、サーバーへはうしろで送る
-     next：手元を直したあとにすること（なければ一覧の画面） */
+     next：手元を直したあとにすること（なければ一覧の画面）。返事を待つあいだに係が画面を閉じたり移ったりしたときは、しない
+     info.after：画面が変わっていてもすること（前の場所の印を消すか聞く など） */
   async function link(items, msg, next, info) {
     const go = next || (() => { st.restore = st.back; sheetKeep = true; render(); });
     // 同じ建物とまとめた行（same）も、一緒に結ぶ・外す。新しく置くときは、置いた家の id が分かってから
@@ -1247,8 +1253,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       pendSet(pendGet().filter(p => p.id !== it0.id).concat([{ key: pkey, id: it0.id, hid: it0.hid || '', make: !!it0.make, name: nm, was: (info && info.was) || '', at: Date.now() }]));
       inflight.add(pkey);
       busyBar('run', `「${nm}」を結んでいます`);
+      const g0 = uiGen;
+      let moved = false;
       try {
         const r = await api('gb_link', { items }, { timeout: 90000 });
+        moved = uiGen !== g0;
         pendDel(pkey);
         const bad = new Set((r.bad || []).map(String)), md = r.madeIds || {};
         items.forEach(it => { if (!bad.has(String(it.id))) setB(it.id, it.make ? md[it.id] : it.hid, it.tmp, it.skip); });
@@ -1267,6 +1276,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         else busyBar('ok', bad.size ? `${r.n}棟を結びました（${bad.size}棟は結べませんでした）` : `終わりました。${msg}`);
         prep();
       } catch (e) {
+        moved = uiGen !== g0;
         // 返事が来なかっただけで、サーバーでは結べていることがある：一覧を読み直して確かめる
         busyBar('run', `「${nm}」が結べたか確かめています`);
         await load(true); // 一覧を読み直して本当の状態にもどす
@@ -1279,7 +1289,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         else { busyBar('ng', `「${nm}」は、まだ結べていません。サーバーで続いていることがあるので、1分ごとに確かめて、終わったらお知らせします`); setTimeout(() => load(true).then(pendCheck), 60000); }
       }
       inflight.delete(pkey);
-      go(); return;
+      if (!moved) await go();
+      if (info && info.after) await info.after();
+      return;
     }
     items.forEach(it => setB(it.id, it.hid, it.tmp, it.skip));
     toast(msg);
@@ -1295,6 +1307,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* ---------- 地図で見る：結んだ家（または候補）と、一覧の位置に印をつけ、下に戻るボタンを出す ---------- */
   let mapLayer = null, mapBar = null;
   function mapOff() {
+    if (mapLayer || mapBar) uiGen++;
     if (mapLayer) { try { map.removeLayer(mapLayer); } catch (e) { /* もう無い */ } mapLayer = null; }
     if (mapBar) { mapBar.remove(); mapBar = null; }
     if (cross) { cross.remove(); cross = null; }
@@ -1764,7 +1777,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     mapOff();
     await link([{ id: b.id, hid: h.id, apply: true }].concat(drop.map(c => ({ id: c.id, hid: '' }))),
       `「${b.name}」に${drop.length ? '切り替えて' : '結んで'}確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります${drop.length ? '。前の建物の記録は消えます' : ''}）`,
-      async () => { backTo(h)(); await dropOld(was, b.id, h.id); }, { name: b.name, was });
+      () => backTo(h)(), { name: b.name, was, after: () => dropOld(was, b.id, h.id) });
   }
 
   /* 結び直したあと、前の家（まちがった場所に残った印）が、もうどの一覧の建物とも結んでいなければ、印ごと消す。
