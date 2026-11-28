@@ -1456,10 +1456,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
         const on = b.skip ? null : houseUnderCross(); // 家の印の真上に合わせたか（地図を閉じる前に調べる）
         b.fix = { lat, lng, from: 'hand' }; prep();
         a.disabled = true;
-        try { await api('gb_pos', { items: [{ id: b.id, lat, lng, from: 'hand' }] }, { timeout: 30000 }); toast('位置を直しました'); }
-        catch (err) { toast('位置を送れませんでした。あとでもう一度ためしてください'); }
+        const ask2 = on && on.id !== b.hid;
+        // 位置はうしろで送る（返事を待たずに、すぐ「結びますか？」を出す。サーバーは順番に1つずつ受けるので、結びと混ざらない）
+        api('gb_pos', { items: [{ id: b.id, lat, lng, from: 'hand' }] }, { timeout: 30000 })
+          .then(() => { if (!ask2) toast('位置を直しました'); })
+          .catch(() => toast('位置を送れませんでした。あとでもう一度ためしてください'));
         done();
-        if (on && on.id !== b.hid) await linkOnFix(b, on);
+        if (ask2) await linkOnFix(b, on);
       }
     };
   }
