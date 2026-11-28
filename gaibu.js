@@ -86,9 +86,21 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 .gb-cross::after{top:20px;left:0;height:4px;width:44px}
 .gb-pin-o{background:#5b6776;color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
 .gb-pin-b{background:#9A5B12;color:#fff;font-weight:700;border:0;border-radius:8px;padding:2px 8px;font-size:14px}
+/* パソコン：地図の下の欄は横に広げすぎない */
+@media (min-width:900px){.gb-mapbar{right:auto;width:min(560px,calc(100% - 20px))}}
+/* パソコン：集合住宅の一覧などの画面は、地図の上でも右に出す（係の画面と同じ。左の地図は見えたまま・さわれる） */
+@media (min-width:1180px){
+  body.gbwide.sheet-open #backdrop{background:transparent;pointer-events:none}
+  body.gbwide #sheet{left:auto!important;right:20px;top:72px;bottom:20px!important;width:min(600px,44vw);max-height:none!important;border-radius:16px;box-shadow:0 6px 24px #0004}
+}
 `;
   document.head.appendChild(css);
 
+  /* この画面（集合住宅の一覧など）を出すときは gbSheet。ほかの画面が出たら、右に出す印（gbwide）を外す */
+  let gbMark = false;
+  const _setSheet = window.setSheet;
+  window.setSheet = function (html) { const r = _setSheet.apply(this, arguments); document.body.classList.toggle('gbwide', gbMark); gbMark = false; return r; };
+  const gbSheet = html => { gbMark = true; window.setSheet(html); };
   const st = { data: null, tab: 'wait', q: '' };
   const norm = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[\s・･\-ー―‐－〜~()（）]/g, '');
   const dist = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, x = (d - b) * r * Math.cos((a + c) / 2 * r), y = (c - a) * r; return Math.sqrt(x * x + y * y) * R; };
@@ -380,7 +392,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (!isAdmin()) { toast('区域係だけが使えます'); return; }
     mapOff(); st.from = null;
     if (st.data) { render(); refresh().then(() => { pendCheck().catch(() => 0); return cbAfter(); }); return; }
-    setSheet(headHtml(null, '集合住宅の一覧', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
+    gbSheet(headHtml(null, '集合住宅の一覧', '読み込み中…') + '<p class="hint">読み込んでいます…</p>');
     await load();
     render();
     pendCheck().catch(() => 0);
@@ -502,7 +514,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   function render() {
     hlOff(); // 一覧にもどったら、開いていた建物の印は消す
     const d = st.data;
-    if (!d) { setSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
+    if (!d) { gbSheet(headHtml(null, '集合住宅の一覧', '') + '<p class="hint">読み込めませんでした。</p><button class="btn block" data-close>閉じる</button>'); return; }
     const blds = d.blds || [];
     const rows = uniRows();
     const cnt = { all: 0, map: 0, reg: 0, tmp: 0, ext: 0, te: 0, skip: 0, gone: 0 };
@@ -516,7 +528,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const prs = pairsOf();
     if (!st.utab) st.utab = 'all';
     const tab = (k, t) => `<button type="button" data-gbt="${k}" class="${st.utab === k ? 'on' : ''}">${t}</button>`;
-    setSheet(headHtml(null, '集合住宅の一覧', `${cnt.map}棟が地図に・${cnt.reg}棟がまだ`) + `
+    gbSheet(headHtml(null, '集合住宅の一覧', `${cnt.map}棟が地図に・${cnt.reg}棟がまだ`) + `
       <p class="notice" id="gbProg"${st.prog ? '' : ' hidden'}>${esc(st.prog || '')}</p>
       <p class="hint">地図の集合住宅と、外の一覧（スプレッドシート）から届いた建物の一覧です。外の一覧の建物を地図の集合住宅に<b>結ぶ</b>と1行にまとまり、次の取り込みから記録が入ります。一軒家は載せません。</p>
       <button type="button" class="btn block" id="gbAdd">＋ 集合住宅を登録（地図にまだ置かない）</button>
@@ -860,7 +872,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
 
   /* 同じらしい組をまとめる：チェックした組を結ぶ（地図のアパート）・同じ建物にする（地図にまだ無いものどうし） */
   function confirmPairs(list) {
-    setSheet(headHtml(null, '同じらしい組をまとめる', `${list.length}組`) + `
+    gbSheet(headHtml(null, '同じらしい組をまとめる', `${list.length}組`) + `
       <p class="hint">名前が同じで近い組です（地図の集合住宅の名前は、人が付けたものだけで比べます）。ちがう組はチェックを外してください。</p>
       <div class="gb-tabs" style="margin-bottom:4px">
         <label class="check"><input type="radio" name="gbFit" value="keep" checked>地図の建物の名前・部屋のまま</label>
@@ -894,7 +906,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (had && !await ask('鍵を作り直すと、今の鍵は使えなくなります。取り込み用のプログラムの鍵も入れ直してください。よろしいですか？', { ok: '作り直す' })) return;
     let key = '';
     try { key = (await api('gb_key', {}, { timeout: 30000 })).key; } catch (e) { toast('鍵を作れませんでした'); return; }
-    setSheet(headHtml(null, '取り込みの鍵', '') + `
+    gbSheet(headHtml(null, '取り込みの鍵', '') + `
       <p>取り込み用のスプレッドシートの「拡張機能 → Apps Script → プロジェクトの設定 → スクリプト プロパティ」に、
         プロパティ <b>KUIKI_KEY</b>、値に下の鍵を入れてください。</p>
       <div class="gb-key" id="gbKeyTxt">${esc(key)}</div>
@@ -906,7 +918,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
 
   function confirmSure(list) {
-    setSheet(headHtml(null, 'まとめて結ぶ', `${list.length}棟`) + `
+    gbSheet(headHtml(null, 'まとめて結ぶ', `${list.length}棟`) + `
       <p class="hint">名前が同じか、すぐ近くにアパートが1つだけある建物です。ちがうものはチェックを外してください。</p>
       <div>${list.map((x, i) => `<label class="tk-del"><input type="checkbox" data-gbs="${i}" checked><span class="tx"><b>${esc(x.b.name)}</b>
         <small>→ ${esc(x.h.label || '名前のない家')}${hasPos(x.b) ? `（${Math.round(dist(x.b.lat, x.b.lng, x.h.lat, x.h.lng))}m）` : ''}${x.h.type !== 'apt' ? '・家（アパートになります）' : ''}</small></span></label>`).join('')}</div>
@@ -921,13 +933,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
 
   async function confirmKari(list) {
-    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="notice" id="gbProg">住所から位置を調べています…</p><p class="hint">調べ終わると、結ぶ建物の数が出ます。</p>');
+    gbSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + '<p class="notice" id="gbProg">住所から位置を調べています…</p><p class="hint">調べ終わると、結ぶ建物の数が出ます。</p>');
     await chibanPass().catch(() => 0);
     list = list.map(b => (st.data.blds || []).find(x => x.id === b.id) || b);
     const plan = kariPlan(list), go = plan.filter(x => x.how === 'apt' || x.how === 'prov' || x.how === 'hand' || x.how === 'make');
     const n = { apt: 0, prov: 0, hand: 0, make: 0, nopos: 0, busy: 0 };
     plan.forEach(x => { n[x.how]++; });
-    setSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + `
+    gbSheet(headHtml(null, '全部、仮で結ぶ', `${list.length}棟`) + `
       <p>まだ結んでいない建物（結んだ家が消えた「家がない」の建物も）を、まとめて仮で結びます。次の取り込みで、地図に記録が出ます。</p>
       <ul>
         <li>近く（${KARI_APT_M}m 以内）のアパートに結ぶ：<b>${n.apt}棟</b>（名前が同じものを先に）</li>
@@ -1211,7 +1223,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const s = stOf(b), cur = b.hid ? houseById(b.hid) : null;
     const cs = candidates(b).filter(c => !cur || c.h.id !== cur.id);
     const tOf = h => (h.terrId && terrById(h.terrId) ? `区域${terrById(h.terrId).no}・` : '');
-    setSheet(headHtml(null, esc(b.name || '（名前なし）'), esc(subOf(b))) + `
+    gbSheet(headHtml(null, esc(b.name || '（名前なし）'), esc(subOf(b))) + `
       <p class="gb-src">${esc(b.addr || '住所なし')}${b.lock ? '・オートロック' : ''}</p>
       ${mapSeg(b)}
       ${(() => {
@@ -1334,7 +1346,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const fx = b.fix && b.fix.from === 'hand' ? b.fix : null;
     const r6 = x => Math.round(x * 1e6) / 1e6, curPos = hasPos(b) ? `${r6(b.lat)}, ${r6(b.lng)}` : ''; // 今使っている位置（どこから来た位置でも）
     const te = isTe(b); // 手で登録した建物の名前・住所は、登録した内容を直す画面で直す
-    setSheet(headHtml(null, te ? '位置を直す' : '名前・住所・位置を直す', esc(b.label || b.src)) + `
+    gbSheet(headHtml(null, te ? '位置を直す' : '名前・住所・位置を直す', esc(b.label || b.src)) + `
       ${te ? '' : `<p class="hint">仮で結ぶとき・候補をさがすときに使う値です。直した値は、取り込みのたびに一覧の値で上書きされません。空にすると一覧のとおりにもどります。訪問の記録には関係しません。</p>
       <label class="field"><span>名前</span><input type="text" id="gbEN" value="${esc(b.ed && b.ed.name || '')}" placeholder="${esc(b.oname || '（一覧に名前なし）')}" maxlength="40"></label>
       <p class="gb-src">一覧：${esc(b.oname || '（なし）')}</p>
@@ -1542,7 +1554,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
      選ぶと、その建物をこの家に結び、前に結んでいた建物は「まだ」にもどす（「今の建物も残す」なら残す） */
   function pickFor(h, q, keep) {
     const cur = (st.data.blds || []).filter(b => b.hid === h.id && !b.skip);
-    setSheet(headHtml(terrById(h.terrId), cur.length ? '一覧の建物を切り替える' : '一覧の建物を選ぶ', esc(h.label || '名前のない家')) + `
+    gbSheet(headHtml(terrById(h.terrId), cur.length ? '一覧の建物を切り替える' : '一覧の建物を選ぶ', esc(h.label || '名前のない家')) + `
       ${cur.length ? `<p class="gb-src">今：<b>${esc(cur.map(b => b.name || '（名前なし）').join('、'))}</b></p>` : ''}
       <p class="hint">この${h.type === 'apt' ? '集合住宅' : '家'}の、一覧の建物を選んでください。近い順です（名前が同じものを先に）。</p>
       ${cur.length ? `<label class="check"><input type="checkbox" id="gbKeep"${keep ? ' checked' : ''}>今の建物も残す（同じ建物が2つの一覧に載っているとき）</label>` : ''}
