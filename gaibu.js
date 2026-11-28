@@ -1055,9 +1055,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   const pendGet = () => { try { const a = JSON.parse(lsGet(PEND) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
   const pendSet = a => { if (a.length) lsSet(PEND, JSON.stringify(a)); else { try { localStorage.removeItem(nsKey(PEND)); } catch (e) { /* そのまま */ } } };
   const pendDel = key => pendSet(pendGet().filter(p => p.key !== key));
-  let busyEl = null, busyTimer = null;
+  let busyEl = null, busyTimer = null, busyHide = null;
   function busyBar(state, text, onTap) {
-    clearInterval(busyTimer); busyTimer = null;
+    clearInterval(busyTimer); busyTimer = null; clearTimeout(busyHide); busyHide = null;
     if (!busyEl) {
       busyEl = document.createElement('div');
       busyEl.setAttribute('role', 'status'); busyEl.setAttribute('aria-live', 'polite');
@@ -1073,11 +1073,15 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const paint = () => {
       busyEl.innerHTML = state === 'run'
         ? `<b>${esc(text)}…（${Math.round((Date.now() - t0) / 1000)}秒）</b><br><small>終わると、ここが緑になります。画面を閉じても、サーバーで最後まで続きます（次に開いたとき、終わったかをお知らせします）</small>`
-        : `<b>${ok ? '✓ ' : ''}${esc(text)}</b><br><small>さわると閉じます</small>`;
+        : `<b>${ok ? '✓ ' : ''}${esc(text)}</b>`;
     };
     paint();
     if (state === 'run') busyTimer = setInterval(paint, 1000);
-    busyEl.onclick = state === 'run' ? null : () => { busyEl.hidden = true; if (onTap) onTap(); };
+    else { // 読み終わるころに消す（1文字0.15秒の目安。緑は4〜10秒・赤は8〜20秒）。さわればすぐ消える
+      const big = document.body.classList.contains('big') ? 1.4 : 1, n = String(text).length * 150 * big;
+      busyHide = setTimeout(() => { if (busyEl) busyEl.hidden = true; }, ok ? Math.min(10000, Math.max(4000, n)) : Math.min(20000, Math.max(8000, n)));
+    }
+    busyEl.onclick = state === 'run' ? null : () => { clearTimeout(busyHide); busyEl.hidden = true; if (onTap) onTap(); };
   }
   /* 前に送った結びが、終わったかを確かめる（一覧 st.data を読んだあと） */
   let pendBusy = false;
