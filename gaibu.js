@@ -24,8 +24,8 @@
    ・名前・住所・位置を直す：直した名前・住所（ed）は取り込みで変わらない。住所を直すと、その住所で位置を調べ直す。
        位置は緯度・経度の数字でも入れられる（係が置いた位置として覚える）
    ・位置を地図で直す：十字に建物を合わせて「ここにする」（Google マップの位置は写さない。見て確かめるだけ）
-   ・Google マップで見る（iPhone は Google マップのアプリを直接呼ぶ。app.js の openGmapApp）：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
-   ・Yahoo!マップで見る：同じ建物名と住所で Yahoo!マップの検索を開くだけ（位置は保存しない）
+   ・Google マップで見る（iPhone は Google マップのアプリを直接呼ぶ。app.js の openGmapApp）：住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
+   ・Yahoo!マップで見る：同じ住所で Yahoo!マップの検索を開くだけ（位置は保存しない）
 
    index.html：torikomi.js の次に <script src="gaibu.js"></script>
    ========================================================= */
@@ -106,18 +106,18 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     return !(st.data && Array.isArray(st.data.named) && st.data.named.includes(h.id));
   }
   const fmtM = m => !isFinite(m) ? '場所不明' : m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
-  /* Google マップの検索を開く（建物名＋住所。住所に市町村がなければ、会衆の県・市をつける） */
+  /* Google マップの検索を開く（住所。住所に市町村がなければ、会衆の県・市をつける） */
   function mapQuery(b) {
     const A = typeof CFG_AREA !== 'undefined' ? CFG_AREA : null;
     let addr = String(b.addr || '').trim();
     if (A && addr && !A.names.concat([A.muni]).some(n => n && addr.includes(n))) addr = A.prefOf(A.muni) + A.muni + addr;
-    return [String(b.name || '').trim(), addr].filter(Boolean).join(' ');
+    return addr || String(b.name || '').trim(); // 住所だけで検索する（建物名を前に付けると、うまく見つからない）。住所が無いときだけ建物名
   }
   function gmapUrl(b) {
     const q = mapQuery(b);
     return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
   }
-  /* Yahoo!マップの検索を開く（Google マップと同じ建物名＋住所。見て確かめるだけで、位置は保存しない） */
+  /* Yahoo!マップの検索を開く（Google マップと同じ住所。見て確かめるだけで、位置は保存しない） */
   function ymapUrl(b) {
     const q = mapQuery(b);
     return q ? 'https://map.yahoo.co.jp/search?q=' + encodeURIComponent(q) : '';
