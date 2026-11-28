@@ -25,6 +25,7 @@
        位置は緯度・経度の数字でも入れられる（係が置いた位置として覚える）
    ・位置を地図で直す：十字に建物を合わせて「ここにする」（Google マップの位置は写さない。見て確かめるだけ）
    ・Google マップで見る（iPhone は Google マップのアプリを直接呼ぶ。app.js の openGmapApp）：建物名と住所で Google マップの検索を開くだけ（位置は保存しない。Google の位置を Google 以外の地図に使うのは規約で認められていないため）
+   ・Yahoo!マップで見る：同じ建物名と住所で Yahoo!マップの検索を開くだけ（位置は保存しない）
 
    index.html：torikomi.js の次に <script src="gaibu.js"></script>
    ========================================================= */
@@ -106,14 +107,27 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   }
   const fmtM = m => !isFinite(m) ? '場所不明' : m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
   /* Google マップの検索を開く（建物名＋住所。住所に市町村がなければ、会衆の県・市をつける） */
-  function gmapUrl(b) {
+  function mapQuery(b) {
     const A = typeof CFG_AREA !== 'undefined' ? CFG_AREA : null;
     let addr = String(b.addr || '').trim();
     if (A && addr && !A.names.concat([A.muni]).some(n => n && addr.includes(n))) addr = A.prefOf(A.muni) + A.muni + addr;
-    const q = [String(b.name || '').trim(), addr].filter(Boolean).join(' ');
+    return [String(b.name || '').trim(), addr].filter(Boolean).join(' ');
+  }
+  function gmapUrl(b) {
+    const q = mapQuery(b);
     return q ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q) : '';
   }
-  const gmapBtn = (b, cls) => { const u = gmapUrl(b); return u ? `<a class="btn ${cls == null ? 'small' : cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" data-gmap="1">Google マップ</a>` : ''; };
+  /* Yahoo!マップの検索を開く（Google マップと同じ建物名＋住所。見て確かめるだけで、位置は保存しない） */
+  function ymapUrl(b) {
+    const q = mapQuery(b);
+    return q ? 'https://map.yahoo.co.jp/search?q=' + encodeURIComponent(q) : '';
+  }
+  /* 「Google マップ」と「Yahoo!マップ」のボタンを並べて出す */
+  const gmapBtn = (b, cls) => {
+    const c = `btn ${cls == null ? 'small' : cls}`, g = gmapUrl(b), y = ymapUrl(b);
+    return (g ? `<a class="${c}" href="${esc(g)}" target="_blank" rel="noopener noreferrer" data-gmap="1">Google マップ</a>` : '')
+      + (y ? `<a class="${c}" href="${esc(y)}" target="_blank" rel="noopener noreferrer" data-ymap="1">Yahoo!マップ</a>` : '');
+  };
   /* iPhone・iPad で Google マップのアプリを直接開くのは、app.js が画面のすべての Google マップのリンクでまとめて行う */
   const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
 
