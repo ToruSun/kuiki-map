@@ -1391,7 +1391,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       other ? `この${kind}には、ほかの一覧の「${other.name || '（名前なし）'}」も結ばれています。` : ''
     ].join('');
     if (!await ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', danger: false })) return;
-    await link([{ id: b.id, hid: h.id, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）', () => openBld(b.id));
+    const was = b.hid && b.hid !== h.id ? b.hid : '';
+    await link([{ id: b.id, hid: h.id, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）',
+      async () => { openBld(b.id); await dropOld(was, b.id, h.id); });
   }
 
   /* ---------- 家や「集」の画面（区域係だけ）：結んでいる一覧の建物 ---------- */
@@ -1487,9 +1489,30 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     if (b.hid && b.hid !== h.id && houseById(b.hid) && !await ask(`「${b.name}」は、いま「${houseById(b.hid).label || 'ほかの家'}」に結んでいます。この${h.type === 'apt' ? '集合住宅' : '家'}に結び直しますか？次の取り込みで、記録もこちらに移ります。`, { ok: '結び直す' })) return;
     if (h.type !== 'apt' && !await ask('この家はアパートではありません。結ぶと、アパートになり、一覧の部屋が入ります。よろしいですか？', { ok: '結ぶ' })) return;
     const drop = keep ? [] : cur.filter(c => c.id !== b.id);
+    const was = b.hid && b.hid !== h.id ? b.hid : ''; // 結び直す前の家（まちがった場所に残るので、あとで消すか聞く）
     mapOff();
     await link([{ id: b.id, hid: h.id, apply: true }].concat(drop.map(c => ({ id: c.id, hid: '' }))),
-      `「${b.name}」に${drop.length ? '切り替えて' : '結んで'}確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります${drop.length ? '。前の建物の記録は消えます' : ''}）`, backTo(h));
+      `「${b.name}」に${drop.length ? '切り替えて' : '結んで'}確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります${drop.length ? '。前の建物の記録は消えます' : ''}）`,
+      async () => { backTo(h)(); await dropOld(was, b.id, h.id); });
+  }
+
+  /* 結び直したあと、前の家（まちがった場所の集合住宅）が、もうどの一覧の建物とも結んでいなければ、地図から消すか聞く。
+     取り込みの記録は、次の取り込みで新しい家に入る。消すのは commit なので「取り消す」でもどせる */
+  async function dropOld(oid, bid, nid) {
+    const o = oid && houseById(oid);
+    if (!o || oid === nid || !st.data) return;
+    const nb = (st.data.blds || []).find(x => x.id === bid);
+    if (!nb || nb.hid !== nid) return; // 結べなかった
+    if ((st.data.blds || []).some(x => x.hid === oid && !x.skip)) return; // ほかの一覧の建物がまだ結んでいる
+    const apt = o.type === 'apt', name = o.label || (apt ? '名前のない集合住宅' : '名前のない家');
+    const c = typeof houseRecCounts === 'function' ? houseRecCounts(o) : { v: 0, dnc: 0, cau: 0, fol: 0, rel: 0 };
+    const own = (D().visits || []).filter(v => v.houseId === oid && v.src !== 'imp' && v.by !== 'imp').length; // アプリで入れた記録
+    const more = [own ? `アプリで入れた訪問の記録 ${own}件` : '', c.dnc ? `拒否 ${c.dnc}件（場所だけの印として残ります）` : '', c.cau ? `注意 ${c.cau}件` : '', c.fol + c.rel ? `再訪問の受け持ち ${c.fol + c.rel}件` : ''].filter(Boolean);
+    const body = '前の場所に、この' + (apt ? '集合住宅' : '家') + 'の印が残っています。まちがった場所なら消してください。取り込みの記録は、次の取り込みで新しい方に入ります。'
+      + (more.length ? `一緒に消えるもの：${more.join('、')}。` : '') + '消したあとの「取り消す」で戻せます。';
+    if (!await ask('', { title: `前の場所の「${name}」を地図から消しますか？`, body, ok: '消す', cancel: '残す', danger: true })) return;
+    if (!houseById(oid)) return;
+    commit(`前の場所の「${name}」を地図から消しました`, () => deleteHouseData(oid));
   }
 
   /* 選ぶ画面から地図で見る：この家・一覧の位置・その建物を今結んでいる家を並べて出す */
