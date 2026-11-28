@@ -1454,20 +1454,23 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       if (act === 'set') {
         const c = map.getCenter(), lat = Math.round(c.lat * 1e6) / 1e6, lng = Math.round(c.lng * 1e6) / 1e6;
         const on = b.skip ? null : houseUnderCross(); // 家の印の真上に合わせたか（地図を閉じる前に調べる）
+        const ask2 = on && on.id !== b.hid;
+        // 家の印の真上なら、先に結ぶか聞く。「やめる」なら何も送らず、十字の画面のまま合わせ直せる
+        let ans = false;
+        if (ask2) { ans = await linkOnFixAsk(b, on); if (ans === null) return; }
         b.fix = { lat, lng, from: 'hand' }; prep();
         a.disabled = true;
-        const ask2 = on && on.id !== b.hid;
-        // 位置はうしろで送る（返事を待たずに、すぐ「結びますか？」を出す。サーバーは順番に1つずつ受けるので、結びと混ざらない）
+        // 位置はうしろで送る（返事を待たない。サーバーは順番に1つずつ受けるので、結びと混ざらない）
         api('gb_pos', { items: [{ id: b.id, lat, lng, from: 'hand' }] }, { timeout: 30000 })
-          .then(() => { if (!ask2) toast('位置を直しました'); })
+          .then(() => { if (!ans) toast('位置を直しました'); })
           .catch(() => toast('位置を送れませんでした。あとでもう一度ためしてください'));
         done();
-        if (ask2) await linkOnFix(b, on);
+        if (ans) await linkOnFix(b, on);
       }
     };
   }
-  /* 位置を家の印の真上に置いたとき：その場で、その家に結ぶか聞く（候補の「結ぶ」と同じ。名前と部屋を一覧に合わせる） */
-  async function linkOnFix(b, h) {
+  /* 位置を家の印の真上に置いたとき：その家に結ぶか聞く。true＝結ぶ・false＝位置だけ直す・null＝やめる（十字にもどる） */
+  function linkOnFixAsk(b, h) {
     const apt = h.type === 'apt', kind = apt ? 'アパート' : '家', name = h.label || `名前のない${kind}`;
     const other = (st.data.blds || []).find(x => x.id !== b.id && x.hid === h.id && !x.skip && !x.gone && x.same !== b.id && b.same !== x.id);
     const body = [
@@ -1475,7 +1478,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       apt ? '' : 'この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。',
       other ? `この${kind}には、ほかの一覧の「${other.name || '（名前なし）'}」も結ばれています。` : ''
     ].join('');
-    if (!await ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', danger: false })) return;
+    return ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', third: 'やめる（十字にもどる）', danger: false });
+  }
+  /* 結ぶ（候補の「結ぶ」と同じ。名前と部屋を一覧に合わせる） */
+  async function linkOnFix(b, h) {
     const was = b.hid && b.hid !== h.id ? b.hid : '';
     await link([{ id: b.id, hid: h.id, apply: true }], isTe(b) ? '結んで確定しました。名前と部屋を登録に合わせました' : '結んで確定しました。名前と部屋を一覧に合わせました（記録は次の取り込みで入ります）',
       async () => { openBld(b.id); await dropOld(was, b.id, h.id); }, { name: b.name, was });

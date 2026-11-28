@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.228';
+var APP_JS_VER = '2026.13.229';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2856,6 +2856,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.229', items: [
+    ['係', '十字で「ここにする」を押したあとの「〇〇に結びますか？」に、「やめる（十字にもどる）」を足しました。名前を見てちがうと思ったら、これを押すと、位置も直さずに十字の画面にもどり、合わせ直せます（まわりの暗いところをさわっても同じです）。']
+  ], role: 'admin' },
   { v: '2026.13.228', items: [
     ['係', '集合住宅の位置を十字で合わせて「ここにする」を押したとき、サーバーの返事を待たずに、すぐ「〇〇に結びますか？」と聞くようにしました（位置はうしろで送ります）。']
   ], role: 'admin' },
@@ -3568,13 +3571,17 @@ function ask(msg, o) {
         ${body ? `<div class="askbody">${esc(body)}</div>` : ''}
         <button type="button" class="askbtn ${danger ? 'danger' : 'primary'}" data-askyes>${esc(ok)}</button>
         <button type="button" class="askbtn" data-askno>${esc(o.cancel || 'やめる')}</button>
+        ${o.third ? `<button type="button" class="askbtn" data-askx>${esc(o.third)}</button>` : ''}
       </div>`;
     box.hidden = false;
     const done = v => { box.hidden = true; box.innerHTML = ''; document.removeEventListener('keydown', key, true); resolve(v); };
-    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    // o.third：3つ目のボタン（押すと null）。あるときは、外側をさわる・Esc も null（何もしない）にする
+    const no = o.third ? null : false;
+    const key = e => { if (e.key === 'Escape') { e.stopPropagation(); done(no); } };
     document.addEventListener('keydown', key, true);
     box.querySelector('[data-askyes]').onclick = () => done(true);
-    $$('[data-askno]', box).forEach(x => { x.onclick = () => done(false); });
+    $$('[data-askno]', box).forEach(x => { x.onclick = () => done(x.classList.contains('askback') ? no : false); });
+    const bx = box.querySelector('[data-askx]'); if (bx) bx.onclick = () => done(null);
     const h = box.querySelector('#askTitle'); h.tabIndex = -1; h.focus({ preventScroll: true });
   });
 }
