@@ -63,6 +63,13 @@
 .gb-map{gap:4px}
 .gb-map svg{width:18px;height:18px;flex:none}
 .gb-btns{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+.gb-cand{flex-direction:column;align-items:stretch;gap:8px;cursor:default}
+.gb-cand .hd{display:flex;gap:10px;align-items:center}
+.gb-cand .hd .btn{flex:none}
+.gb-seg{display:flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden}
+.gb-seg .btn{flex:1 1 0;min-width:0;min-height:40px;padding:0 6px;border:0;border-radius:0;font-size:14px;font-weight:600;color:var(--ink2);gap:4px}
+.gb-seg .btn+.btn{border-left:1.5px solid var(--line)}
+.gb-seg .btn svg{width:16px;height:16px;flex:none}
 .gb-hrow .tx{flex:1 1 180px;min-width:0;line-height:1.35}
 .gb-hrow .tx small{display:block;font-size:13px;color:var(--ink2)}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
@@ -128,6 +135,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
   /* 「Google マップ」と「Yahoo!マップ」のボタンを並べて出す。字が大きい画面でも収まるように、地図のピンの印＋短い名前にする
      （各社のロゴは使わない。読み上げ・長押しの説明には正しい名前） */
   const PIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
+  const MAP_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M15 4 9 2 3 4v18l6-2 6 2 6-2V2zM10 4.4l4 1.3v13.9l-4-1.3zM5 5.4l3-1v13.9l-3 1zm11 14.2V5.7l3-1v13.9z"/></svg>';
   const gmapBtn = (b, cls) => {
     const c = `btn ${cls == null ? 'small' : cls} gb-map`, g = gmapUrl(b), y = ymapUrl(b);
     return (g ? `<a class="${c}" href="${esc(g)}" target="_blank" rel="noopener noreferrer" data-gmap="1" aria-label="Google マップで見る" title="Google マップで見る">${PIN_SVG}Google</a>` : '')
@@ -1466,9 +1474,10 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       .filter(x => !nq || norm(x.b.name).includes(nq) || norm(x.b.addr).includes(nq) || norm(x.b.label).includes(nq))
       .sort((x, y) => (y.same - x.same) || (x.m - y.m)).slice(0, 40);
     const now = b => b.hid === h.id ? 'この家に結んでいます' : b.hid ? `→ ${esc((houseById(b.hid) || {}).label || 'ほかの家')}に結んでいます${stOf(b) === 'tmp' ? '（仮）' : ''}` : b.skip ? '取り込まない' : 'まだ結んでいません';
-    return rows.map(x => `<div class="gb-row" style="cursor:default;flex-wrap:wrap"><span class="tx" style="flex:1 1 100%"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
+    return rows.map(x => `<div class="gb-row gb-cand"><div class="hd"><span class="tx"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
         <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
-        <span class="gb-btns">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn small" data-gbpm="${esc(x.b.id)}">地図</button>` : ''}${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></span></div>`).join('') || '<div class="empty">ありません</div>';
+        <button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></div>
+        <div class="gb-seg">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn" data-gbpm="${esc(x.b.id)}">${MAP_SVG}地図</button>` : ''}${gmapBtn(x.b, '')}</div></div>`).join('') || '<div class="empty">ありません</div>';
   }
 
   /* この家を、一覧の建物 b に切り替えて確定する。家の名前・部屋・オートロックは、すぐ一覧に合わせる（apply） */
