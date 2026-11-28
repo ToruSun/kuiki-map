@@ -1478,7 +1478,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
       apt ? '' : 'この家はアパートではありません。結ぶと、次の取り込みでアパートになり、一覧の部屋が入ります。',
       other ? `この${kind}には、ほかの一覧の「${other.name || '（名前なし）'}」も結ばれています。` : ''
     ].join('');
-    return ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', third: 'やめる（十字にもどる）', danger: false });
+    return ask('', { title: `「${name}」（${kind}）に結びますか？`, body: body || '名前と部屋を一覧に合わせます。記録は次の取り込みで入ります。', ok: '結ぶ', cancel: '位置だけ直す', third: 'やめる', danger: false });
   }
   /* 結ぶ（候補の「結ぶ」と同じ。名前と部屋を一覧に合わせる） */
   async function linkOnFix(b, h) {
