@@ -4,7 +4,7 @@
    ・index.html の版（app-version）を上げるときは、下の APP_JS_VER も同じ番号にする（新しい画面と古い本体がまざっていないかを確かめるため）
    ========================================================= */
 'use strict'; // 本体の全体を strict にする（以前と同じ。この行は、ファイルの最初の文でなければならない）
-var APP_JS_VER = '2026.13.220';
+var APP_JS_VER = '2026.13.221';
 (function () { // 電波が弱く、新しい index.html と前の版の本体がまざって読み込まれたときは、少し待って1回だけ読み直す
   var m = document.querySelector('meta[name="app-version"]'), hv = m ? m.content : '';
   if (!hv || hv === APP_JS_VER) return;
@@ -2856,6 +2856,9 @@ function terrStats(t, sinceMs) {
 /* ---------- 更新のお知らせ：前に開いたとき以降の変更を、起動したときに見せる ---------- */
 const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '0';
 const CHANGELOG = [
+  { v: '2026.13.221', items: [
+    ['係', '「集合住宅の一覧」の地図のボタンを、ピンの印と短い名前（「Google」「Yahoo!」）にして小さくしました。字が大きい画面で入りきらないときは、ボタンが次の行に下がり、「これにする」などが画面の外に出ないようにしました。']
+  ], role: 'admin' },
   { v: '2026.13.220', items: [
     ['係', 'iPhone で「集合住宅の一覧」の「Yahoo!マップ」を押すと、Yahoo!マップのアプリが直接開くようにしました（アプリが無いときは、お知らせの「ウェブで開く」でウェブを開けます）。']
   ], role: 'admin' },

@@ -60,6 +60,9 @@
 .gb-hn{margin:8px 0;padding:8px 12px}
 .gb-hn>summary{cursor:pointer;font-weight:700;min-height:40px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .gb-hrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.gb-map{gap:4px}
+.gb-map svg{width:18px;height:18px;flex:none}
+.gb-btns{margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
 .gb-hrow .tx{flex:1 1 180px;min-width:0;line-height:1.35}
 .gb-hrow .tx small{display:block;font-size:13px;color:var(--ink2)}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
@@ -122,11 +125,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const q = mapQuery(b);
     return q ? 'https://map.yahoo.co.jp/search?q=' + encodeURIComponent(q) : '';
   }
-  /* 「Google マップ」と「Yahoo!マップ」のボタンを並べて出す */
+  /* 「Google マップ」と「Yahoo!マップ」のボタンを並べて出す。字が大きい画面でも収まるように、地図のピンの印＋短い名前にする
+     （各社のロゴは使わない。読み上げ・長押しの説明には正しい名前） */
+  const PIN_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
   const gmapBtn = (b, cls) => {
-    const c = `btn ${cls == null ? 'small' : cls}`, g = gmapUrl(b), y = ymapUrl(b);
-    return (g ? `<a class="${c}" href="${esc(g)}" target="_blank" rel="noopener noreferrer" data-gmap="1">Google マップ</a>` : '')
-      + (y ? `<a class="${c}" href="${esc(y)}" target="_blank" rel="noopener noreferrer" data-ymap="1">Yahoo!マップ</a>` : '');
+    const c = `btn ${cls == null ? 'small' : cls} gb-map`, g = gmapUrl(b), y = ymapUrl(b);
+    return (g ? `<a class="${c}" href="${esc(g)}" target="_blank" rel="noopener noreferrer" data-gmap="1" aria-label="Google マップで見る" title="Google マップで見る">${PIN_SVG}Google</a>` : '')
+      + (y ? `<a class="${c}" href="${esc(y)}" target="_blank" rel="noopener noreferrer" data-ymap="1" aria-label="Yahoo!マップで見る" title="Yahoo!マップで見る">${PIN_SVG}Yahoo!</a>` : '');
   };
   /* iPhone・iPad で Google マップのアプリを直接開くのは、app.js が画面のすべての Google マップのリンクでまとめて行う */
   const KARI_APT_M = 40, KARI_PROV_M = 25; // 仮で結ぶ：この距離までのアパート・仮の家に結ぶ（ふつうの家はアパートに変えない）
@@ -1463,7 +1468,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;justify-conten
     const now = b => b.hid === h.id ? 'この家に結んでいます' : b.hid ? `→ ${esc((houseById(b.hid) || {}).label || 'ほかの家')}に結んでいます${stOf(b) === 'tmp' ? '（仮）' : ''}` : b.skip ? '取り込まない' : 'まだ結んでいません';
     return rows.map(x => `<div class="gb-row" style="cursor:default;flex-wrap:wrap"><span class="tx" style="flex:1 1 100%"><b>${esc(x.b.name || '（名前なし）')}${x.same ? '　（名前が同じ）' : ''}</b>
         <small>${esc(x.b.label || x.b.src)}・${x.b.n}部屋・${fmtM(x.m)}</small><small>${now(x.b)}</small></span>
-        <span style="margin-left:auto;display:flex;gap:6px">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn small" data-gbpm="${esc(x.b.id)}">地図</button>` : ''}${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></span></div>`).join('') || '<div class="empty">ありません</div>';
+        <span class="gb-btns">${(hasPos(x.b) || (x.b.hid && x.b.hid !== h.id && houseById(x.b.hid))) ? `<button type="button" class="btn small" data-gbpm="${esc(x.b.id)}">地図</button>` : ''}${gmapBtn(x.b)}<button type="button" class="btn small primary" data-gbp="${esc(x.b.id)}"${x.b.hid === h.id ? ' disabled' : ''}>${x.b.hid === h.id ? '今の建物' : 'これにする'}</button></span></div>`).join('') || '<div class="empty">ありません</div>';
   }
 
   /* この家を、一覧の建物 b に切り替えて確定する。家の名前・部屋・オートロックは、すぐ一覧に合わせる（apply） */
